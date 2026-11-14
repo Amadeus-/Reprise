@@ -8,6 +8,20 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.9.8] — 2026-11-14
+
+### Changed
+- **Import Scan intake dialog trimmed of redundant captions**: the single-image state no longer
+  shows the separator rule or the *"Quality tiers apply to PDF imports; images are recognized at
+  their native resolution."* caption — a single image now shows only File / Pages / Resolution
+  above the buttons. The PDF state drops its redundant bottom *"Matched to your scan — this PDF is
+  about N dpi."* "why" caption; the blue **Matched to your scan** badge beside the Standard tier
+  and the header separator are kept.
+
+### Removed
+- The single-image quality-tier explanation caption and its separator rule, and the PDF
+  matched-resolution "why" caption, from the Import Scan dialog.
+
 ## [0.9.7] — 2026-11-14
 
 ### Fixed
@@ -322,6 +336,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.9.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.7]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.6]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.5]: https://github.com/Amadeus-/Reprise/tree/reprise-main
