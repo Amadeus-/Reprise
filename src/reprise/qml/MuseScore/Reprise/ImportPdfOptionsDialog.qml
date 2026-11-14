@@ -208,7 +208,12 @@ StyledDialogView {
             }
         }
 
-        SeparatorLine {}
+        SeparatorLine {
+            //! Hidden in the single-image state (isImage with the page range hidden): there is no settable control
+            //! below, so no header/controls divider is wanted. Shown for a PDF (the tiers + page range sit below it)
+            //! and for a multi-page TIFF (the page range sits below it).
+            visible: !(root.isImage && !root.showPageRange)
+        }
 
         StyledTextLabel {
             width: parent.width
@@ -350,36 +355,6 @@ StyledDialogView {
                     }
                 }
             }
-        }
-
-        StyledTextLabel {
-            width: parent.width
-
-            //! "Why" caption for the tier match: PDF-only. When the detect matched, it names the detected native dpi
-            //! that drove the pre-selected tier; otherwise it explains the Standard fallback. On the PRIMARY fontColor so
-            //! it stays legible in both themes (it was formerly on the nearly-invisible fontSecondaryColor).
-            visible: !root.isImage
-
-            text: root.matched
-                  ? qsTrc("reprise", "Matched to your scan - this PDF is about %1 dpi.").arg(root.detectedDpi)
-                  : qsTrc("reprise", "No scan resolution detected in this PDF - using Standard.")
-            color: ui.theme.fontColor
-            horizontalAlignment: Text.AlignLeft
-            wrapMode: Text.Wrap
-        }
-
-        StyledTextLabel {
-            width: parent.width
-
-            //! Single-page image: there is no settable control (no tier, no page range), so a one-line note explains
-            //! why. Shown only for a single image (an image with the page range hidden). On the PRIMARY fontColor so it
-            //! stays legible in both themes (it was formerly on the nearly-invisible fontSecondaryColor).
-            visible: root.isImage && !root.showPageRange
-
-            text: qsTrc("reprise", "Quality tiers apply to PDF imports; images are recognized at their native resolution.")
-            color: ui.theme.fontColor
-            horizontalAlignment: Text.AlignLeft
-            wrapMode: Text.Wrap
         }
 
         ButtonBox {
