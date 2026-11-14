@@ -30,6 +30,7 @@
 #include <QFile>
 #include <QImage>
 #include <QImageReader>
+#include <QPointer>
 #include <QQuickWindow>
 #include <QSize>
 #include <QString>
@@ -743,6 +744,12 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     query.addParam("embeddedDpi", Val(imageInfo.embeddedDpi));
     query.addParam("detectedDpi", Val(detected.dpi));
 
+    //! Harden the normal user close->reopen path too: if a prior Import-Scan dialog of this exact query is somehow still
+    //! open on the stack, force it closed and settled before opening again, so a fast cancel->reopen can never overlap.
+    //! openSync drives its own modal loop and tears the dialog down before it returns, so this is a no-op (no latency) in
+    //! the common case; it is a cheap belt-and-suspenders guard.
+    forceCloseAndSettle(query, nullptr);
+
     const RetVal<Val> dialog = interactive()->openSync(query);
     if (!dialog.ret)
     {
@@ -1044,6 +1051,61 @@ muse::RetVal<GetImportErrorsCommand::Output> ImportPdfController::getImportError
     return muse::RetVal<GetImportErrorsCommand::Output>::make_ok(output);
 }
 
+void ImportPdfController::forceCloseAndSettle(const muse::UriQuery& query, QQuickWindow* known) const
+{
+    //! Bounded GUI-thread event pump.
+    auto pump = [](int ms)
+    {
+        QEventLoop loop;
+        QTimer pumpTimer;
+        pumpTimer.setSingleShot(true);
+        QObject::connect(&pumpTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        pumpTimer.start(ms);
+        loop.exec();
+    };
+
+    //! QPointer goes null exactly when the window object is destroyed, so it is the true "fully torn down" signal.
+    QPointer<QQuickWindow> guard(known);
+
+    const int timeoutMs = 5000;
+    bool acted = false;
+
+    //! Phase 1: close the window directly until it leaves the interactive stack. interactive()->close(query) is a no-op
+    //! for a fire-and-forget async-opened dialog (verified from the log: isOpened stays true through a full pump), so we
+    //! close the QQuickWindow itself -- that fires Hide -> WindowView::onHidden -> closed -> Interactive::onClose, which
+    //! pops it off m_stack synchronously.
+    QElapsedTimer t1;
+    t1.start();
+    while (t1.elapsed() < timeoutMs && interactive()->isOpened(query).val)
+    {
+        acted = true;
+        QQuickWindow* w = !guard.isNull() ? guard.data() : qobject_cast<QQuickWindow*>(interactive()->topWindow());
+        if (w)
+        {
+            w->close();
+        }
+
+        pump(30);
+    }
+
+    //! Phase 2: when we hold the window pointer, wait for the deferred QML obj.destroy() to actually destroy it, so no
+    //! stale teardown can re-enter Interactive::onClose during the NEXT open (the original second-call SIGSEGV).
+    QElapsedTimer t2;
+    t2.start();
+    while (!guard.isNull() && t2.elapsed() < timeoutMs)
+    {
+        acted = true;
+        pump(30);
+    }
+
+    //! Only drain the queued onClosed callback when we actually closed something, so the common case (nothing of ours
+    //! open) adds no latency.
+    if (acted)
+    {
+        pump(60);
+    }
+}
+
 muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImportDialog(const CaptureImportDialogCommand& cmd)
 {
     using RV = muse::RetVal<CaptureImportDialogCommand::Output>;
@@ -1099,6 +1161,11 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
     query.addParam("embeddedDpi", Val(imageInfo.embeddedDpi));
     query.addParam("detectedDpi", Val(detected.dpi));
 
+    //! Guard the reopen race: if a PRIOR capture call's dialog is somehow still open on the stack (same query), force it
+    //! closed and fully settled before opening again, so this open never overlaps a lingering predecessor. No-op (no
+    //! delay) on the first call, when nothing matching is open.
+    forceCloseAndSettle(query, nullptr);
+
     //! Open the dialog ASYNC (never openSync): openSync would block this GUI-thread handler inside the dialog's nested
     //! modal loop. The async open returns immediately; we drive our OWN nested event loop below to let the dialog window
     //! be created, exposed and rendered -- then grab it. The returned promise is intentionally discarded (fire-and-forget,
@@ -1148,9 +1215,9 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
 
     if (!dlg)
     {
-        //! Never exposed in time -- close whatever may have opened and report, so the caller gets a clean failure.
-        interactive()->close(query);
-        spin(200);
+        //! Never exposed in time -- force-close whatever may have opened (the top dialog for this query) and fully settle
+        //! it, so a leftover does not race a later reopen, then report a clean failure.
+        forceCloseAndSettle(query, nullptr);
         out.error = "import dialog did not become visible in time";
         return RV::make_ok(out);
     }
@@ -1160,9 +1227,11 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
 
     QImage img = dlg->grabWindow();
 
-    //! Close the dialog before returning (fire-and-forget + a short pump to let it tear down).
-    interactive()->close(query);
-    spin(200);
+    //! Close the dialog and FULLY settle it before returning -- the core of the second-call-crash fix. Closing the
+    //! grabbed QQuickWindow directly (forceCloseAndSettle) pops it off the interactive stack and drains its deferred
+    //! teardown, so the NEXT capture call opens from a clean state. (interactive()->close(query) does NOT close this
+    //! fire-and-forget async-opened dialog -- it would linger on the stack and the reopen would race onClose -> SIGSEGV.)
+    forceCloseAndSettle(query, dlg);
 
     if (img.isNull())
     {

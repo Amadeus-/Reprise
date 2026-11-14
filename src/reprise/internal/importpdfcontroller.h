@@ -42,6 +42,8 @@
 
 #include "reprise/reprisecommands.h"
 
+class QQuickWindow;
+
 namespace mu::reprise {
 //! Orchestrates Reprise's "Import PDF" flow: pick a PDF -> intake dialog (pages + resolution) -> show the async
 //! recognition progress popup. The popup's view-model (ImportProgressModel) owns the Audiveris run, the import,
@@ -98,6 +100,17 @@ private:
     //! so an uncertain count still shows the range and never silently drops pages. Called by BOTH the interactive and
     //! headless paths.
     ImageInfo inspectImage(const muse::io::path_t& path, bool isImage) const;
+
+    //! Force-close the dialog opened for `query` and wait (bounded, pumping the GUI event loop) until it is FULLY settled:
+    //! off the interactive stack AND -- when `known` is supplied -- its window object actually destroyed. This is the core
+    //! of the second-call-crash fix. interactive()->close(query) does NOT hide a dialog opened with the fire-and-forget
+    //! async interactive()->open() (the close request never reaches the window), so the dialog would linger on the stack;
+    //! the NEXT open then races its teardown and trips Interactive::onClose's objectId.isValid() assert -> SIGSEGV.
+    //! Closing the QQuickWindow directly fires Hide -> WindowView::onHidden -> closed -> Interactive::onClose
+    //! synchronously, popping it off the stack. We then drain the deferred QML destroy() + queued onClosed callback so the
+    //! next open starts from a clean state. Pass the grabbed window as `known` (precise), or nullptr to act on whatever is
+    //! the top dialog for `query`. No-op (no delay) when nothing matching is open; bounded, so it can never hang.
+    void forceCloseAndSettle(const muse::UriQuery& query, QQuickWindow* known) const;
 
     //! Read-only MCP/API queries backed by the shared progress tracker.
     muse::RetVal<GetImportProgressCommand::Output> getImportProgress() const;
