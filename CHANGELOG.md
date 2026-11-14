@@ -8,6 +8,18 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.9.9] — 2026-11-14
+
+### Fixed
+- **Import Scan dialog could crash (SIGSEGV) when closed and reopened before the close fully
+  settled**: closing the intake dialog and opening it again while the first close was still in
+  flight tripped `Interactive::onClose`'s `objectId.isValid()` assert, because the reopen parented
+  onto the still-closing dialog window. The dev `reprise.capture-import-dialog` tool triggered it on
+  repeated calls in one app session (the second call crashed). The dialog now sequences the reopen
+  after the close completes — it pumps the event loop until the prior dialog is fully off the
+  interactive stack (its objectId invalidated) before opening again — so back-to-back captures, and
+  a fast user cancel → reopen of the real Import Scan dialog, no longer race.
+
 ## [0.9.8] — 2026-11-14
 
 ### Changed
@@ -336,6 +348,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.9.9]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.7]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.6]: https://github.com/Amadeus-/Reprise/tree/reprise-main
