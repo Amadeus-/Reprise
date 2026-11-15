@@ -494,28 +494,6 @@ StyledDialogView {
 
                             onClicked: root.recognizeText = !root.recognizeText
                         }
-
-                        StyledIconLabel {
-                            anchors.verticalCenter: parent.verticalCenter
-
-                            iconCode: IconCode.QUESTION_MARK
-                            opacity: 0.5
-                            font.pixelSize: 12
-
-                            MouseArea {
-                                id: masterHelp
-                                anchors.fill: parent
-                                hoverEnabled: true
-
-                                onContainsMouseChanged: {
-                                    if (masterHelp.containsMouse) {
-                                        ui.tooltip.show(parent, qsTrc("reprise", "Read titles, lyrics, and tempo markings from the scan using OCR. Turn off for a faster notes-only import."))
-                                    } else {
-                                        ui.tooltip.hide(parent)
-                                    }
-                                }
-                            }
-                        }
                     }
 
                     //! Indented sub-options (greyed when the master is off).
@@ -593,28 +571,6 @@ StyledDialogView {
                                 navigation.order: 13
 
                                 onClicked: root.lyricsAboveStaff = !root.lyricsAboveStaff
-                            }
-
-                            StyledIconLabel {
-                                anchors.verticalCenter: parent.verticalCenter
-
-                                iconCode: IconCode.QUESTION_MARK
-                                opacity: root.recognizeText ? 0.5 : (ui.theme.itemOpacityDisabled * 0.5)
-                                font.pixelSize: 12
-
-                                MouseArea {
-                                    id: lyricsAboveHelp
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-
-                                    onContainsMouseChanged: {
-                                        if (lyricsAboveHelp.containsMouse) {
-                                            ui.tooltip.show(parent, qsTrc("reprise", "Enable only if the lyrics in this scan are printed above the notes rather than below them."))
-                                        } else {
-                                            ui.tooltip.hide(parent)
-                                        }
-                                    }
-                                }
                             }
                         }
                     }

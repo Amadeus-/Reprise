@@ -22,6 +22,8 @@
 
 #include "languagepackservice.h"
 
+#include <algorithm>
+
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QDir>
@@ -66,6 +68,22 @@ static constexpr qint64 MIN_PACK_BYTES = 50 * 1024;
 
 //! Abort a stalled download after this long so the user-initiated call can never hang the UI indefinitely.
 static constexpr int DOWNLOAD_TIMEOUT_MS = 60000;
+
+//! Orders language entries for every list view that derives from the service (the Preferences Installed-languages list
+//! and Default-language dropdown, and the Add-a-language picker): English -- the bundled baseline -- is ALWAYS pinned
+//! first, then every other language follows alphabetized by its friendly display name, compared case-insensitively.
+//! Owning the order here is the single source of truth, so all three views inherit it without sorting per-view in QML.
+static bool languageOrderLess(const LanguagePackInfo& a, const LanguagePackInfo& b)
+{
+    const bool aEnglish = QString::fromStdString(a.code).compare(QString::fromLatin1(BASELINE_CODE), Qt::CaseInsensitive) == 0;
+    const bool bEnglish = QString::fromStdString(b.code).compare(QString::fromLatin1(BASELINE_CODE), Qt::CaseInsensitive) == 0;
+    if (aEnglish != bEnglish)
+    {
+        return aEnglish;
+    }
+
+    return QString::fromStdString(a.name).compare(QString::fromStdString(b.name), Qt::CaseInsensitive) < 0;
+}
 }
 
 QString LanguagePackService::shippedTessdataDir() const
@@ -151,6 +169,10 @@ std::vector<LanguagePackInfo> LanguagePackService::installedPacks() const
         result.push_back(info);
     }
 
+    //! English first, then the rest A-Z by friendly display name (see languageOrderLess) -- the single ordering every
+    //! view inherits. Overrides the by-code file-enumeration order above.
+    std::sort(result.begin(), result.end(), languageOrderLess);
+
     return result;
 }
 
@@ -174,6 +196,10 @@ std::vector<LanguagePackInfo> LanguagePackService::availablePacks() const
         info.installed = false;
         result.push_back(info);
     }
+
+    //! Alphabetized by friendly display name (see languageOrderLess). 'eng' is the installed baseline and so never
+    //! appears here, but the shared comparator keeps the picker's ordering identical to the installed list's.
+    std::sort(result.begin(), result.end(), languageOrderLess);
 
     return result;
 }
