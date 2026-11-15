@@ -147,6 +147,7 @@ struct CaptureImportDialogCommand {
 
     std::string path;      // required: absolute path of the scan (PDF or image) whose intake dialog to render
     std::string outPath;   // optional absolute output PNG path override
+    bool expandOptions = false;   // optional: open with the "Options" disclosure expanded (for a capture of that state)
 
     static const inline auto input = std::tuple {
         muse::rcommand::Field{ "path", &CaptureImportDialogCommand::path,
@@ -154,6 +155,9 @@ struct CaptureImportDialogCommand {
                                muse::rcommand::Presence::Required },
         muse::rcommand::Field{ "outPath", &CaptureImportDialogCommand::outPath,
                                "Absolute output PNG path (optional; default is a fixed overwrite file)",
+                               muse::rcommand::Presence::Optional },
+        muse::rcommand::Field{ "expandOptions", &CaptureImportDialogCommand::expandOptions,
+                               "Open the dialog with the Options panel expanded, to capture that state (optional; default false)",
                                muse::rcommand::Presence::Optional },
     };
 

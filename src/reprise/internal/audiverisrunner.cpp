@@ -77,6 +77,66 @@ muse::io::path_t AudiverisRunner::findRepriseTessdata() const
     return io::path_t();
 }
 
+namespace {
+//! Map a Tesseract language code to a friendly English display name for the intake dialog's dropdown. Covers the
+//! common languages a future pack manager might add; an unmapped code falls back to the raw code (never blank). This
+//! is a display-only convenience -- the code itself is what Audiveris receives.
+static QString ocrLanguageDisplayName(const QString& code)
+{
+    static const struct { const char* code; const char* name; } kMap[] = {
+        { "eng", "English" },
+        { "deu", "German" },
+        { "fra", "French" },
+        { "ita", "Italian" },
+        { "spa", "Spanish" },
+        { "lat", "Latin" },
+        { "por", "Portuguese" },
+        { "nld", "Dutch" },
+        { "rus", "Russian" },
+        { "pol", "Polish" },
+    };
+
+    for (const auto& entry : kMap)
+    {
+        if (code.compare(QString::fromLatin1(entry.code), Qt::CaseInsensitive) == 0)
+        {
+            return QString::fromLatin1(entry.name);
+        }
+    }
+
+    return code;
+}
+}
+
+std::vector<std::pair<std::string, std::string> > AudiverisRunner::installedOcrLanguages() const
+{
+    std::vector<std::pair<std::string, std::string> > result;
+
+    //! Enumerate the *.traineddata packs in Reprise's shipped tessdata folder (the same path TESSDATA_PREFIX points
+    //! at). Each file's base name is the language code; 'osd' is orientation/script detection, NOT a text language, so
+    //! it is excluded from the picker. Sorted by code so the list is stable across runs.
+    const io::path_t tessdata = findRepriseTessdata();
+    if (tessdata.empty())
+    {
+        return result;
+    }
+
+    const QDir dir(tessdata.toQString());
+    const QStringList files = dir.entryList(QStringList() << "*.traineddata", QDir::Files, QDir::Name);
+    for (const QString& file : files)
+    {
+        const QString code = QFileInfo(file).completeBaseName();
+        if (code.isEmpty() || code.compare("osd", Qt::CaseInsensitive) == 0)
+        {
+            continue;
+        }
+
+        result.push_back({ code.toStdString(), ocrLanguageDisplayName(code).toStdString() });
+    }
+
+    return result;
+}
+
 muse::io::path_t AudiverisRunner::findTessdataPrefix(const muse::io::path_t& audiverisExe) const
 {
     //! If the user already configured it, don't second-guess them.
@@ -187,12 +247,53 @@ std::vector<int> AudiverisRunner::expandSheets(const QString& pages) const
     return sheets;
 }
 
+std::vector<std::string> AudiverisRunner::buildTextConstants(const RecognitionOptions& options) const
+{
+    std::vector<std::string> constants;
+
+    auto addConstant = [&constants](const std::string& assignment)
+    {
+        constants.push_back("-constant");
+        constants.push_back(assignment);
+    };
+
+    //! Master OFF: skip the whole TEXTS/OCR step (notes-only, faster). Nothing else text-related applies when OFF.
+    if (!options.recognizeText)
+    {
+        addConstant("org.audiveris.omr.text.tesseract.TesseractOCR.useOCR=false");
+        return constants;
+    }
+
+    //! Master ON (default): pass NO constant when a sub-option is at its Audiveris default. Audiveris's own defaults
+    //! are lyrics on, chords off, lyrics below the staff, language eng -- so the default path emits an empty list and
+    //! the proven default OCR behavior is left exactly as-is (no redundant constants clutter the command).
+    if (options.chordSymbols)
+    {
+        addConstant("org.audiveris.omr.sheet.ProcessingSwitches.chordNames=true");
+    }
+
+    if (options.lyricsAboveStaff)
+    {
+        addConstant("org.audiveris.omr.sheet.ProcessingSwitches.lyricsAboveStaff=true");
+    }
+
+    //! Language: only when the chosen code differs from Audiveris's own default (eng). Passing eng explicitly is
+    //! harmless but redundant, so it is omitted. A '+'-joined multi-language spec (e.g. "eng+deu") passes through as-is.
+    const QString lang = options.language.trimmed();
+    if (!lang.isEmpty() && lang.compare("eng", Qt::CaseInsensitive) != 0)
+    {
+        addConstant("org.audiveris.omr.text.Language.defaultSpecification=" + lang.toStdString());
+    }
+
+    return constants;
+}
+
 bool AudiverisRunner::isRunning() const
 {
     return m_process != nullptr;
 }
 
-bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& pages, int dpi)
+bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& pages, int dpi, const RecognitionOptions& options)
 {
     const io::path_t audiverisExe = findAudiveris();
     if (audiverisExe.empty())
@@ -235,6 +336,12 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
         "-constant", "org.audiveris.omr.image.ImageLoading.pdfResolution=" + std::to_string(dpi),
         "-output", m_outDir.toStdString()
     };
+
+    //! Per-import recognition options -> Audiveris '-constant' switches. Both the GUI and headless/MCP paths reach
+    //! here with a RecognitionOptions, so this one call is the single source of truth for the text constants. Master
+    //! ON at defaults contributes nothing (preserving Audiveris's own proven defaults); master OFF adds useOCR=false.
+    const std::vector<std::string> textConstants = buildTextConstants(options);
+    args.insert(args.end(), textConstants.begin(), textConstants.end());
 
     //! Page selection. '-sheets' takes a space-separated int[]; keep it immediately before '--' so args4j
     //! stops consuming numbers at the separator. Empty list -> omit entirely -> Audiveris reads every page.
@@ -310,6 +417,20 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
 
     LOGI() << "Reprise: running Audiveris: " << audiverisExe.toQString() << " on " << pdfPath.toQString()
            << " (dpi=" << dpi << ", sheets=" << (sheets.empty() ? std::string("all") : std::to_string(sheets.size())) << ")";
+
+    //! Make the recognition options observable on the headless path (no GUI). The assembled text '-constant' args also
+    //! appear on the full command line logged below; this summary line states the resolved option values directly.
+    QStringList constantArgsForLog;
+    for (const std::string& c : textConstants)
+    {
+        constantArgsForLog << QString::fromStdString(c);
+    }
+    LOGI() << "Reprise: recognition options: recognizeText=" << (options.recognizeText ? "true" : "false")
+           << " language=" << options.language
+           << " chordSymbols=" << (options.chordSymbols ? "true" : "false")
+           << " lyricsAboveStaff=" << (options.lyricsAboveStaff ? "true" : "false")
+           << " -> text constants: " << (constantArgsForLog.isEmpty() ? QString("(none)") : constantArgsForLog.join(' '));
+
     LOGI() << "[audiveris] command: \"" << audiverisExe.toQString() << "\" " << qargs.join(' ');
 
     //! Kick an initial indeterminate tick so the popup shows an animated bar immediately.

@@ -41,6 +41,10 @@ static const std::vector<CommandInfo> s_commandInfos = {
             { "path", Arg(DataType::String, std::string("Absolute path of the PDF to import (optional; empty = pick interactively)"), Presence::Optional) },
             { "pages", Arg(DataType::String, std::string("Page range, e.g. 'all', '1', '1-3', '1,4,6-9' (optional; default all)"), Presence::Optional) },
             { "dpi", Arg(DataType::Int, std::string("Scan resolution handed to Audiveris (optional; default from settings)"), Presence::Optional) },
+            { "recognizeText", Arg(DataType::Bool, std::string("Recognize text & lyrics via OCR (optional; default true). False skips the TEXTS/OCR step for a faster notes-only import"), Presence::Optional) },
+            { "language", Arg(DataType::String, std::string("OCR text language code, e.g. 'eng' (optional; default eng). '+'-joined accepted for multi-language, e.g. 'eng+deu'"), Presence::Optional) },
+            { "chordSymbols", Arg(DataType::Bool, std::string("Detect chord symbols (optional; default false)"), Presence::Optional) },
+            { "lyricsAboveStaff", Arg(DataType::Bool, std::string("Lyrics appear above the staff rather than below (optional; default false)"), Presence::Optional) },
         }),
         Decoration(IconCode::Code::IMPORT)
     },

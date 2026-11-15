@@ -30,6 +30,9 @@
 #include <QFile>
 #include <QImage>
 #include <QImageReader>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPointer>
 #include <QQuickWindow>
 #include <QSize>
@@ -673,9 +676,20 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
         //! user quit with a project open still restores as before. Set before the project opens, so ordering is moot.
         sessionsManager()->setIgnoreSession(true);
 
+        //! Recognition options for the headless/MCP path (same values the GUI "Options" panel collects), feeding the
+        //! SAME AudiverisRunner constant-building logic. Defaults mirror Audiveris's own (text on, eng, chords off,
+        //! lyrics below), so an MCP caller that omits them gets exactly the proven default OCR behavior.
+        RecognitionOptions options;
+        options.recognizeText = params.at("recognizeText", Val(true)).toBool();
+        const std::string langArg = params.at("language", Val(std::string("eng"))).toString();
+        options.language = langArg.empty() ? QString("eng") : QString::fromStdString(langArg);
+        options.chordSymbols = params.at("chordSymbols", Val(false)).toBool();
+        options.lyricsAboveStaff = params.at("lyricsAboveStaff", Val(false)).toBool();
+
         rememberImportPdfDir(pdfPath);
         setScanResolution(dpi);
-        launchImport(pdfPath, pages, dpi);
+        launchImport(pdfPath, pages, dpi, options);
+
         return make_ok();
     }
 
@@ -744,6 +758,14 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     query.addParam("embeddedDpi", Val(imageInfo.embeddedDpi));
     query.addParam("detectedDpi", Val(detected.dpi));
 
+    //! "Options" panel data: the installed OCR languages (enumerated in C++ from Reprise's tessdata, osd excluded) as a
+    //! JSON array of {code, name} for the language dropdown, plus the default option values the panel opens at.
+    query.addParam("languagesJson", Val(buildLanguagesJson()));
+    query.addParam("recognizeText", Val(true));
+    query.addParam("language", Val(std::string("eng")));
+    query.addParam("chordSymbols", Val(false));
+    query.addParam("lyricsAboveStaff", Val(false));
+
     //! Harden the normal user close->reopen path too: if a prior Import-Scan dialog of this exact query is somehow still
     //! open on the stack, force it closed and settled before opening again, so a fast cancel->reopen can never overlap.
     //! openSync drives its own modal loop and tears the dialog down before it returns, so this is a no-op (no latency) in
@@ -765,28 +787,74 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     const QString pages = vals.value("pages").toString();
     const int dpi = vals.value("dpi").toInt();
 
+    //! Recognition options from the dialog's "Options" panel. Absent keys fall back to the Audiveris-default values, so
+    //! an older/edge dialog state can never turn OCR off by accident. These feed the SAME AudiverisRunner constant
+    //! logic as the headless path (both converge on launchImport -> the progress popup -> AudiverisRunner::start).
+    RecognitionOptions options;
+    options.recognizeText = vals.contains("recognizeText") ? vals.value("recognizeText").toBool() : true;
+    const QString langChoice = vals.value("language").toString();
+    options.language = langChoice.trimmed().isEmpty() ? QString("eng") : langChoice.trimmed();
+    options.chordSymbols = vals.value("chordSymbols").toBool();
+    options.lyricsAboveStaff = vals.value("lyricsAboveStaff").toBool();
+
     //! Remember the chosen resolution so the dialog defaults to it next time.
     setScanResolution(dpi);
 
-    launchImport(pdfPath, pages.toStdString(), dpi);
+    launchImport(pdfPath, pages.toStdString(), dpi, options);
 
     return make_ok();
 }
 
-void ImportPdfController::launchImport(const muse::io::path_t& pdfPath, const std::string& pages, int dpi)
+void ImportPdfController::launchImport(const muse::io::path_t& pdfPath, const std::string& pages, int dpi,
+                                      const RecognitionOptions& options)
 {
     //! Seed the shared progress tracker up front so an immediate reprise.get-import-progress poll already sees an
     //! active run (the popup's view-model takes over the detailed progress once it loads).
     importProgressTracker()->reportStarted(pdfPath.toStdString());
 
     //! Launch the recognition progress popup (non-blocking). Its view-model owns the async Audiveris run, the
-    //! import of the produced MusicXML, and the temporary Grand-Piano override. Progress + Cancel live there.
+    //! import of the produced MusicXML, and the temporary Grand-Piano override. Progress + Cancel live there. The
+    //! recognition options ride along as query params -> the popup's root properties -> ImportProgressModel::load()
+    //! -> AudiverisRunner::start(), which is the single place the '-constant' switches are built (DRY with headless).
     UriQuery progressQuery("musescore://reprise/importpdf/progress");
     progressQuery.addParam("pdfPath", Val(pdfPath.toQString().toStdString()));
     progressQuery.addParam("pages", Val(pages));
     progressQuery.addParam("dpi", Val(dpi));
+    progressQuery.addParam("recognizeText", Val(options.recognizeText));
+    progressQuery.addParam("language", Val(options.language.toStdString()));
+    progressQuery.addParam("chordSymbols", Val(options.chordSymbols));
+    progressQuery.addParam("lyricsAboveStaff", Val(options.lyricsAboveStaff));
 
     interactive()->open(progressQuery);
+}
+
+std::string ImportPdfController::buildLanguagesJson() const
+{
+    QJsonArray arr;
+
+    if (m_audiverisRunner)
+    {
+        const std::vector<std::pair<std::string, std::string> > langs = m_audiverisRunner->installedOcrLanguages();
+        for (const std::pair<std::string, std::string>& lang : langs)
+        {
+            QJsonObject obj;
+            obj["code"] = QString::fromStdString(lang.first);
+            obj["name"] = QString::fromStdString(lang.second);
+            arr.append(obj);
+        }
+    }
+
+    //! Never hand the dialog an empty list -- fall back to English so the dropdown always has at least one entry
+    //! (e.g. if the shipped tessdata folder could not be read for some reason).
+    if (arr.isEmpty())
+    {
+        QJsonObject obj;
+        obj["code"] = "eng";
+        obj["name"] = "English";
+        arr.append(obj);
+    }
+
+    return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)).toStdString();
 }
 
 muse::Ret ImportPdfController::preflightImageSize(const muse::io::path_t& path) const
@@ -1160,6 +1228,19 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
     query.addParam("pdfConfident", Val(imageInfo.pdfConfident));
     query.addParam("embeddedDpi", Val(imageInfo.embeddedDpi));
     query.addParam("detectedDpi", Val(detected.dpi));
+
+    //! Same "Options" panel data the interactive path passes, so the captured dialog renders the language dropdown and
+    //! the option defaults identically to what a user sees.
+    query.addParam("languagesJson", Val(buildLanguagesJson()));
+    query.addParam("recognizeText", Val(true));
+    query.addParam("language", Val(std::string("eng")));
+    query.addParam("chordSymbols", Val(false));
+    query.addParam("lyricsAboveStaff", Val(false));
+
+    //! Dev capture only: optionally open with the Options disclosure expanded, so the expanded panel can be grabbed
+    //! (the capture tool renders the dialog's default state without interaction). The shipped dialog default stays
+    //! collapsed -- this param just overrides the initial state for the screenshot.
+    query.addParam("optionsExpanded", Val(cmd.expandOptions));
 
     //! Guard the reopen race: if a PRIOR capture call's dialog is somehow still open on the stack (same query), force it
     //! closed and fully settled before opening again, so this open never overlaps a lingering predecessor. No-op (no

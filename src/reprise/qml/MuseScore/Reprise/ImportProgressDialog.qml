@@ -38,6 +38,13 @@ StyledDialogView {
     property string pages: "all"
     property int dpi: 300
 
+    //! Recognition options collected by the intake dialog's "Options" panel (defaults mirror Audiveris's own, so the
+    //! default run passes no text constants). Forwarded verbatim to the runner via ImportProgressModel.load().
+    property bool recognizeText: true
+    property string language: "eng"
+    property bool chordSymbols: false
+    property bool lyricsAboveStaff: false
+
     objectName: "ImportProgressDialog"
 
     //! Brand palette (from the Reprise mark SVG). The popup is a fixed LIGHT card (cream body/footer under the navy
@@ -75,7 +82,8 @@ StyledDialogView {
     }
 
     Component.onCompleted: {
-        progressModel.load(root.pdfPath, root.pages, root.dpi)
+        progressModel.load(root.pdfPath, root.pages, root.dpi,
+                           root.recognizeText, root.language, root.chordSymbols, root.lyricsAboveStaff)
     }
 
     //! Header X: during a run it cancels (kills Audiveris, aborts import); otherwise it just closes.

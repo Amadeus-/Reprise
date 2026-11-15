@@ -92,8 +92,11 @@ public:
     bool closePopupOnComplete() const;
     void setClosePopupOnComplete(bool close);
 
-    //! Called from the popup's Component.onCompleted with the params handed in by the controller.
-    Q_INVOKABLE void load(const QString& pdfPath, const QString& pages, int dpi);
+    //! Called from the popup's Component.onCompleted with the params handed in by the controller. The recognition
+    //! options (text/lyric OCR master, language code, chord symbols, lyrics-above-staff) are forwarded verbatim to
+    //! AudiverisRunner::start(), which turns them into the per-run '-constant' switches.
+    Q_INVOKABLE void load(const QString& pdfPath, const QString& pages, int dpi,
+                          bool recognizeText, const QString& language, bool chordSymbols, bool lyricsAboveStaff);
 
     //! Cancel button / the header X during a run: kill Audiveris, abort the import, request the popup to close.
     Q_INVOKABLE void cancel();

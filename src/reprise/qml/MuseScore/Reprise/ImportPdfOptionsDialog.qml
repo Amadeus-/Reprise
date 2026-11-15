@@ -76,6 +76,37 @@ StyledDialogView {
     //! when matched. 0/absent for an image or when nothing was detected.
     property int detectedDpi: 0
 
+    //! "Options" panel data + values (see the Options disclosure below). languagesJson is a JSON array of {code, name}
+    //! the controller builds in C++ from the installed tessdata packs (QML cannot enumerate files; 'osd' is excluded).
+    //! The master + sub-option values are seeded from the controller defaults and returned by submit(), then wired to
+    //! Audiveris. Defaults mirror Audiveris's own (text on, eng, chords off, lyrics below), so the default run is
+    //! unchanged. Text/OCR applies to every scan, so the panel appears in BOTH the single-image and the PDF states.
+    property string languagesJson: "[]"
+    property bool recognizeText: true
+    property string language: "eng"
+    property bool chordSymbols: false
+    property bool lyricsAboveStaff: false
+
+    //! The Options disclosure is DEFAULT COLLAPSED so the dialog is no taller by default.
+    property bool optionsExpanded: false
+
+    //! {text, value} model for the language dropdown (friendly display name -> Tesseract code), parsed from
+    //! languagesJson. Never empty -- falls back to English so the dropdown always has at least one entry.
+    readonly property var languageModel: {
+        var out = []
+        try {
+            var arr = JSON.parse(root.languagesJson)
+            for (var i = 0; i < arr.length; ++i) {
+                out.push({ "text": arr[i].name, "value": arr[i].code })
+            }
+        } catch (e) {
+        }
+        if (out.length === 0) {
+            out.push({ "text": qsTrc("reprise", "English"), "value": "eng" })
+        }
+        return out
+    }
+
     objectName: "ImportPdfOptionsDialog"
 
     title: qsTrc("reprise", "Import Scan")
@@ -147,7 +178,11 @@ StyledDialogView {
             value: {
                 "accepted": true,
                 "pages": typedPages.length > 0 ? typedPages : "all",
-                "dpi": root.selectedTier
+                "dpi": root.selectedTier,
+                "recognizeText": root.recognizeText,
+                "language": root.language,
+                "chordSymbols": root.chordSymbols,
+                "lyricsAboveStaff": root.lyricsAboveStaff
             }
         }
         root.hide()
@@ -351,6 +386,236 @@ StyledDialogView {
                             anchors.centerIn: parent
                             text: qsTrc("reprise", "Matched to your scan")
                             color: "#FFFFFF"
+                        }
+                    }
+                }
+            }
+        }
+
+        //! ===== "Options" disclosure: recognition controls, present in BOTH the single-image and PDF states =====
+        //! Collapsed by default (so the dialog is no taller by default); a smooth height/opacity animation reveals a
+        //! master toggle ("Recognize text & lyrics") with indented sub-options (language, chord symbols, lyrics-above)
+        //! that grey out when the master is off. Wired to Audiveris per-import via submit() -> the controller ->
+        //! AudiverisRunner. The chevron rotates; clicking anywhere on the header row toggles the panel.
+        Column {
+            id: optionsSection
+
+            width: parent.width
+            spacing: 8
+
+            //! Header is an Item (not a Row) so the full-width MouseArea can fill it without clashing with a positioner.
+            Item {
+                id: optionsHeader
+
+                width: parent.width
+                height: optionsHeaderRow.implicitHeight
+
+                Row {
+                    id: optionsHeaderRow
+
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+
+                    StyledIconLabel {
+                        id: discIcon
+
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        iconCode: IconCode.SMALL_ARROW_DOWN
+                        //! Points right when collapsed, down when expanded; the rotation animates for a smooth disclosure.
+                        rotation: root.optionsExpanded ? 0 : -90
+                        font.pixelSize: 12
+
+                        Behavior on rotation {
+                            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                        }
+                    }
+
+                    StyledTextLabel {
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        text: qsTrc("reprise", "Options")
+                        font.bold: true
+                        horizontalAlignment: Text.AlignLeft
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.optionsExpanded = !root.optionsExpanded
+                }
+            }
+
+            //! Animated reveal: the container's height tracks its content's implicitHeight when expanded (0 when
+            //! collapsed). Because the dialog's contentHeight binds to content.implicitHeight, animating this height
+            //! makes the whole dialog window resize smoothly rather than snapping. clip hides the content mid-animation.
+            Item {
+                id: optionsReveal
+
+                width: parent.width
+                clip: true
+
+                height: root.optionsExpanded ? optionsContent.implicitHeight : 0
+                opacity: root.optionsExpanded ? 1 : 0
+                visible: height > 0
+
+                Behavior on height {
+                    NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                }
+                Behavior on opacity {
+                    NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                }
+
+                Column {
+                    id: optionsContent
+
+                    width: parent.width
+                    spacing: 10
+
+                    //! Master toggle (default ON). When OFF the sub-options below grey out (enabled bound to it) and
+                    //! the import runs notes-only (Audiveris useOCR=false).
+                    Row {
+                        width: parent.width
+                        spacing: 6
+
+                        CheckBox {
+                            id: masterCheck
+
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            text: qsTrc("reprise", "Recognize text & lyrics")
+                            checked: root.recognizeText
+
+                            navigation.panel: navPanel
+                            navigation.order: 10
+                            navigation.accessible.name: qsTrc("reprise", "Recognize text and lyrics")
+
+                            onClicked: root.recognizeText = !root.recognizeText
+                        }
+
+                        StyledIconLabel {
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            iconCode: IconCode.QUESTION_MARK
+                            opacity: 0.5
+                            font.pixelSize: 12
+
+                            MouseArea {
+                                id: masterHelp
+                                anchors.fill: parent
+                                hoverEnabled: true
+
+                                onContainsMouseChanged: {
+                                    if (masterHelp.containsMouse) {
+                                        ui.tooltip.show(parent, qsTrc("reprise", "Read titles, lyrics, and tempo markings from the scan using OCR. Turn off for a faster notes-only import."))
+                                    } else {
+                                        ui.tooltip.hide(parent)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    //! Indented sub-options (greyed when the master is off).
+                    Column {
+                        id: subOptions
+
+                        x: 26
+                        width: parent.width - 26
+                        spacing: 10
+
+                        Row {
+                            width: parent.width
+                            spacing: 8
+
+                            StyledTextLabel {
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                text: qsTrc("reprise", "Text language")
+                                opacity: root.recognizeText ? 1.0 : ui.theme.itemOpacityDisabled
+                            }
+
+                            StyledDropdown {
+                                id: languageDropdown
+
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                width: 180
+                                enabled: root.recognizeText
+
+                                model: root.languageModel
+                                currentIndex: {
+                                    var idx = indexOfValue(root.language)
+                                    return idx >= 0 ? idx : 0
+                                }
+
+                                navigation.panel: navPanel
+                                navigation.order: 11
+
+                                onActivated: function(index, value) {
+                                    root.language = value
+                                }
+                            }
+                        }
+
+                        CheckBox {
+                            id: chordCheck
+
+                            width: parent.width
+                            enabled: root.recognizeText
+
+                            text: qsTrc("reprise", "Also detect chord symbols")
+                            checked: root.chordSymbols
+
+                            navigation.panel: navPanel
+                            navigation.order: 12
+
+                            onClicked: root.chordSymbols = !root.chordSymbols
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 6
+
+                            CheckBox {
+                                id: lyricsAboveCheck
+
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                enabled: root.recognizeText
+
+                                text: qsTrc("reprise", "Lyrics appear above the staff (uncommon)")
+                                checked: root.lyricsAboveStaff
+
+                                navigation.panel: navPanel
+                                navigation.order: 13
+
+                                onClicked: root.lyricsAboveStaff = !root.lyricsAboveStaff
+                            }
+
+                            StyledIconLabel {
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                iconCode: IconCode.QUESTION_MARK
+                                opacity: root.recognizeText ? 0.5 : (ui.theme.itemOpacityDisabled * 0.5)
+                                font.pixelSize: 12
+
+                                MouseArea {
+                                    id: lyricsAboveHelp
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+
+                                    onContainsMouseChanged: {
+                                        if (lyricsAboveHelp.containsMouse) {
+                                            ui.tooltip.show(parent, qsTrc("reprise", "Enable only if the lyrics in this scan are printed above the notes rather than below them."))
+                                        } else {
+                                            ui.tooltip.hide(parent)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

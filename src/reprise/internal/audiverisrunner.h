@@ -22,6 +22,8 @@
 
 #pragma once
 
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <QObject>
@@ -36,6 +38,19 @@
 class QProcess;
 
 namespace mu::reprise {
+//! Per-import recognition options collected from the intake dialog's "Options" panel (or the headless/MCP args),
+//! turned into Audiveris '-constant FQN.field=value' switches by buildTextConstants(). recognizeText is the master:
+//! OFF skips the whole TEXTS/OCR step (notes-only). The defaults mirror Audiveris's own defaults (lyrics on, chords
+//! off, lyrics-below-staff, eng), so the default path passes NO text constants at all and the proven OCR behavior
+//! is preserved untouched.
+struct RecognitionOptions
+{
+    bool recognizeText = true;       //! master: recognize text & lyrics (OCR). OFF -> useOCR=false, notes only.
+    QString language = "eng";        //! Tesseract language code (eng default); '+'-joined accepted for multi-language.
+    bool chordSymbols = false;       //! detect chord symbols -> ProcessingSwitches.chordNames=true
+    bool lyricsAboveStaff = false;   //! lyrics sit above the staff (uncommon) -> ProcessingSwitches.lyricsAboveStaff=true
+};
+
 //! NOTE: Reprise's single, local OMR path. Drives the Audiveris CLI on a whole PDF ASYNCHRONOUSLY via a raw
 //! Qt QProcess in signal mode (start() + readyReadStandardOutput + finished), so a live progress popup and a
 //! working Cancel are possible without blocking the UI thread. Progress is parsed out of Audiveris' own stdout
@@ -57,9 +72,17 @@ public:
     bool isRunning() const;
 
     //! Begin an async Audiveris run. pages: free-form range ("all"/"" = every page, "3-7", "1,4,6-9");
-    //! dpi: scan resolution passed to Audiveris. Progress arrives via progressChanged(); the outcome via
-    //! finished(). Returns false (and emits no signals) only if Audiveris itself could not be found.
-    bool start(const muse::io::path_t& pdfPath, const QString& pages, int dpi);
+    //! dpi: scan resolution passed to Audiveris; options: the per-import recognition switches (text/lyric OCR,
+    //! language, chord symbols, lyrics-above-staff) turned into '-constant' args by buildTextConstants(). Progress
+    //! arrives via progressChanged(); the outcome via finished(). Returns false (and emits no signals) only if
+    //! Audiveris itself could not be found.
+    bool start(const muse::io::path_t& pdfPath, const QString& pages, int dpi, const RecognitionOptions& options);
+
+    //! The OCR text languages installed in Reprise's shipped tessdata folder (the same path findRepriseTessdata()
+    //! resolves), as (code, friendly-display-name) pairs for the intake dialog's language dropdown. 'osd'
+    //! (orientation/script detection, not a text language) is EXCLUDED. A code with no known friendly name falls
+    //! back to the raw code. Empty when the shipped tessdata folder is missing or holds no language packs.
+    std::vector<std::pair<std::string, std::string> > installedOcrLanguages() const;
 
     //! Kill the running Audiveris process and abandon the run. finished() is NOT emitted after a cancel().
     void cancel();
@@ -86,6 +109,12 @@ private:
 
     //! Expand a free-form page range into explicit 1-based sheet numbers for Audiveris '-sheets'. Empty = all pages.
     std::vector<int> expandSheets(const QString& pages) const;
+
+    //! Turn the recognition options into the Audiveris '-constant FQN.field=value' switch tokens (a flat list ready to
+    //! append to the command: "-constant", "org....=value", ...). The SINGLE place both the GUI and the headless/MCP
+    //! paths converge on, since both reach start() with a RecognitionOptions. Master ON at defaults -> empty (no text
+    //! constants, preserving Audiveris's own defaults); master OFF -> only useOCR=false (and nothing else).
+    std::vector<std::string> buildTextConstants(const RecognitionOptions& options) const;
 
     //! Reprise's OWN shipped tessdata folder beside the running executable (<exeDir>/tessdata), resolved at runtime.
     //! It holds the legacy+LSTM combined traineddata Audiveris needs for its LEGACY-mode OCR init, so it wins over

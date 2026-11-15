@@ -68,9 +68,16 @@ private:
     //! Classic interactive flow (no "path" arg) OR headless flow (a "path" arg skips the picker + options dialog).
     muse::Ret importPdf(const muse::rcommand::Params& params);
 
-    //! Launch the recognition progress popup for pdfPath with the given page range + resolution (the popup's
-    //! view-model owns the Audiveris run + import). Also seeds the progress tracker so a poll sees it immediately.
-    void launchImport(const muse::io::path_t& pdfPath, const std::string& pages, int dpi);
+    //! Launch the recognition progress popup for pdfPath with the given page range + resolution + recognition options
+    //! (the popup's view-model owns the Audiveris run + import). Also seeds the progress tracker so a poll sees it
+    //! immediately. The options ride the progress UriQuery into the popup, which hands them to AudiverisRunner::start().
+    void launchImport(const muse::io::path_t& pdfPath, const std::string& pages, int dpi, const RecognitionOptions& options);
+
+    //! The OCR languages installed in Reprise's shipped tessdata, serialized as a JSON array of {code, name} objects
+    //! for the intake dialog's language dropdown (QML cannot enumerate files; the enumeration is done in C++ via
+    //! AudiverisRunner::installedOcrLanguages(), which excludes 'osd'). Always includes at least English so the
+    //! dropdown is never empty even if the tessdata folder cannot be read.
+    std::string buildLanguagesJson() const;
 
     //! Pre-flight the pixel size of an IMAGE input (PDFs are skipped -- Audiveris rasterises them at a chosen DPI, so
     //! there is no fixed pixel count to check). Mirrors Audiveris' SheetStub maxPixelCount cap (default 20,000,000):

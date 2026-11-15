@@ -119,7 +119,8 @@ void ImportProgressModel::setClosePopupOnComplete(bool close)
     emit closePopupOnCompleteChanged();
 }
 
-void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int dpi)
+void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int dpi,
+                               bool recognizeText, const QString& language, bool chordSymbols, bool lyricsAboveStaff)
 {
     //! Resolve the IoC context + build the runner now (first call only) -- the QQmlContext is attached by the
     //! time Component.onCompleted calls load(), so this is safe here where the ctor was not.
@@ -146,7 +147,13 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_stageText = muse::qtrc("reprise", "Starting Audiveris...");
     emit progressChanged();
 
-    const bool started = m_runner->start(io::path_t(pdfPath), pages, dpi);
+    RecognitionOptions options;
+    options.recognizeText = recognizeText;
+    options.language = language.trimmed().isEmpty() ? QString("eng") : language.trimmed();
+    options.chordSymbols = chordSymbols;
+    options.lyricsAboveStaff = lyricsAboveStaff;
+
+    const bool started = m_runner->start(io::path_t(pdfPath), pages, dpi, options);
     if (!started)
     {
         m_errorDetails.clear();
