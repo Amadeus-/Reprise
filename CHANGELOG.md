@@ -8,6 +8,20 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-11-15
+
+### Changed
+- **Language lists now put English first**: the Preferences **Installed languages** list and
+  **Default language** dropdown, and the intake dialog's **Text language** dropdown, now list
+  **English** first (the built-in baseline) with every other language alphabetized by its friendly
+  display name below it; the **Add a language** picker is likewise alphabetized by display name.
+  Previously the lists sorted purely alphabetically, so English fell between German and French.
+
+### Removed
+- **The "?" help icons on the Import Scan Options panel**: the faint question-mark glyphs (and their
+  hover tooltips) next to **Recognize text & lyrics** and **Lyrics appear above the staff
+  (uncommon)** are gone — the labels stand on their own.
+
 ## [0.12.0] — 2026-11-15
 
 ### Added
@@ -403,6 +417,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.1]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.11.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.10.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
