@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-14
+
+### Added
+- **Automatic text & lyric OCR — titles, lyrics, and tempo markings are now recognized**: Reprise
+  ships its own Tesseract **legacy+LSTM** training data (`eng` + `osd`) beside the executable and
+  points Audiveris at it (`TESSDATA_PREFIX`, resolved at runtime from the running exe's own
+  `tessdata` folder). Audiveris performs its text recognition (its TEXTS step) by initializing
+  Tesseract in **legacy** mode, which the system "fast" LSTM-only `eng.traineddata` cannot satisfy —
+  so without this, every OCR run failed silently (`No OCR'd lines`) and no lyrics, titles, or tempo
+  text ever reached the score. With the combined legacy data shipped in-tree, OCR works out of the
+  box and self-contained, independent of any system Tesseract install. On a Foster vocal score this
+  recovers ~195 lyric syllables plus the title and composer.
+
 ## [0.9.9] — 2026-11-14
 
 ### Fixed
@@ -348,6 +361,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.10.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.9]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.7]: https://github.com/Amadeus-/Reprise/tree/reprise-main
