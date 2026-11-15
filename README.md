@@ -41,8 +41,9 @@ compatibility.
   Standard / Best*. Reprise reads the PDF's own resolution and pre-selects the matching
   quality for you.
 - **Text & lyric recognition** — titles, lyrics, and tempo markings are read automatically
-  during import. Reprise ships the Tesseract training data Audiveris needs and points it there
-  for you, so OCR works out of the box with no extra setup.
+  during import. The **Tesseract OCR engine is bundled inside Audiveris** — not a separate
+  program — and Reprise ships the training data it needs and points it there for you, so
+  recognition works out of the box with no extra setup.
 - **Recognition options** — an **Options** panel on the Import Scan dialog lets you tune the
   recognition per import: toggle text/lyric OCR on or off, pick the OCR **language**, and opt in
   to **chord-symbol** detection or **lyrics-above-the-staff** scores. Sensible defaults mean you
@@ -52,8 +53,9 @@ compatibility.
 - **Streamlined, correction-focused UI** — the interface is pared down around
   scanning and correcting: a **Scans** home, a dedicated **Edit** workspace, and
   menus trimmed to what the workflow needs.
-- **Easy setup** — Preferences auto-detects your Audiveris and Tesseract installs on
-  first run, with manual override.
+- **Easy setup** — Preferences auto-detects your Audiveris install on first run, with
+  manual override. There is no separate Tesseract to install or configure — its OCR engine
+  ships **inside Audiveris**.
 - **Fully offline** — no account, sign-in, or network connection required; the
   online/cloud module is compiled out entirely.
 - **Built on MuseScore's editor** — full score editing, **MusicXML / MIDI import and
@@ -81,8 +83,9 @@ retained in full.
 - **[Audiveris](https://github.com/Audiveris/audiveris)** (installed separately) —
   performs the PDF optical music recognition. Reprise auto-detects it at its
   default install location.
-- **Tesseract** OCR language data — used for lyric/text recognition. Reprise ships
-  the required training data itself, so no separate Tesseract install is needed.
+- **Tesseract OCR** — **bundled inside Audiveris**, *not* a separate install. The OCR
+  engine ships as part of Audiveris, and Reprise provides the training data it needs, so
+  text and lyric recognition works out of the box.
 
 ## Building & running
 
@@ -107,7 +110,7 @@ For the underlying build system and dependencies, see MuseScore's
 - **[Audiveris](https://github.com/Audiveris/audiveris)** — optical music
   recognition.
 - **[Tesseract](https://github.com/tesseract-ocr/tesseract)** — OCR for text and
-  lyrics.
+  lyrics (bundled within Audiveris).
 
 ---
 
