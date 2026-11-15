@@ -69,6 +69,7 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "project/close",
         "project/save",
         "project/save-as",
+        "project/save-at",
         "project/export",
     };
     return s_allow;

@@ -103,8 +103,13 @@ compile_commands.json
 !/+Deploy (standalone)+.bat
 !/+Run (dev)+.bat
 
+# Tesseract legacy traineddata (large OCR data, provisioned by +Deploy — not tracked)
+/deploy-assets/tessdata/eng.traineddata
+/deploy-assets/tessdata/osd.traineddata
+
 # Local Reprise test PDFs (OMR import fixtures — not tracked)
 /test/Rochut vol 1.pdf
+/test/hardtimes-a4.pdf
 /test/Saint Saens_Gigout Tollite Hostia. Christmas Oratorio.pdf
 /test/rochut-p5-300dpi.png
 /test/rochut-2page.tif

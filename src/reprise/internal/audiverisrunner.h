@@ -87,6 +87,11 @@ private:
     //! Expand a free-form page range into explicit 1-based sheet numbers for Audiveris '-sheets'. Empty = all pages.
     std::vector<int> expandSheets(const QString& pages) const;
 
+    //! Reprise's OWN shipped tessdata folder beside the running executable (<exeDir>/tessdata), resolved at runtime.
+    //! It holds the legacy+LSTM combined traineddata Audiveris needs for its LEGACY-mode OCR init, so it wins over
+    //! any system Tesseract data. Empty if the shipped folder is missing or holds no *.traineddata.
+    muse::io::path_t findRepriseTessdata() const;
+
     //! Best-effort detection of a Tesseract tessdata directory to export as TESSDATA_PREFIX. Empty if unknown.
     muse::io::path_t findTessdataPrefix(const muse::io::path_t& audiverisExe) const;
 

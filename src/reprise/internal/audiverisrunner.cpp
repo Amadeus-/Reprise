@@ -23,6 +23,7 @@
 #include "audiverisrunner.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
@@ -60,6 +61,20 @@ muse::io::path_t AudiverisRunner::findAudiveris() const
 
     //! Otherwise the C#-matched detection search order (PATH names, then the standard install folders).
     return repriseConfiguration()->detectAudiveris();
+}
+
+muse::io::path_t AudiverisRunner::findRepriseTessdata() const
+{
+    //! Resolved at RUNTIME from the running executable's directory, never a build-time path, so the deployed
+    //! standalone build and the dev build each find the tessdata folder shipped beside their own Reprise.exe.
+    const QDir exeDir(QCoreApplication::applicationDirPath());
+    const QDir dir(exeDir.absoluteFilePath("tessdata"));
+    if (dir.exists() && !dir.entryList(QStringList() << "*.traineddata", QDir::Files).isEmpty())
+    {
+        return io::path_t(QDir::cleanPath(dir.absolutePath()));
+    }
+
+    return io::path_t();
 }
 
 muse::io::path_t AudiverisRunner::findTessdataPrefix(const muse::io::path_t& audiverisExe) const
@@ -256,15 +271,20 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_process->setProgram(audiverisExe.toQString());
     m_process->setArguments(qargs);
 
-    //! Point Tesseract at its training data. When the user configured a Tesseract path, derive the tessdata folder
-    //! from it (C# parity); otherwise fall back to the auto-detection next to Audiveris. Empty -> let Audiveris try
-    //! its own default.
+    //! Point Tesseract at its training data. Reprise SHIPS its own legacy+LSTM tessdata beside the executable, and
+    //! it MUST win: Audiveris inits Tesseract in LEGACY mode, which the system LSTM-only "fast" eng.traineddata
+    //! cannot satisfy (legacy init fails -> no OCR -> no lyrics/titles), so self-contained legacy data is the whole
+    //! point. Only when our shipped folder is missing do we fall back to the configured Tesseract path (C# parity),
+    //! then to the auto-detection next to Audiveris. Empty -> let Audiveris try its own default.
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    io::path_t tessdata;
-    const io::path_t configuredTesseract = repriseConfiguration()->tesseractPath();
-    if (!configuredTesseract.empty())
+    io::path_t tessdata = findRepriseTessdata();
+    if (tessdata.empty())
     {
-        tessdata = repriseConfiguration()->resolveTessdataPrefix(configuredTesseract);
+        const io::path_t configuredTesseract = repriseConfiguration()->tesseractPath();
+        if (!configuredTesseract.empty())
+        {
+            tessdata = repriseConfiguration()->resolveTessdataPrefix(configuredTesseract);
+        }
     }
     if (tessdata.empty())
     {
