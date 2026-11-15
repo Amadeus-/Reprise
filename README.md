@@ -11,7 +11,7 @@ of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.11.0) — work in progress.** Reprise is early software under
+> **Pre-release (0.12.0) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -56,6 +56,10 @@ compatibility.
 - **Easy setup** — Preferences auto-detects your Audiveris install on first run, with
   manual override. There is no separate Tesseract to install or configure — its OCR engine
   ships **inside Audiveris**.
+- **Manage recognition languages** — a **Text recognition** section in Preferences lets you set
+  the default OCR language and add, update, or remove language packs. Reprise ships and manages the
+  Tesseract training data itself (the OCR engine is bundled inside Audiveris); English works
+  offline out of the box, and extra languages download on demand when you ask for them.
 - **Fully offline** — no account, sign-in, or network connection required; the
   online/cloud module is compiled out entirely.
 - **Built on MuseScore's editor** — full score editing, **MusicXML / MIDI import and

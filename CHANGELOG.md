@@ -8,6 +8,30 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-15
+
+### Added
+- **Language-pack management in Preferences**: the Reprise Preferences page gains a **Text
+  recognition** section that manages the OCR language packs Reprise ships and reads. Pick the
+  **Default language** used when importing a scan; see the **Installed languages** (each with an
+  **Update** button, and a **Remove** button except for the built-in English baseline and the
+  current default); and **Add a language** from a curated set (German, French, Italian, Spanish,
+  Latin, Portuguese, Dutch, Russian, Polish). Each add/update downloads the pack on demand from the
+  Tesseract project's main `tessdata` repository (the legacy-capable combined model Reprise's OCR
+  needs), installing it to Reprise's own `tessdata` folder where Audiveris reads it. Downloads are
+  explicit and user-initiated only — English works fully offline out of the box, with no
+  background fetch or phone-home. The intake dialog's language dropdown now defaults to the
+  configured default language.
+- **Agent-facing MCP helpers** `reprise.list-languages`, `reprise.add-language`, and
+  `reprise.remove-language` (sharing the exact install/remove/enumerate code path as the
+  Preferences buttons), plus `reprise.capture-preferences` to grab the Preferences page headlessly.
+
+### Removed
+- **The standalone Tesseract path setting** (and its Detect button and auto-detection) from
+  Preferences. The Tesseract OCR engine is bundled inside Audiveris, and Reprise ships and manages
+  the training data itself — so there was never a separate Tesseract program to point at. The
+  shipped `tessdata` folder beside the executable is now the sole OCR data source.
+
 ## [0.11.0] — 2026-11-14
 
 ### Added
@@ -379,6 +403,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.11.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.10.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.9]: https://github.com/Amadeus-/Reprise/tree/reprise-main
