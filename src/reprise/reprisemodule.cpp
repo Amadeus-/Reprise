@@ -33,6 +33,8 @@
 #include "internal/screenshotcontroller.h"
 #include "internal/irepriseconfiguration.h"
 #include "internal/repriseconfiguration.h"
+#include "internal/ilanguagepackservice.h"
+#include "internal/languagepackservice.h"
 #include "internal/iimportprogresstracker.h"
 #include "internal/importprogresstracker.h"
 #include "internal/mcpcuration.h"
@@ -52,6 +54,12 @@ void RepriseModule::registerExports()
 {
     m_configuration = std::make_shared<RepriseConfiguration>();
     globalIoc()->registerExport<IRepriseConfiguration>(mname, m_configuration);
+
+    //! NOTE: OCR language-pack manager, exported globally so the Preferences pack manager, the intake dialog (via
+    //! AudiverisRunner::installedOcrLanguages), and the MCP helper commands all share one install/remove/enumerate
+    //! code path. Given the configuration so it can refuse removing the current default OCR language.
+    m_languagePackService = std::make_shared<LanguagePackService>(m_configuration);
+    globalIoc()->registerExport<ILanguagePackService>(mname, m_languagePackService);
 
     //! NOTE: Persistent Import-PDF progress snapshot, shared between the transient progress popup (writer) and the
     //! reprise.get-import-progress / reprise.get-import-errors MCP queries (readers). Exported globally so the

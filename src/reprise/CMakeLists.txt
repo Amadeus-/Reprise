@@ -43,6 +43,9 @@ target_sources(reprise PRIVATE
     internal/irepriseconfiguration.h
     internal/repriseconfiguration.cpp
     internal/repriseconfiguration.h
+    internal/ilanguagepackservice.h
+    internal/languagepackservice.cpp
+    internal/languagepackservice.h
 )
 
 #! NOTE: Reprise's Import-PDF flow reaches into project (IProjectSession, PROJECT_OPEN_COMMAND) and into
@@ -52,6 +55,11 @@ target_link_libraries(reprise PRIVATE project notation engraving)
 #! NOTE: reprise.capture-screenshot grabs the main QQuickWindow (QQuickWindow::grabWindow). muse_global links
 #! Qt::Quick only PRIVATEly, so the main reprise target must link it explicitly (the qml sub-target links it too).
 target_link_libraries(reprise PRIVATE Qt::Quick)
+
+#! NOTE: the OCR language-pack manager (LanguagePackService) downloads traineddata packs on demand with
+#! QNetworkAccessManager. QtNetwork core is a separate module from the cloud/NetworkAuth stack that 0.8.0 compiled
+#! out, so the fork links it explicitly here (user-initiated downloads only -- no background fetch / telemetry).
+target_link_libraries(reprise PRIVATE Qt::Network)
 
 if (MUE_BUILD_PROJECT_QML)
     add_subdirectory(qml/MuseScore/Reprise)

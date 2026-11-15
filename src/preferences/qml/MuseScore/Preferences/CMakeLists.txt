@@ -123,6 +123,7 @@ qt_add_qml_module(preferences_qml
         internal/PublishMuseScoreComSection.qml
         internal/RemoteControlSection.qml
         internal/RepriseRecognitionSection.qml
+        internal/RepriseTextRecognitionSection.qml
         internal/SaveToCloudSection.qml
         internal/ScrollPagesSection.qml
         internal/ThemeAdditionalOptionsSection.qml

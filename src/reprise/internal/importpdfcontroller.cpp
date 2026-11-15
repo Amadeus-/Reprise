@@ -596,6 +596,18 @@ void ImportPdfController::init()
     //! Dev tool: open + capture the intake dialog to a PNG (headless verification of the modal dialog).
     commandDispatcher()->onRequest<CaptureImportDialogCommand>(this, std::function<muse::RetVal<CaptureImportDialogCommand::Output>(const CaptureImportDialogCommand&)>(
                                                                    [this](const CaptureImportDialogCommand& c) { return captureImportDialog(c); }));
+
+    //! OCR language-pack helpers (list / add / remove), sharing the Preferences pack-manager code path.
+    commandDispatcher()->onRequest<ListLanguagesCommand>(this, std::function<muse::RetVal<ListLanguagesCommand::Output>(const ListLanguagesCommand&)>(
+                                                             [this](const ListLanguagesCommand&) { return listLanguages(); }));
+    commandDispatcher()->onRequest<AddLanguageCommand>(this, std::function<muse::RetVal<AddLanguageCommand::Output>(const AddLanguageCommand&)>(
+                                                           [this](const AddLanguageCommand& c) { return addLanguage(c); }));
+    commandDispatcher()->onRequest<RemoveLanguageCommand>(this, std::function<muse::RetVal<RemoveLanguageCommand::Output>(const RemoveLanguageCommand&)>(
+                                                              [this](const RemoveLanguageCommand& c) { return removeLanguage(c); }));
+
+    //! Dev tool: open + capture the Preferences dialog at the Reprise page to a PNG (headless verification).
+    commandDispatcher()->onRequest<CapturePreferencesCommand>(this, std::function<muse::RetVal<CapturePreferencesCommand::Output>(const CapturePreferencesCommand&)>(
+                                                                  [this](const CapturePreferencesCommand& c) { return capturePreferences(c); }));
 }
 
 muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
@@ -681,8 +693,11 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
         //! lyrics below), so an MCP caller that omits them gets exactly the proven default OCR behavior.
         RecognitionOptions options;
         options.recognizeText = params.at("recognizeText", Val(true)).toBool();
-        const std::string langArg = params.at("language", Val(std::string("eng"))).toString();
-        options.language = langArg.empty() ? QString("eng") : QString::fromStdString(langArg);
+        //! Default to the configured global default OCR language (omr/ocrLanguage) when no explicit "language" arg is
+        //! given, so a headless import matches what the GUI dialog would open on.
+        const std::string defaultLang = repriseConfiguration()->ocrLanguage();
+        const std::string langArg = params.at("language", Val(defaultLang)).toString();
+        options.language = langArg.empty() ? QString::fromStdString(defaultLang) : QString::fromStdString(langArg);
         options.chordSymbols = params.at("chordSymbols", Val(false)).toBool();
         options.lyricsAboveStaff = params.at("lyricsAboveStaff", Val(false)).toBool();
 
@@ -759,10 +774,11 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     query.addParam("detectedDpi", Val(detected.dpi));
 
     //! "Options" panel data: the installed OCR languages (enumerated in C++ from Reprise's tessdata, osd excluded) as a
-    //! JSON array of {code, name} for the language dropdown, plus the default option values the panel opens at.
+    //! JSON array of {code, name} for the language dropdown, plus the default option values the panel opens at. The
+    //! language defaults to the configured global default (omr/ocrLanguage), not a hardcoded eng.
     query.addParam("languagesJson", Val(buildLanguagesJson()));
     query.addParam("recognizeText", Val(true));
-    query.addParam("language", Val(std::string("eng")));
+    query.addParam("language", Val(repriseConfiguration()->ocrLanguage()));
     query.addParam("chordSymbols", Val(false));
     query.addParam("lyricsAboveStaff", Val(false));
 
@@ -1119,6 +1135,71 @@ muse::RetVal<GetImportErrorsCommand::Output> ImportPdfController::getImportError
     return muse::RetVal<GetImportErrorsCommand::Output>::make_ok(output);
 }
 
+std::string ImportPdfController::installedPacksJson() const
+{
+    QJsonArray arr;
+    for (const LanguagePackInfo& pack : languagePackService()->installedPacks())
+    {
+        QJsonObject obj;
+        obj["code"] = QString::fromStdString(pack.code);
+        obj["name"] = QString::fromStdString(pack.name);
+        arr.append(obj);
+    }
+
+    return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact)).toStdString();
+}
+
+muse::RetVal<ListLanguagesCommand::Output> ImportPdfController::listLanguages() const
+{
+    ListLanguagesCommand::Output output;
+
+    output.installedJson = installedPacksJson();
+
+    QJsonArray available;
+    for (const LanguagePackInfo& pack : languagePackService()->availablePacks())
+    {
+        QJsonObject obj;
+        obj["code"] = QString::fromStdString(pack.code);
+        obj["name"] = QString::fromStdString(pack.name);
+        available.append(obj);
+    }
+    output.availableJson = QString::fromUtf8(QJsonDocument(available).toJson(QJsonDocument::Compact)).toStdString();
+
+    output.defaultLanguage = repriseConfiguration()->ocrLanguage();
+
+    return muse::RetVal<ListLanguagesCommand::Output>::make_ok(output);
+}
+
+muse::RetVal<AddLanguageCommand::Output> ImportPdfController::addLanguage(const AddLanguageCommand& cmd)
+{
+    AddLanguageCommand::Output output;
+
+    const muse::Ret ret = languagePackService()->addOrUpdatePack(cmd.code);
+    output.ok = ret;
+    if (!ret)
+    {
+        output.error = ret.text();
+    }
+    output.installedJson = installedPacksJson();
+
+    return muse::RetVal<AddLanguageCommand::Output>::make_ok(output);
+}
+
+muse::RetVal<RemoveLanguageCommand::Output> ImportPdfController::removeLanguage(const RemoveLanguageCommand& cmd)
+{
+    RemoveLanguageCommand::Output output;
+
+    const muse::Ret ret = languagePackService()->removePack(cmd.code);
+    output.ok = ret;
+    if (!ret)
+    {
+        output.error = ret.text();
+    }
+    output.installedJson = installedPacksJson();
+
+    return muse::RetVal<RemoveLanguageCommand::Output>::make_ok(output);
+}
+
 void ImportPdfController::forceCloseAndSettle(const muse::UriQuery& query, QQuickWindow* known) const
 {
     //! Bounded GUI-thread event pump.
@@ -1230,10 +1311,10 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
     query.addParam("detectedDpi", Val(detected.dpi));
 
     //! Same "Options" panel data the interactive path passes, so the captured dialog renders the language dropdown and
-    //! the option defaults identically to what a user sees.
+    //! the option defaults identically to what a user sees (language defaults to the configured omr/ocrLanguage).
     query.addParam("languagesJson", Val(buildLanguagesJson()));
     query.addParam("recognizeText", Val(true));
-    query.addParam("language", Val(std::string("eng")));
+    query.addParam("language", Val(repriseConfiguration()->ocrLanguage()));
     query.addParam("chordSymbols", Val(false));
     query.addParam("lyricsAboveStaff", Val(false));
 
@@ -1317,6 +1398,97 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
     if (img.isNull())
     {
         out.error = "grab failed (dialog window not renderable?)";
+        return RV::make_ok(out);
+    }
+
+    if (!img.save(absPath.toQString(), "PNG"))
+    {
+        out.error = "failed to save PNG to " + absPath.toStdString();
+        return RV::make_ok(out);
+    }
+
+    out.ok = true;
+    out.path = absPath.toStdString();
+    return RV::make_ok(out);
+}
+
+muse::RetVal<CapturePreferencesCommand::Output> ImportPdfController::capturePreferences(const CapturePreferencesCommand& cmd)
+{
+    using RV = muse::RetVal<CapturePreferencesCommand::Output>;
+
+    CapturePreferencesCommand::Output out;
+
+    //! Writable Reprise screenshots dir (same convention + fixed overwrite file as the other capture tools), with an
+    //! optional per-call override.
+    const io::path_t dir = globalConfiguration()->userAppDataPath() + "/screenshots";
+    fileSystem()->makePath(dir);
+    const io::path_t absPath = cmd.outPath.empty() ? (dir + "/mcp-preferences.png") : io::path_t(cmd.outPath);
+
+    //! Open the Preferences dialog ON the Reprise page: the dialog's QML root has a currentPageId property the URI
+    //! param maps to, so it loads straight to our page (where the language-pack UI lives). Async open (never openSync),
+    //! same as captureImportDialog, so this GUI-thread handler is not blocked inside the dialog's modal loop.
+    UriQuery query("muse://preferences");
+    query.addParam("currentPageId", Val(std::string("reprise")));
+
+    forceCloseAndSettle(query, nullptr);
+
+    interactive()->open(query);
+
+    auto spin = [](int ms)
+    {
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timer.start(ms);
+        loop.exec();
+    };
+
+    //! Wait (bounded) for the Preferences dialog window to exist, be top, and be exposed before grabbing.
+    QQuickWindow* dlg = nullptr;
+    QElapsedTimer timer;
+    timer.start();
+    const int timeoutMs = 8000;
+    while (timer.elapsed() < timeoutMs)
+    {
+        spin(80);
+
+        if (!interactive()->isOpened(query).val)
+        {
+            continue;
+        }
+
+        QWindow* tw = interactive()->topWindow();
+        QQuickWindow* qw = qobject_cast<QQuickWindow*>(tw);
+        if (qw && qw->isVisible())
+        {
+            qw->raise();
+            qw->requestActivate();
+            if (qw->isExposed())
+            {
+                dlg = qw;
+                break;
+            }
+        }
+    }
+
+    if (!dlg)
+    {
+        forceCloseAndSettle(query, nullptr);
+        out.error = "preferences dialog did not become visible in time";
+        return RV::make_ok(out);
+    }
+
+    //! A few more pumps so the page content (and our section) is fully laid out before the grab.
+    spin(200);
+
+    QImage img = dlg->grabWindow();
+
+    forceCloseAndSettle(query, dlg);
+
+    if (img.isNull())
+    {
+        out.error = "grab failed (preferences window not renderable?)";
         return RV::make_ok(out);
     }
 

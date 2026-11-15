@@ -77,99 +77,19 @@ muse::io::path_t AudiverisRunner::findRepriseTessdata() const
     return io::path_t();
 }
 
-namespace {
-//! Map a Tesseract language code to a friendly English display name for the intake dialog's dropdown. Covers the
-//! common languages a future pack manager might add; an unmapped code falls back to the raw code (never blank). This
-//! is a display-only convenience -- the code itself is what Audiveris receives.
-static QString ocrLanguageDisplayName(const QString& code)
-{
-    static const struct { const char* code; const char* name; } kMap[] = {
-        { "eng", "English" },
-        { "deu", "German" },
-        { "fra", "French" },
-        { "ita", "Italian" },
-        { "spa", "Spanish" },
-        { "lat", "Latin" },
-        { "por", "Portuguese" },
-        { "nld", "Dutch" },
-        { "rus", "Russian" },
-        { "pol", "Polish" },
-    };
-
-    for (const auto& entry : kMap)
-    {
-        if (code.compare(QString::fromLatin1(entry.code), Qt::CaseInsensitive) == 0)
-        {
-            return QString::fromLatin1(entry.name);
-        }
-    }
-
-    return code;
-}
-}
-
 std::vector<std::pair<std::string, std::string> > AudiverisRunner::installedOcrLanguages() const
 {
+    //! Delegate to the single owner of language-pack enumeration (ILanguagePackService): it enumerates the
+    //! *.traineddata packs in Reprise's shipped tessdata folder (osd excluded) and maps each code to a friendly
+    //! display name. This keeps the intake-dialog dropdown, the Preferences pack manager, and the MCP helpers all
+    //! reading the exact same installed list. Returned here as (code, name) pairs for buildLanguagesJson().
     std::vector<std::pair<std::string, std::string> > result;
-
-    //! Enumerate the *.traineddata packs in Reprise's shipped tessdata folder (the same path TESSDATA_PREFIX points
-    //! at). Each file's base name is the language code; 'osd' is orientation/script detection, NOT a text language, so
-    //! it is excluded from the picker. Sorted by code so the list is stable across runs.
-    const io::path_t tessdata = findRepriseTessdata();
-    if (tessdata.empty())
+    for (const LanguagePackInfo& pack : languagePackService()->installedPacks())
     {
-        return result;
-    }
-
-    const QDir dir(tessdata.toQString());
-    const QStringList files = dir.entryList(QStringList() << "*.traineddata", QDir::Files, QDir::Name);
-    for (const QString& file : files)
-    {
-        const QString code = QFileInfo(file).completeBaseName();
-        if (code.isEmpty() || code.compare("osd", Qt::CaseInsensitive) == 0)
-        {
-            continue;
-        }
-
-        result.push_back({ code.toStdString(), ocrLanguageDisplayName(code).toStdString() });
+        result.push_back({ pack.code, pack.name });
     }
 
     return result;
-}
-
-muse::io::path_t AudiverisRunner::findTessdataPrefix(const muse::io::path_t& audiverisExe) const
-{
-    //! If the user already configured it, don't second-guess them.
-    if (qEnvironmentVariableIsSet("TESSDATA_PREFIX"))
-    {
-        return io::path_t();
-    }
-
-    const QDir exeDir = QFileInfo(audiverisExe.toQString()).absoluteDir();
-
-    QStringList candidates = {
-        exeDir.absoluteFilePath("tessdata"),
-        exeDir.absoluteFilePath("../tessdata"),
-        exeDir.absoluteFilePath("app/tessdata"),
-        "C:/Program Files/tesseract-ocr/tessdata",
-    };
-
-    const QString programData = qEnvironmentVariable("PROGRAMDATA");
-    if (!programData.isEmpty())
-    {
-        candidates << (QDir::fromNativeSeparators(programData) + "/tessdata");
-    }
-
-    for (const QString& candidate : candidates)
-    {
-        const QDir dir(candidate);
-        if (dir.exists() && !dir.entryList(QStringList() << "*.traineddata", QDir::Files).isEmpty())
-        {
-            return io::path_t(QDir::cleanPath(dir.absolutePath()));
-        }
-    }
-
-    return io::path_t();
 }
 
 muse::io::path_t AudiverisRunner::locateOutput(const muse::io::path_t& dir, const std::string& base, const std::string& ext) const
@@ -378,34 +298,22 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_process->setProgram(audiverisExe.toQString());
     m_process->setArguments(qargs);
 
-    //! Point Tesseract at its training data. Reprise SHIPS its own legacy+LSTM tessdata beside the executable, and
-    //! it MUST win: Audiveris inits Tesseract in LEGACY mode, which the system LSTM-only "fast" eng.traineddata
-    //! cannot satisfy (legacy init fails -> no OCR -> no lyrics/titles), so self-contained legacy data is the whole
-    //! point. Only when our shipped folder is missing do we fall back to the configured Tesseract path (C# parity),
-    //! then to the auto-detection next to Audiveris. Empty -> let Audiveris try its own default.
+    //! Point Tesseract at its training data. Reprise SHIPS its own legacy+LSTM tessdata beside the executable and it
+    //! is the SOLE authoritative source: Audiveris inits Tesseract in LEGACY mode, which the system LSTM-only "fast"
+    //! eng.traineddata cannot satisfy (legacy init fails -> no OCR -> no lyrics/titles), so only the self-contained
+    //! legacy data Reprise ships + manages is ever used. If the shipped folder is somehow missing we log a clear
+    //! error rather than silently falling back to a wrong system model (which would produce garbage OCR).
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    io::path_t tessdata = findRepriseTessdata();
-    if (tessdata.empty())
-    {
-        const io::path_t configuredTesseract = repriseConfiguration()->tesseractPath();
-        if (!configuredTesseract.empty())
-        {
-            tessdata = repriseConfiguration()->resolveTessdataPrefix(configuredTesseract);
-        }
-    }
-    if (tessdata.empty())
-    {
-        tessdata = findTessdataPrefix(audiverisExe);
-    }
-
+    const io::path_t tessdata = findRepriseTessdata();
     if (!tessdata.empty())
     {
         env.insert("TESSDATA_PREFIX", tessdata.toQString());
         LOGI() << "Reprise: TESSDATA_PREFIX set to " << tessdata.toQString();
     }
-    else if (!qEnvironmentVariableIsSet("TESSDATA_PREFIX"))
+    else
     {
-        LOGW() << "Reprise: TESSDATA_PREFIX not set and no tessdata directory detected; running Audiveris without it";
+        LOGW() << "Reprise: shipped tessdata folder (<exeDir>/tessdata) is missing or empty; OCR will not work. "
+                  "Reprise ships and manages this data -- reinstall or redeploy to restore it.";
     }
     m_process->setProcessEnvironment(env);
 

@@ -58,6 +58,14 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API tool: open the Import-Scan intake dialog for a file and capture it to a PNG
     makeCommandInfo<CaptureImportDialogCommand>(),
+
+    // Reprise OCR language-pack helpers (list / add / remove), sharing the Preferences manager's code path
+    makeCommandInfo<ListLanguagesCommand>(),
+    makeCommandInfo<AddLanguageCommand>(),
+    makeCommandInfo<RemoveLanguageCommand>(),
+
+    // Reprise dev MCP/API tool: open the Preferences dialog at the Reprise page and capture it to a PNG
+    makeCommandInfo<CapturePreferencesCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

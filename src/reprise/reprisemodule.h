@@ -31,6 +31,7 @@ class ImportPdfController;
 class ScreenshotController;
 class ImportProgressTracker;
 class RepriseConfiguration;
+class LanguagePackService;
 
 //! NOTE: Reprise fork module. Houses the local-Audiveris "Import PDF" orchestration, kept isolated
 //! from upstream modules so that "Update (from upstream)" merges stay clean.
@@ -56,6 +57,7 @@ public:
 
 private:
     std::shared_ptr<RepriseConfiguration> m_configuration;
+    std::shared_ptr<LanguagePackService> m_languagePackService;
     std::shared_ptr<ImportProgressTracker> m_importProgressTracker;
 };
 

@@ -174,4 +174,125 @@ struct CaptureImportDialogCommand {
         muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
     };
 };
+
+//! NOTE Reprise dev MCP/API helper: list the OCR language packs Reprise knows about -- the installed ones (in the
+//! shipped tessdata folder) and the curated packs available to add -- plus the current default language. Feeds the
+//! SAME ILanguagePackService the Preferences pack manager and the intake dialog use, so a headless agent can verify
+//! add / remove / list without the GUI. Read-only.
+struct ListLanguagesCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/list-languages");
+    static const inline auto title = muse::MnemonicString("reprise", "List languages");
+    static const inline auto description = muse::TranslatableString("reprise", "List installed and available OCR language packs");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    struct Output {
+        std::string installedJson;
+        std::string availableJson;
+        std::string defaultLanguage;
+    };
+
+    using O = ListLanguagesCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "installedJson", &O::installedJson, "JSON array of installed packs: [{code,name}]" },
+        muse::rcommand::Field{ "availableJson", &O::availableJson, "JSON array of not-yet-installed packs: [{code,name}]" },
+        muse::rcommand::Field{ "defaultLanguage", &O::defaultLanguage, "The current default OCR language code" },
+    };
+};
+
+//! NOTE Reprise dev MCP/API helper: download + install (or update) an OCR language pack by code, via the SAME
+//! ILanguagePackService code path the Preferences "Add language..." button uses. Blocking (the download runs to
+//! completion before returning). ok=false + an error on an unknown code / no internet / a failed install.
+struct AddLanguageCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/add-language");
+    static const inline auto title = muse::MnemonicString("reprise", "Add language");
+    static const inline auto description = muse::TranslatableString("reprise", "Download and install an OCR language pack");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+
+    std::string code;      // required: the Tesseract language code to install, e.g. "lat"
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "code", &AddLanguageCommand::code,
+                               "Tesseract language code to download and install, e.g. 'lat' or 'fra'",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        std::string error;
+        std::string installedJson;
+    };
+
+    using O = AddLanguageCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the pack was installed" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+        muse::rcommand::Field{ "installedJson", &O::installedJson, "JSON array of installed packs after the call" },
+    };
+};
+
+//! NOTE Reprise dev MCP/API helper: remove an installed OCR language pack by code, via the SAME ILanguagePackService
+//! code path the Preferences "Remove" button uses. Refuses to remove English or the current default language.
+struct RemoveLanguageCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/remove-language");
+    static const inline auto title = muse::MnemonicString("reprise", "Remove language");
+    static const inline auto description = muse::TranslatableString("reprise", "Remove an installed OCR language pack");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+
+    std::string code;      // required: the Tesseract language code to remove
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "code", &RemoveLanguageCommand::code,
+                               "Tesseract language code of the installed pack to remove, e.g. 'lat'",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        std::string error;
+        std::string installedJson;
+    };
+
+    using O = RemoveLanguageCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the pack was removed" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+        muse::rcommand::Field{ "installedJson", &O::installedJson, "JSON array of installed packs after the call" },
+    };
+};
+
+//! NOTE Reprise dev MCP/API tool: open the Preferences dialog at the Reprise page and capture it to a PNG, so the
+//! Preferences language-pack UI -- otherwise only reachable through live GUI clicks -- can be verified headlessly.
+//! Opens "muse://preferences?currentPageId=reprise" ASYNC, spins the GUI event loop until the dialog window is
+//! exposed, grabWindow()s it, then closes + fully settles the dialog (same pattern as capture-import-dialog).
+//! "outPath" optionally overrides the default <userAppDataPath>/screenshots/mcp-preferences.png.
+struct CapturePreferencesCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/capture-preferences");
+    static const inline auto title = muse::MnemonicString("reprise", "Capture preferences");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Open the Preferences dialog at the Reprise page and capture it to a PNG");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    std::string outPath;   // optional absolute output PNG path override
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "outPath", &CapturePreferencesCommand::outPath,
+                               "Absolute output PNG path (optional; default is a fixed overwrite file)",
+                               muse::rcommand::Presence::Optional },
+    };
+
+    struct Output {
+        bool ok = false;
+        std::string path;
+        std::string error;
+    };
+
+    using O = CapturePreferencesCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the capture succeeded" },
+        muse::rcommand::Field{ "path", &O::path, "Absolute path of the written PNG (empty on failure)" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
 }

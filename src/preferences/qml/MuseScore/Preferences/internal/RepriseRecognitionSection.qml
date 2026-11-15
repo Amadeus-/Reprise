@@ -32,11 +32,8 @@ BaseSection {
     navigation.direction: NavigationPanel.Both
 
     property string audiverisPath: ""
-    property string tesseractPath: ""
     property string audiverisDir: ""
-    property string tesseractDir: ""
     property string audiverisStatus: ""
-    property string tesseractStatus: ""
 
     property int scanResolution: 300
     property bool closePopupOnComplete: false
@@ -44,15 +41,13 @@ BaseSection {
     readonly property var executableFilter: [qsTrc("preferences", "Executable files") + " (*.exe)"]
 
     signal audiverisPathChangeRequested(string path)
-    signal tesseractPathChangeRequested(string path)
     signal scanResolutionChangeRequested(int dpi)
     signal closePopupOnCompleteChangeRequested(bool value)
     signal detectAudiverisRequested()
-    signal detectTesseractRequested()
 
     //! Show a transient recognition status. A success ("Found: ...") message fades out after 2s; a
     //! "Not detected" message stays persistent. The detected path itself lives in the FilePicker, not here,
-    //! so fading the status never clears the path. Each row owns its own timer + animation (per-row isolation).
+    //! so fading the status never clears the path. The row owns its own timer + animation.
     function showAudiverisStatus(text, isSuccess) {
         audiverisFadeTimer.stop()
         audiverisFadeAnimation.stop()
@@ -60,16 +55,6 @@ BaseSection {
         audiverisStatusLabel.opacity = Boolean(text) ? audiverisStatusLabel.baseOpacity : 0.0
         if (Boolean(text) && isSuccess) {
             audiverisFadeTimer.restart()
-        }
-    }
-
-    function showTesseractStatus(text, isSuccess) {
-        tesseractFadeTimer.stop()
-        tesseractFadeAnimation.stop()
-        root.tesseractStatus = text
-        tesseractStatusLabel.opacity = Boolean(text) ? tesseractStatusLabel.baseOpacity : 0.0
-        if (Boolean(text) && isSuccess) {
-            tesseractFadeTimer.restart()
         }
     }
 
@@ -155,92 +140,6 @@ BaseSection {
                 //! which flips visible to false and collapses the row. onFinished fires only on natural
                 //! completion, not on stop(), so a re-detect that interrupts the fade never clears spuriously.
                 onFinished: root.showAudiverisStatus("", false)
-            }
-        }
-    }
-
-    Column {
-        width: parent.width
-        spacing: 6
-
-        StyledTextLabel {
-            text: qsTrc("preferences", "Tesseract program (tesseract.exe)")
-            horizontalAlignment: Text.AlignLeft
-        }
-
-        Row {
-            width: parent.width
-            spacing: root.columnSpacing
-
-            FilePicker {
-                id: tesseractPicker
-
-                pathFieldWidth: root.columnWidth
-                anchors.verticalCenter: parent.verticalCenter
-
-                dialogTitle: qsTrc("preferences", "Choose the Tesseract program")
-                filter: root.executableFilter
-                dir: root.tesseractDir
-
-                path: root.tesseractPath
-
-                navigation: root.navigation
-                navigationRowOrderStart: 1
-                navigationColumnOrderStart: 0
-
-                onPathEdited: function(newPath) {
-                    root.tesseractPathChangeRequested(newPath)
-                }
-            }
-
-            FlatButton {
-                anchors.verticalCenter: parent.verticalCenter
-
-                text: qsTrc("preferences", "Detect")
-
-                navigation.name: "DetectTesseractButton"
-                navigation.panel: root.navigation
-                navigation.row: 1
-                navigation.column: 2
-
-                onClicked: {
-                    root.detectTesseractRequested()
-                }
-            }
-        }
-
-        StyledTextLabel {
-            id: tesseractStatusLabel
-
-            readonly property real baseOpacity: 0.6
-
-            width: parent.width
-            text: root.tesseractStatus
-            //! An empty status is hidden; a Column excludes an invisible child from layout AND spacing,
-            //! so the row collapses to zero height and everything below shifts up.
-            visible: root.tesseractStatus !== ""
-            opacity: baseOpacity
-            horizontalAlignment: Text.AlignLeft
-            wrapMode: Text.WordWrap
-
-            Timer {
-                id: tesseractFadeTimer
-                interval: 2000
-                repeat: false
-                onTriggered: tesseractFadeAnimation.start()
-            }
-
-            NumberAnimation {
-                id: tesseractFadeAnimation
-                target: tesseractStatusLabel
-                property: "opacity"
-                to: 0.0
-                duration: 600
-
-                //! Fade THEN collapse: only once the opacity fade completes naturally do we clear the text,
-                //! which flips visible to false and collapses the row. onFinished fires only on natural
-                //! completion, not on stop(), so a re-detect that interrupts the fade never clears spuriously.
-                onFinished: root.showTesseractStatus("", false)
             }
         }
     }

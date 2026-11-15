@@ -41,19 +41,24 @@ static const Settings::Key LAST_IMPORT_PDF_DIR(module_name, "application/paths/l
 static const Settings::Key SCAN_RESOLUTION(module_name, "import/scanResolution");
 static const Settings::Key CLOSE_POPUP_ON_COMPLETE(module_name, "import/closePopupOnComplete");
 
-//! New recognition-path keys (C# parity: both point at the program's .exe).
+//! Audiveris program path (C# parity: points at the program's .exe; empty = auto-detect).
 static const Settings::Key AUDIVERIS_PATH(module_name, "omr/audiverisPath");
-static const Settings::Key TESSERACT_PATH(module_name, "omr/tesseractPath");
+
+//! Global default OCR text language (Tesseract code) the intake dialog's language dropdown opens on.
+static const Settings::Key OCR_LANGUAGE(module_name, "omr/ocrLanguage");
 
 //! Default scan resolution (dpi). The useful range for notation really starts ~300.
 static constexpr int DEFAULT_SCAN_RESOLUTION = 300;
+
+//! The bundled baseline OCR language pack: English always ships beside the executable.
+static const std::string DEFAULT_OCR_LANGUAGE("eng");
 
 void RepriseConfiguration::init()
 {
     settings()->setDefaultValue(SCAN_RESOLUTION, Val(DEFAULT_SCAN_RESOLUTION));
     settings()->setDefaultValue(CLOSE_POPUP_ON_COMPLETE, Val(false));
     settings()->setDefaultValue(AUDIVERIS_PATH, Val(std::string()));
-    settings()->setDefaultValue(TESSERACT_PATH, Val(std::string()));
+    settings()->setDefaultValue(OCR_LANGUAGE, Val(DEFAULT_OCR_LANGUAGE));
     settings()->setDefaultValue(LAST_IMPORT_PDF_DIR, Val(std::string()));
 }
 
@@ -67,16 +72,6 @@ void RepriseConfiguration::setAudiverisPath(const muse::io::path_t& path)
     settings()->setSharedValue(AUDIVERIS_PATH, Val(path.toStdString()));
 }
 
-muse::io::path_t RepriseConfiguration::tesseractPath() const
-{
-    return settings()->value(TESSERACT_PATH).toPath();
-}
-
-void RepriseConfiguration::setTesseractPath(const muse::io::path_t& path)
-{
-    settings()->setSharedValue(TESSERACT_PATH, Val(path.toStdString()));
-}
-
 int RepriseConfiguration::scanResolution() const
 {
     return settings()->value(SCAN_RESOLUTION).toInt();
@@ -85,6 +80,17 @@ int RepriseConfiguration::scanResolution() const
 void RepriseConfiguration::setScanResolution(int dpi)
 {
     settings()->setSharedValue(SCAN_RESOLUTION, Val(dpi));
+}
+
+std::string RepriseConfiguration::ocrLanguage() const
+{
+    const std::string code = settings()->value(OCR_LANGUAGE).toString();
+    return code.empty() ? DEFAULT_OCR_LANGUAGE : code;
+}
+
+void RepriseConfiguration::setOcrLanguage(const std::string& code)
+{
+    settings()->setSharedValue(OCR_LANGUAGE, Val(code.empty() ? DEFAULT_OCR_LANGUAGE : code));
 }
 
 bool RepriseConfiguration::closePopupOnComplete() const
@@ -172,70 +178,6 @@ muse::io::path_t RepriseConfiguration::detectAudiveris() const
                 return muse::io::path_t(QDir::cleanPath(info.absoluteFilePath()));
             }
         }
-    }
-
-    return muse::io::path_t();
-}
-
-muse::io::path_t RepriseConfiguration::detectTesseract() const
-{
-    //! C# Recognizer.DetectTessdata(): <base>/Tesseract-OCR/tesseract.exe for the three ProgramFiles bases, else PATH.
-    static const char* const BASE_VARS[] = { "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432" };
-    for (const char* const var : BASE_VARS)
-    {
-        const QString base = qEnvironmentVariable(var);
-        if (base.isEmpty())
-        {
-            continue;
-        }
-
-        const QFileInfo info(QDir(base).absoluteFilePath("Tesseract-OCR/tesseract.exe"));
-        if (info.exists())
-        {
-            return muse::io::path_t(QDir::cleanPath(info.absoluteFilePath()));
-        }
-    }
-
-    return which("tesseract");
-}
-
-muse::io::path_t RepriseConfiguration::resolveTessdataPrefix(const muse::io::path_t& configured) const
-{
-    //! C# Recognizer.ResolveTessdata(): a file -> its sibling "tessdata"; a folder -> itself when it IS a tessdata
-    //! folder, else its "tessdata" child, else the folder itself (back-compat with an old folder-style value).
-    const QString c = configured.toQString().trimmed();
-    if (c.isEmpty())
-    {
-        return muse::io::path_t();
-    }
-
-    const QFileInfo info(c);
-    if (info.exists() && info.isFile())
-    {
-        const QString sibling = info.absoluteDir().absoluteFilePath("tessdata");
-        if (QFileInfo(sibling).isDir())
-        {
-            return muse::io::path_t(QDir::cleanPath(sibling));
-        }
-
-        return muse::io::path_t();
-    }
-
-    if (info.exists() && info.isDir())
-    {
-        const QString cleaned = QDir::cleanPath(c);
-        if (QDir(cleaned).dirName().compare("tessdata", Qt::CaseInsensitive) == 0)
-        {
-            return muse::io::path_t(cleaned);
-        }
-
-        const QString child = QDir(cleaned).absoluteFilePath("tessdata");
-        if (QFileInfo(child).isDir())
-        {
-            return muse::io::path_t(QDir::cleanPath(child));
-        }
-
-        return muse::io::path_t(cleaned);
     }
 
     return muse::io::path_t();

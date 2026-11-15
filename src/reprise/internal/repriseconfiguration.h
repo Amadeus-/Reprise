@@ -28,7 +28,7 @@
 
 namespace mu::reprise {
 //! settings()-backed implementation of IRepriseConfiguration. Keys live under the reprise/* group so upstream
-//! merges stay clean. The detection + tessdata resolution are a faithful Qt port of the C# Reprise Recognizer.
+//! merges stay clean. The Audiveris detection search-order is a faithful Qt port of the C# Reprise Recognizer.
 class RepriseConfiguration : public IRepriseConfiguration
 {
 public:
@@ -40,11 +40,11 @@ public:
     muse::io::path_t audiverisPath() const override;
     void setAudiverisPath(const muse::io::path_t& path) override;
 
-    muse::io::path_t tesseractPath() const override;
-    void setTesseractPath(const muse::io::path_t& path) override;
-
     int scanResolution() const override;
     void setScanResolution(int dpi) override;
+
+    std::string ocrLanguage() const override;
+    void setOcrLanguage(const std::string& code) override;
 
     bool closePopupOnComplete() const override;
     void setClosePopupOnComplete(bool close) override;
@@ -53,9 +53,6 @@ public:
     void setLastImportPdfDir(const muse::io::path_t& dir) override;
 
     muse::io::path_t detectAudiveris() const override;
-    muse::io::path_t detectTesseract() const override;
-
-    muse::io::path_t resolveTessdataPrefix(const muse::io::path_t& configured) const override;
 
 private:
     //! C# Recognizer.Which(): scan each PATH directory for <name>, <name>.exe, <name>.bat, <name>.cmd. Empty if none.

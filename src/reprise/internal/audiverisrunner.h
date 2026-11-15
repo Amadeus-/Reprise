@@ -34,6 +34,7 @@
 #include "global/io/path.h"
 
 #include "irepriseconfiguration.h"
+#include "ilanguagepackservice.h"
 
 class QProcess;
 
@@ -106,6 +107,7 @@ signals:
 
 private:
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
+    muse::GlobalInject<mu::reprise::ILanguagePackService> languagePackService;
 
     //! Expand a free-form page range into explicit 1-based sheet numbers for Audiveris '-sheets'. Empty = all pages.
     std::vector<int> expandSheets(const QString& pages) const;
@@ -117,12 +119,10 @@ private:
     std::vector<std::string> buildTextConstants(const RecognitionOptions& options) const;
 
     //! Reprise's OWN shipped tessdata folder beside the running executable (<exeDir>/tessdata), resolved at runtime.
-    //! It holds the legacy+LSTM combined traineddata Audiveris needs for its LEGACY-mode OCR init, so it wins over
-    //! any system Tesseract data. Empty if the shipped folder is missing or holds no *.traineddata.
+    //! It holds the legacy+LSTM combined traineddata Audiveris needs for its LEGACY-mode OCR init, and is the SOLE
+    //! authoritative tessdata source (Reprise ships + manages the data). Empty if the shipped folder is missing or
+    //! holds no *.traineddata -- which is logged as an error (never silently falls back to a wrong system model).
     muse::io::path_t findRepriseTessdata() const;
-
-    //! Best-effort detection of a Tesseract tessdata directory to export as TESSDATA_PREFIX. Empty if unknown.
-    muse::io::path_t findTessdataPrefix(const muse::io::path_t& audiverisExe) const;
 
     //! Search a directory (recursively) for the first file named <base>.<ext>, else any *.<ext>. Empty if none.
     muse::io::path_t locateOutput(const muse::io::path_t& dir, const std::string& base, const std::string& ext) const;

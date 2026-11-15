@@ -22,15 +22,18 @@
 
 #pragma once
 
+#include <string>
+
 #include "modularity/imoduleinterface.h"
 #include "global/io/path.h"
 
 namespace mu::reprise {
 //! NOTE: Single Reprise-private configuration surface, exported globally so the Preferences page view-model, the
 //! Import-PDF controller, the async runner, and the progress popup all read/write the SAME settings. Consolidates
-//! the three earlier scattered reprise/* keys (lastImportPdfDir, scanResolution, closePopupOnComplete) and adds the
-//! two recognition-path keys (audiverisPath, tesseractPath). Also owns the detection search-order (ported faithfully
-//! from the C# Reprise Recognizer) and the tessdata resolution used to set TESSDATA_PREFIX for Audiveris' OCR.
+//! the scattered reprise/* keys (lastImportPdfDir, scanResolution, closePopupOnComplete) plus the Audiveris program
+//! path and the default OCR language. Also owns the Audiveris detection search-order (ported faithfully from the C#
+//! Reprise Recognizer). The Tesseract OCR engine ships bundled inside Audiveris and Reprise ships + manages its
+//! training data (see ILanguagePackService), so there is no standalone Tesseract path to configure any more.
 class IRepriseConfiguration : MODULE_GLOBAL_INTERFACE
 {
     INTERFACE_ID(IRepriseConfiguration)
@@ -42,13 +45,14 @@ public:
     virtual muse::io::path_t audiverisPath() const = 0;
     virtual void setAudiverisPath(const muse::io::path_t& path) = 0;
 
-    //! Configured Tesseract executable (tesseract.exe, C# parity). TESSDATA_PREFIX is derived from it on import.
-    virtual muse::io::path_t tesseractPath() const = 0;
-    virtual void setTesseractPath(const muse::io::path_t& path) = 0;
-
     //! Scan resolution (dpi) handed to Audiveris for PDF rasterisation. Default 300.
     virtual int scanResolution() const = 0;
     virtual void setScanResolution(int dpi) = 0;
+
+    //! Global default OCR text language (Tesseract code, e.g. "eng") the intake dialog's language dropdown opens on.
+    //! Only a currently-installed language pack should be stored here. Default "eng" (the bundled baseline pack).
+    virtual std::string ocrLanguage() const = 0;
+    virtual void setOcrLanguage(const std::string& code) = 0;
 
     //! When set, the recognition progress popup auto-closes once the import succeeds. Default false.
     virtual bool closePopupOnComplete() const = 0;
@@ -61,14 +65,5 @@ public:
     //! Locate Audiveris by the C# Recognizer search order (PATH names audiveris/Audiveris/oemer, then the standard
     //! install folders under the common program-file bases). Empty if nothing is found.
     virtual muse::io::path_t detectAudiveris() const = 0;
-
-    //! Locate Tesseract (tesseract.exe) by the C# Recognizer search order (Tesseract-OCR under the program-file
-    //! bases, else on PATH). Empty if nothing is found.
-    virtual muse::io::path_t detectTesseract() const = 0;
-
-    //! Resolve the tessdata folder for TESSDATA_PREFIX from a configured value: a tesseract.exe path (its sibling
-    //! "tessdata"), or a folder (itself if it IS a tessdata folder, else its "tessdata" child, else itself).
-    //! Accepting a folder keeps back-compat with an old folder-style stored value. Empty if nothing usable.
-    virtual muse::io::path_t resolveTessdataPrefix(const muse::io::path_t& configured) const = 0;
 };
 }

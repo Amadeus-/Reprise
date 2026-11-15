@@ -32,8 +32,8 @@ PreferencesPage {
     Component.onCompleted: {
         reprisePreferencesModel.load()
 
-        //! Never leave a path blank: auto-detect any path that was never set. A found path is persisted at once
-        //! (the model's setters write the shared setting immediately), so it is still there on reopen.
+        //! Never leave the Audiveris path blank: auto-detect it when it was never set. A found path is persisted at
+        //! once (the model's setter writes the shared setting immediately), so it is still there on reopen.
         if (!Boolean(reprisePreferencesModel.audiverisPath)) {
             var audiveris = reprisePreferencesModel.detectAudiveris()
             if (Boolean(audiveris)) {
@@ -44,15 +44,7 @@ PreferencesPage {
             }
         }
 
-        if (!Boolean(reprisePreferencesModel.tesseractPath)) {
-            var tesseract = reprisePreferencesModel.detectTesseract()
-            if (Boolean(tesseract)) {
-                reprisePreferencesModel.tesseractPath = tesseract
-                recognitionSection.showTesseractStatus(qsTrc("preferences", "Found: %1").arg(tesseract), true)
-            } else {
-                recognitionSection.showTesseractStatus(qsTrc("preferences", "Not detected. Set the path manually."), false)
-            }
-        }
+        textRecognitionSection.reload()
     }
 
     ReprisePreferencesModel {
@@ -67,9 +59,7 @@ PreferencesPage {
             id: recognitionSection
 
             audiverisPath: reprisePreferencesModel.audiverisPath
-            tesseractPath: reprisePreferencesModel.tesseractPath
             audiverisDir: reprisePreferencesModel.fileDirectory(reprisePreferencesModel.audiverisPath)
-            tesseractDir: reprisePreferencesModel.fileDirectory(reprisePreferencesModel.tesseractPath)
 
             scanResolution: reprisePreferencesModel.scanResolution
             closePopupOnComplete: reprisePreferencesModel.closePopupOnComplete
@@ -80,11 +70,6 @@ PreferencesPage {
             onAudiverisPathChangeRequested: function(path) {
                 reprisePreferencesModel.audiverisPath = path
                 recognitionSection.showAudiverisStatus("", false)
-            }
-
-            onTesseractPathChangeRequested: function(path) {
-                reprisePreferencesModel.tesseractPath = path
-                recognitionSection.showTesseractStatus("", false)
             }
 
             onScanResolutionChangeRequested: function(dpi) {
@@ -105,15 +90,20 @@ PreferencesPage {
                 }
             }
 
-            onDetectTesseractRequested: {
-                var found = reprisePreferencesModel.detectTesseract()
-                if (Boolean(found)) {
-                    reprisePreferencesModel.tesseractPath = found
-                    recognitionSection.showTesseractStatus(qsTrc("preferences", "Found: %1").arg(found), true)
-                } else {
-                    recognitionSection.showTesseractStatus(qsTrc("preferences", "Tesseract was not found. Set the path manually."), false)
+            onFocusChanged: {
+                if (activeFocus) {
+                    root.ensureContentVisibleRequested(Qt.rect(x, y, width, height))
                 }
             }
+        }
+
+        RepriseTextRecognitionSection {
+            id: textRecognitionSection
+
+            model: reprisePreferencesModel
+
+            navigation.section: root.navigationSection
+            navigation.order: root.navigationOrderStart + 2
 
             onFocusChanged: {
                 if (activeFocus) {

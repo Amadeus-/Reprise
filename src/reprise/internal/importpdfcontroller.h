@@ -37,6 +37,7 @@
 #include "appshell/internal/isessionsmanager.h"
 
 #include "irepriseconfiguration.h"
+#include "ilanguagepackservice.h"
 #include "iimportprogresstracker.h"
 #include "audiverisrunner.h"
 
@@ -55,6 +56,7 @@ class ImportPdfController : public muse::Contextable, public muse::async::Asynca
     muse::GlobalInject<muse::IGlobalConfiguration> globalConfiguration;
     muse::GlobalInject<muse::io::IFileSystem> fileSystem;
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
+    muse::GlobalInject<mu::reprise::ILanguagePackService> languagePackService;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
     muse::ContextInject<mu::appshell::ISessionsManager> sessionsManager = { this };
 
@@ -123,6 +125,15 @@ private:
     muse::RetVal<GetImportProgressCommand::Output> getImportProgress() const;
     muse::RetVal<GetImportErrorsCommand::Output> getImportErrors() const;
 
+    //! OCR language-pack MCP/API helpers (list / add / remove), all delegating to the shared ILanguagePackService so
+    //! they drive the EXACT install/remove/enumerate code path the Preferences pack-manager buttons use (DRY).
+    muse::RetVal<ListLanguagesCommand::Output> listLanguages() const;
+    muse::RetVal<AddLanguageCommand::Output> addLanguage(const AddLanguageCommand& cmd);
+    muse::RetVal<RemoveLanguageCommand::Output> removeLanguage(const RemoveLanguageCommand& cmd);
+
+    //! JSON array ([{code,name}]) of the currently-installed OCR packs, shared by the list/add/remove helpers.
+    std::string installedPacksJson() const;
+
     //! Dev MCP/API tool: open the Import-Scan intake dialog (ImportPdfOptionsDialog) for a given file and grab it to a
     //! PNG, so the modal intake dialog -- unreachable headlessly via the normal import flow -- can be verified. Runs the
     //! SAME dialog-prep the interactive path uses (detectPdfResolution / inspectImage / preflightImageSize) to pass
@@ -130,6 +141,12 @@ private:
     //! GUI event loop until the dialog window is exposed, QQuickWindow::grabWindow()s it, then closes the dialog. All on
     //! the Qt GUI thread (the same synchronous dispatch path as the other reprise queries). ok=false + error on failure.
     muse::RetVal<CaptureImportDialogCommand::Output> captureImportDialog(const CaptureImportDialogCommand& cmd);
+
+    //! Dev MCP/API tool: open the Preferences dialog at the Reprise page and grab it to a PNG, so the Preferences
+    //! language-pack UI can be verified headlessly. Opens "muse://preferences?currentPageId=reprise" ASYNC, spins the
+    //! GUI event loop until the dialog is exposed, grabWindow()s it, then force-closes + settles it (same pattern as
+    //! captureImportDialog). ok=false + error on failure.
+    muse::RetVal<CapturePreferencesCommand::Output> capturePreferences(const CapturePreferencesCommand& cmd);
 
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;
