@@ -117,6 +117,8 @@ echo === 6/6 Provisioning Tesseract tessdata beside the exe ===
 REM Reprise ships its OWN legacy+LSTM traineddata so Audiveris' LEGACY-mode OCR (lyrics/titles/tempo)
 REM works self-contained. The runner resolves TESSDATA_PREFIX to <exeDir>\tessdata at runtime, so the
 REM two .traineddata files must live directly inside %BR%\tessdata (FLAT, no nested tessdata\tessdata).
+REM INVARIANT -- NON-DESTRUCTIVE / MERGE-ONLY: refresh ONLY eng/osd via per-file copy; NEVER rmdir / del *
+REM / whole-folder-copy %BR%\tessdata -- user-installed language packs (added via Preferences) must survive a redeploy.
 if exist "%TESSSRC%\eng.traineddata" (
   if not exist "%BR%\tessdata" mkdir "%BR%\tessdata"
   copy /y "%TESSSRC%\eng.traineddata" "%BR%\tessdata\" >nul
