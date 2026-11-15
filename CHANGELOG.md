@@ -8,6 +8,24 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-14
+
+### Added
+- **Intake "Options" panel to configure recognition**: the Import Scan dialog gains a collapsed
+  **▸ Options** disclosure (default collapsed, present for both a single image and a PDF) that
+  reveals a master **Recognize text & lyrics** toggle with indented sub-options — a **Text
+  language** dropdown (populated from the Tesseract language packs installed in Reprise's own
+  `tessdata` folder, shown as friendly names; `osd` is excluded as it is not a text language), an
+  **Also detect chord symbols** toggle, and a **Lyrics appear above the staff (uncommon)** toggle.
+  The sub-options grey out when the master is off. These are wired to Audiveris per-import: turning
+  the master off skips the OCR step entirely for a faster notes-only import; the others pass the
+  matching Audiveris recognition switches. Defaults mirror Audiveris's own (text on, English, chords
+  off, lyrics below), so the default import is unchanged and still recovers the full lyric set.
+- **Recognition options on the headless `reprise.import-pdf` tool**: new optional `recognizeText`
+  (bool, default true), `language` (string, default `eng`), `chordSymbols` (bool, default false),
+  and `lyricsAboveStaff` (bool, default false) arguments feed the same per-import Audiveris
+  recognition switches as the GUI panel, so an import can be driven and verified headlessly.
+
 ## [0.10.0] — 2026-11-14
 
 ### Added
@@ -361,6 +379,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.11.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.10.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.9]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.9.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main

@@ -11,7 +11,7 @@ of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.10.0) — work in progress.** Reprise is early software under
+> **Pre-release (0.11.0) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -43,6 +43,10 @@ compatibility.
 - **Text & lyric recognition** — titles, lyrics, and tempo markings are read automatically
   during import. Reprise ships the Tesseract training data Audiveris needs and points it there
   for you, so OCR works out of the box with no extra setup.
+- **Recognition options** — an **Options** panel on the Import Scan dialog lets you tune the
+  recognition per import: toggle text/lyric OCR on or off, pick the OCR **language**, and opt in
+  to **chord-symbol** detection or **lyrics-above-the-staff** scores. Sensible defaults mean you
+  can ignore it entirely and still get the full text and lyric recognition.
 - **Live recognition progress** — a progress window shows each page as Audiveris
   works, with a recognition log and a cancel option.
 - **Streamlined, correction-focused UI** — the interface is pared down around
