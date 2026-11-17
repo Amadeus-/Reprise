@@ -211,6 +211,99 @@ static bool parseFirstImagePixelWidth(const QByteArray& data, int32_t& outPixelW
         from = sub + 8;
     }
 }
+
+//! Byte offset just AFTER the "obj" keyword of indirect object `objNum` (an "<objNum> <gen> obj" header). Any
+//! generation is accepted; a token boundary before the number stops objNum 4 from matching inside "114 0 obj". Returns
+//! the LAST such header, so an incrementally-updated object resolves to its current revision. -1 if none is found.
+static int64_t findObjectStart(const QByteArray& data, int32_t objNum)
+{
+    const QByteArray needle = QByteArray::number(objNum);
+    int from = 0;
+    int64_t best = -1;
+    while (true)
+    {
+        const int idx = data.indexOf(needle, from);
+        if (idx < 0)
+        {
+            break;
+        }
+
+        from = idx + needle.size();
+
+        //! Token boundary before the number: otherwise objNum 4 would match inside "114 0 obj".
+        if (idx > 0 && !isPdfDelimiterOrWs(data.at(idx - 1)))
+        {
+            continue;
+        }
+
+        int64_t pos = idx + needle.size();
+        const char sep = pos < data.size() ? data.at(static_cast<int>(pos)) : 'x';
+        if (!(sep == ' ' || sep == '\t' || sep == '\r' || sep == '\n' || sep == '\f' || sep == '\0'))
+        {
+            continue;
+        }
+
+        pos = skipWs(data, pos);
+        double gen = 0.0;
+        int64_t end = 0;
+        if (!parseNumber(data, pos, gen, end))
+        {
+            continue;
+        }
+
+        pos = skipWs(data, end);
+        if (pos + 3 <= data.size() && QByteArray(data.constData() + static_cast<int>(pos), 3) == "obj")
+        {
+            best = pos + 3;
+        }
+    }
+
+    return best;
+}
+
+//! Parse the page-tree root's inline /Count starting at searchFrom. Returns false when /Count is absent, non-positive,
+//! or an INDIRECT reference ("/Count N G R") which this shallow reader will not chase -- the caller then stays
+//! unconfident and shows the page range.
+static bool parseInlineCount(const QByteArray& data, int64_t searchFrom, int32_t& outCount)
+{
+    const int idx = data.indexOf("/Count", static_cast<int>(searchFrom));
+    if (idx < 0)
+    {
+        return false;
+    }
+
+    int64_t pos = skipWs(data, idx + 6);   // 6 == len("/Count")
+    double value = 0.0;
+    int64_t end = 0;
+    if (!parseNumber(data, pos, value, end))
+    {
+        return false;
+    }
+
+    //! Indirect "/Count N G R": a second integer then 'R' after the first number means N was an object number, not the
+    //! count. We do not resolve indirection -> treat as uncertain.
+    const int64_t look = skipWs(data, end);
+    double gen = 0.0;
+    int64_t genEnd = 0;
+    if (parseNumber(data, look, gen, genEnd))
+    {
+        const int64_t rpos = skipWs(data, genEnd);
+        if (rpos < data.size() && data.at(static_cast<int>(rpos)) == 'R')
+        {
+            return false;
+        }
+    }
+
+    const int32_t c = static_cast<int32_t>(value + 0.5);
+    if (c < 1)
+    {
+        return false;
+    }
+
+    outCount = c;
+
+    return true;
+}
 }
 
 PdfResolutionResult mu::reprise::detectPdfResolution(const muse::io::path_t& pdfPath)
@@ -305,48 +398,58 @@ PdfPageCountResult mu::reprise::detectPdfPageCount(const muse::io::path_t& pdfPa
         return result;
     }
 
-    //! Count page LEAF objects: a "/Type" whose next token is exactly "/Page" (NOT "/Pages", the page-tree node). A
-    //! token boundary after "Page" / "Pages" guards against "/PageLabels"-style false matches.
-    int32_t pageObjs = 0;
-    int from = 0;
-    while (true)
-    {
-        const int idx = data.indexOf("/Type", from);
-        if (idx < 0)
-        {
-            break;
-        }
-
-        from = idx + 5;   // 5 == len("/Type")
-        const int64_t tok = skipWs(data, idx + 5);
-
-        //! "/Pages" (tree node) -> not a page. Checked first so the "/Page" test below never swallows it.
-        if (tok + 6 <= data.size() && QByteArray(data.constData() + tok, 6) == "/Pages")
-        {
-            const char after = tok + 6 < data.size() ? data.at(static_cast<int>(tok + 6)) : ' ';
-            if (isPdfDelimiterOrWs(after))
-            {
-                continue;
-            }
-        }
-
-        if (tok + 5 <= data.size() && QByteArray(data.constData() + tok, 5) == "/Page")
-        {
-            const char after = tok + 5 < data.size() ? data.at(static_cast<int>(tok + 5)) : ' ';
-            if (isPdfDelimiterOrWs(after))
-            {
-                ++pageObjs;
-            }
-        }
-    }
-
-    //! No countable page objects (could be compressed / unusual structure) -> unconfident; caller shows the range.
-    if (pageObjs < 1)
+    //! Resolve the AUTHORITATIVE page count from the page-tree root: active (last) trailer -> /Root (document catalog)
+    //! -> /Pages (page-tree root node) -> /Count. Taking the LAST trailer and the LAST revision of each object makes an
+    //! incrementally-updated PDF resolve to its CURRENT revision, so stale/duplicate page objects left behind by
+    //! Acrobat-style incremental saves do NOT inflate the count (the old "/Type /Page" leaf scan over-counted those).
+    //! Any step we cannot resolve from the plaintext bytes -- no trailer, no /Root, no /Pages, no /Count, or an INDIRECT
+    //! "/Count N G R" we will not chase -- leaves confident == false so the caller SHOWS the page range (never drops).
+    const int trailerIdx = data.lastIndexOf("trailer");
+    if (trailerIdx < 0)
     {
         return result;
     }
 
-    result.pageCount = pageObjs;
+    const int rootKeyIdx = data.lastIndexOf("/Root");
+    if (rootKeyIdx < 0)
+    {
+        return result;
+    }
+
+    //! /Root <catalogObj> <gen> R -- intAfterKey yields the first integer, i.e. the catalog's object number.
+    int32_t catalogObjNum = 0;
+    if (!intAfterKey(data, "/Root", rootKeyIdx, data.size(), catalogObjNum) || catalogObjNum < 1)
+    {
+        return result;
+    }
+
+    const int64_t catalogStart = findObjectStart(data, catalogObjNum);
+    if (catalogStart < 0)
+    {
+        return result;
+    }
+
+    //! Catalog: /Pages <pagesObj> <gen> R -- the first /Pages key inside the catalog object is the page-tree root ref.
+    int32_t pagesObjNum = 0;
+    if (!intAfterKey(data, "/Pages", catalogStart, data.size(), pagesObjNum) || pagesObjNum < 1)
+    {
+        return result;
+    }
+
+    const int64_t pagesStart = findObjectStart(data, pagesObjNum);
+    if (pagesStart < 0)
+    {
+        return result;
+    }
+
+    //! Page-tree root dict: /Count <total>. Must be an inline integer; an indirect "/Count N G R" is NOT chased.
+    int32_t count = 0;
+    if (!parseInlineCount(data, pagesStart, count))
+    {
+        return result;
+    }
+
+    result.pageCount = count;
     result.confident = true;
 
     return result;

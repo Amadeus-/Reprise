@@ -44,19 +44,21 @@ PdfResolutionResult detectPdfResolution(const muse::io::path_t& pdfPath);
 //! Snap an arbitrary dpi to the nearest recognition tier: one of 200 (Faster) / 300 (Standard) / 400 (Best).
 int32_t snapToTier(int32_t dpi);
 
-//! Result of counting a PDF's pages by an in-house byte-scan (no QtPdf in the kit). confident == true ONLY when the
-//! whole file was read, no compressed object streams were present, and at least one page LEAF object was cleanly
-//! found; in that case pageCount is the number of page objects. Any uncertainty (file larger than the read cap, an
-//! /ObjStm compressed object stream, or no page objects found) returns confident == false, pageCount == 0. The caller
-//! must SHOW the page range whenever confident is false, so pages are never silently dropped.
+//! Result of counting a PDF's pages by an in-house byte-scan of the page-tree root's /Count (no QtPdf in the kit).
+//! confident == true ONLY when the whole file was read, no compressed object streams were present, and the active
+//! trailer -> /Root -> /Pages -> /Count chain resolved to a positive inline count; in that case pageCount is that
+//! authoritative count. Any uncertainty (file larger than the read cap, an /ObjStm compressed object stream, or any
+//! link in that chain we cannot resolve from plaintext) returns confident == false, pageCount == 0. The caller must
+//! SHOW the page range whenever confident is false, so pages are never silently dropped.
 struct PdfPageCountResult
 {
     int32_t pageCount = 0;
     bool confident = false;
 };
 
-//! Count a PDF's pages by scanning for "/Type /Page" leaf objects (deliberately NOT "/Type /Pages", the page-tree
-//! node). Reliable for simple, uncompressed PDFs; a PDF-1.5 compressed object stream (/ObjStm) hides page objects from
-//! a naive scan, so that case returns confident == false. See PdfPageCountResult for the full confidence contract.
+//! Count a PDF's pages from the page-tree root's /Count, resolved via the active (last) trailer -> /Root -> /Pages so
+//! incremental updates resolve to the current revision (an earlier "/Type /Page" leaf scan over-counted PDFs whose
+//! incremental saves left stale duplicate page objects). A PDF-1.5 compressed object stream (/ObjStm) or any
+//! unresolvable chain link returns confident == false. See PdfPageCountResult for the full confidence contract.
 PdfPageCountResult detectPdfPageCount(const muse::io::path_t& pdfPath);
 }
