@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.4] — 2026-11-17
+
+### Fixed
+- **The intake dialog could show the wrong page count for some PDFs**: the page counter scanned the
+  file for `/Type /Page` objects and counted every one it found. A PDF saved with incremental updates
+  (e.g. an Acrobat-revised file synced through OneDrive) can leave stale, duplicate page objects
+  behind, so that scan over-counted — one such four-page score reported **8** pages, which then
+  mislabelled the page-range field. Reprise now reads the authoritative page count from the page-tree
+  root's `/Count`, resolved through the document's **current** revision (its last trailer → `/Root` →
+  `/Pages`), so incremental updates no longer inflate the number. The safe fallback is unchanged: if
+  the count cannot be determined with certainty, the page range is shown so pages are never dropped,
+  and the TIFF multi-frame path is untouched.
+
 ## [0.12.3] — 2026-11-17
 
 ### Fixed
@@ -443,6 +456,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.4]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.3]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.2]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.1]: https://github.com/Amadeus-/Reprise/tree/reprise-main
