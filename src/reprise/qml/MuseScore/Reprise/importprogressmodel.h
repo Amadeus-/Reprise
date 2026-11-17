@@ -162,5 +162,11 @@ private:
 
     //! Set just before the imported score is opened; consumed to fill the Done line's measure + page counts.
     bool m_pendingDoneCounts = false;
+
+    //! Set when the imported score's open is dispatched; cleared when the open resolves either way. On a successful
+    //! open masterNotationChanged fires and finalizes the Done state; if that signal has not arrived once the open has
+    //! had ample time to resolve AND no master notation is present, the score never opened -> a graceful error. Guards
+    //! both the success finalization and the open-decline fallback so each fires exactly once per import.
+    bool m_awaitingOpen = false;
 };
 }

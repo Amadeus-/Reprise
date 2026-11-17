@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.3] — 2026-11-17
+
+### Fixed
+- **An import whose recognised score is too corrupt or incomplete to open now shows a clear error
+  instead of a silent "Done"**: some scans recognise a valid part structure yet produce data-corrupt
+  MusicXML (measures with wrong total durations), which MuseScore's reader then declines to open.
+  Post-0.12.2 that no longer crashed, but the progress popup still flipped to **Done** while no score
+  appeared and nothing told the user why. Reprise now treats the score as finished only once it
+  actually opens: it waits for the open to resolve and, if no score ever becomes current, surfaces a
+  graceful error — "Reprise could not produce a usable score from this scan" — in the progress popup
+  and via `reprise.get-import-errors`. This complements the 0.12.2 zero-part guard (empty recognition)
+  by catching **any** reason the recognised score fails to open, and never false-flags a valid open.
+
 ## [0.12.2] — 2026-11-17
 
 ### Fixed
@@ -430,6 +443,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.3]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.2]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.1]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main

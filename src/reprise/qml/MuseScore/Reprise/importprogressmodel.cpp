@@ -60,6 +60,14 @@ using namespace muse;
 //! just-opened score's master-notation change fire so the Grand-Piano override lands before the model is gone.
 static constexpr int AUTO_CLOSE_DELAY_MS = 1400;
 
+//! How long to wait for command://project/open to resolve before concluding the recognised score never opened. The
+//! dispatch returns before the async open completes and its Ret is always ok (ProjectActionsController::runAsync
+//! swallows the real outcome), so the only reliable success signal is masterNotationChanged firing; this bounded
+//! window -- re-checked against masterNotation() so a slow-but-valid open can never be mis-flagged -- is how a silent
+//! open-decline becomes a clear error. Generous on purpose: a local MusicXML open is sub-second, so it never trips a
+//! legitimately slow open.
+static constexpr int OPEN_RESOLVE_TIMEOUT_MS = 8000;
+
 ImportProgressModel::ImportProgressModel(QObject* parent)
     : QObject(parent), muse::Contextable(muse::iocCtxForQmlObject(this))
 {
@@ -105,6 +113,20 @@ void ImportProgressModel::initContext()
             m_pendingDoneCounts = false;
             updateDoneLine();
         }
+
+        //! The imported score definitively opened -- this is the only reliable success signal (see OPEN_RESOLVE_TIMEOUT_MS).
+        //! Finalize the Done state here, which also cancels the pending open-decline fallback (it checks m_awaitingOpen).
+        if (m_awaitingOpen)
+        {
+            m_awaitingOpen = false;
+            setStatus("done");
+            importProgressTracker()->reportFinished(true, std::string(), std::string());
+
+            if (closePopupOnComplete())
+            {
+                QTimer::singleShot(AUTO_CLOSE_DELAY_MS, this, [this]() { emit closeRequested(); });
+            }
+        }
     });
 }
 
@@ -145,6 +167,7 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     emit logTextChanged();
     m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
+    m_awaitingOpen = false;
 
     setStatus("running");
     m_indeterminate = true;
@@ -178,6 +201,7 @@ void ImportProgressModel::cancel()
 
     m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
+    m_awaitingOpen = false;
     emit closeRequested();
 }
 
@@ -332,8 +356,12 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
         return;
     }
 
-    //! Success: show a full determinate bar, open the score, then flip to the Done state. The real measure + page
-    //! counts are filled by updateDoneLine() once the imported score becomes the current master (see openImported()).
+    //! Recognition succeeded: show a full determinate bar and open the score. The score is NOT "Done" until it actually
+    //! opens, so keep the status "running" with an interim "Opening score..." line -- the popup then neither flashes the
+    //! gold check nor auto-closes before the open resolves. The Done state (with the real measure + page counts filled
+    //! by updateDoneLine) and the auto-close are finalized on the next master-notation change once the imported score
+    //! becomes the current master; a declined open (score too corrupt/incomplete to open) is caught by the bounded
+    //! fallback armed in openImported() and surfaced as a graceful error instead of a silent "Done".
     m_percent = 100;
     m_indeterminate = false;
     const int pages = m_runner ? m_runner->pageCount() : m_totalPages;
@@ -342,29 +370,54 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
         m_totalPages = pages;
         m_currentPage = pages;
     }
-    m_stageText = muse::qtrc("reprise", "Done");
+    m_stageText = muse::qtrc("reprise", "Opening score...");
     emit progressChanged();
 
     openImported(outputPath);
-
-    setStatus("done");
-    importProgressTracker()->reportFinished(true, std::string(), std::string());
-
-    if (closePopupOnComplete())
-    {
-        QTimer::singleShot(AUTO_CLOSE_DELAY_MS, this, [this]() { emit closeRequested(); });
-    }
 }
 
 void ImportProgressModel::openImported(const QString& outputPath)
 {
     //! Hand the produced MusicXML to MuseScore's native open path; a .mxl/.xml routes through MusicXmlReader.
-    //! Arm the Grand-Piano override and the Done-line measure count for the score about to open, then dispatch.
+    //! Arm the Grand-Piano override and the Done-line measure count for the score about to open, mark the open as
+    //! awaited, then dispatch.
     m_pendingGrandPianoReset = true;
     m_pendingDoneCounts = true;
+    m_awaitingOpen = true;
 
     const QUrl url = QUrl::fromLocalFile(outputPath);
     commandDispatcher()->dispatch(project::PROJECT_OPEN_COMMAND, { { "url", muse::Val(url.toString()) } });
+
+    //! Open-decline fallback. command://project/open returns before the async open resolves, and its dispatch Ret is
+    //! always ok, so a successful open is signalled ONLY by masterNotationChanged firing (which finalizes the Done
+    //! state above) -- it never fires on a declined open (e.g. MusicXML too corrupt/incomplete for the reader to
+    //! accept). If, after a generous window, that signal has not arrived AND no master notation is present, the score
+    //! never opened: surface a graceful error instead of leaving the popup on the interim "Opening score..." forever.
+    //! The master-notation re-check means a slow-but-valid open that lands first can never be mistaken for a failure.
+    QTimer::singleShot(OPEN_RESOLVE_TIMEOUT_MS, this, [this]()
+    {
+        if (!m_awaitingOpen)
+        {
+            return;   //! the open already resolved to success (masterNotationChanged finalized it)
+        }
+
+        if (projectSession()->masterNotation())
+        {
+            return;   //! a score is present -> the open succeeded; let the success path finalize it
+        }
+
+        //! Definitively no score opened -- refuse GRACEFULLY, consistent with the zero-part guard (status = error +
+        //! reprise.get-import-errors), never a silent "Done".
+        m_awaitingOpen = false;
+        m_pendingGrandPianoReset = false;
+        m_pendingDoneCounts = false;
+        m_errorDetails.clear();
+        m_stageText = muse::qtrc("reprise", "Reprise could not produce a usable score from this scan - it may be too "
+                                            "incomplete or damaged to open.");
+        emit progressChanged();
+        setStatus("error");
+        importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+    });
 }
 
 int ImportProgressModel::recognizedPartCount(const QString& outputPath) const
