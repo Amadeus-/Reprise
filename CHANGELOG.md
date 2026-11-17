@@ -8,6 +8,21 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.5] — 2026-11-17
+
+### Fixed
+- **The intake dialog could still show "multiple" instead of the real page count for edited, re-saved
+  PDFs**: the page counter was a no-dependency byte-scan of the page-tree root's `/Count`, which cannot
+  read PDF-1.5+ files whose cross-reference table and objects are stored in **compressed streams** — the
+  common shape of a PDF that has been opened, edited, and saved again (e.g. a score synced through a
+  cloud drive). For those files the scan bailed out and the dialog fell back to showing the page range,
+  so a ten-page score read as **"multiple"** rather than **10**. Reprise now reads the page count with
+  **Qt PDF (`QPdfDocument`)**, which is authoritative for **every** PDF, including the compressed
+  variety; the byte-scan is kept as a fallback for the rare case Qt PDF cannot open a file. The safe
+  contract is unchanged (a confident single page hides the range; any remaining uncertainty shows the
+  range so pages are never dropped), and the TIFF multi-frame path is untouched (Qt PDF handles PDFs
+  only; images still use the image readers).
+
 ## [0.12.4] — 2026-11-17
 
 ### Fixed
@@ -456,6 +471,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.5]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.4]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.3]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.2]: https://github.com/Amadeus-/Reprise/tree/reprise-main
