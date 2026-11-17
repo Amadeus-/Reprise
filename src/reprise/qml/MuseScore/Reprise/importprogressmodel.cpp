@@ -24,6 +24,7 @@
 
 #include <vector>
 
+#include <QFile>
 #include <QFileInfo>
 #include <QTimer>
 #include <QUrl>
@@ -31,6 +32,10 @@
 #include "global/translation.h"
 #include "global/log.h"
 #include "global/types/val.h"
+#include "global/types/bytearray.h"
+#include "global/io/path.h"
+#include "global/serialization/zipreader.h"
+#include "global/serialization/xmlstreamreader.h"
 
 #include "async/notifylist.h"
 
@@ -311,6 +316,22 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
         return;
     }
 
+    //! Reprise degenerate-scan guard: a scan that recognised no usable parts yields MusicXML with zero <score-part>
+    //! entries. Opening it lays out a score with zero visible parts, which the engraving instrument-name layout has
+    //! no valid position to compute. Refuse GRACEFULLY here with a clear message (surfaced in the popup AND via
+    //! reprise.get-import-errors) instead. A count of -1 means "could not inspect the file" -> fail open (proceed to
+    //! open; the engraving layout guard still prevents a hard crash if such a score ever reaches it).
+    const int partCount = recognizedPartCount(outputPath);
+    if (partCount == 0)
+    {
+        m_errorDetails.clear();
+        m_stageText = muse::qtrc("reprise", "No music could be recognised in this scan. Try a clearer or higher-resolution scan.");
+        emit progressChanged();
+        setStatus("error");
+        importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+        return;
+    }
+
     //! Success: show a full determinate bar, open the score, then flip to the Done state. The real measure + page
     //! counts are filled by updateDoneLine() once the imported score becomes the current master (see openImported()).
     m_percent = 100;
@@ -344,6 +365,79 @@ void ImportProgressModel::openImported(const QString& outputPath)
 
     const QUrl url = QUrl::fromLocalFile(outputPath);
     commandDispatcher()->dispatch(project::PROJECT_OPEN_COMMAND, { { "url", muse::Val(url.toString()) } });
+}
+
+int ImportProgressModel::recognizedPartCount(const QString& outputPath) const
+{
+    QByteArray xml;
+
+    const muse::io::path_t path(outputPath);
+    const std::string suffix = muse::io::suffix(path);
+    if (suffix == "mxl")
+    {
+        //! A .mxl is a ZIP: the real MusicXML is the rootfile named in META-INF/container.xml -- the same extraction
+        //! MuseScore's own MusicXML importer uses (importmusicxml.cpp::extractRootfile).
+        muse::ZipReader zip(path);
+        if (!zip.exists() || zip.hasError())
+        {
+            return -1;
+        }
+
+        const muse::ByteArray container = zip.fileData("META-INF/container.xml");
+        std::string rootfile;
+        muse::XmlStreamReader e(container);
+        while (e.readNextStartElement())
+        {
+            if (e.name() != "container")
+            {
+                break;
+            }
+
+            while (e.readNextStartElement())
+            {
+                if (e.name() != "rootfiles")
+                {
+                    break;
+                }
+
+                while (e.readNextStartElement())
+                {
+                    if (e.name() == "rootfile")
+                    {
+                        rootfile = e.attribute("full-path").toStdString();
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (rootfile.empty())
+        {
+            return -1;
+        }
+
+        xml = zip.fileData(rootfile).toQByteArray();
+    }
+    else
+    {
+        QFile f(outputPath);
+        if (!f.open(QIODevice::ReadOnly))
+        {
+            return -1;
+        }
+
+        xml = f.readAll();
+        f.close();
+    }
+
+    if (xml.isEmpty())
+    {
+        return -1;
+    }
+
+    //! Count <score-part id=...> declarations (the <part-list> entries). "<score-partwise" has no space after
+    //! "score-part", so the root element is never miscounted; every real <score-part> carries its id attribute first.
+    return static_cast<int>(xml.count("<score-part id"));
 }
 
 void ImportProgressModel::setStatus(const QString& status)

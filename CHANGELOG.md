@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.2] — 2026-11-17
+
+### Fixed
+- **Importing a scan that recognises no visible parts no longer crashes**: some scans (e.g. a
+  multi-stave choral score where whole staves rest for long stretches) made Audiveris emit
+  per-measure "hidden empty staff" markers, which switch MuseScore's **hide empty staves** style on
+  during import. On layout a system could then end up with **zero visible parts**, and the engraving
+  instrument-name positioner indexed an empty list — a hard crash (SIGSEGV) in a release build.
+  Reprise now guards that layout path (an empty group/part is skipped instead of dereferenced), and
+  additionally refuses a genuinely empty recognition (zero recognised parts) gracefully with a clear
+  message — surfaced in the progress popup and via `reprise.get-import-errors` — instead of opening a
+  broken score.
+
 ## [0.12.1] — 2026-11-15
 
 ### Changed
@@ -417,6 +430,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.2]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.1]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.11.0]: https://github.com/Amadeus-/Reprise/tree/reprise-main

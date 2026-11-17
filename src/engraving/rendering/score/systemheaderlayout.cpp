@@ -657,7 +657,14 @@ void SystemHeaderLayout::setInstrumentNamesVerticalPos(System* system, LayoutCon
 
         std::vector<staff_idx_t> visibleStavesOfPart = system->visibleStavesOfPart(p);
         size_t visibleStavesCount = visibleStavesOfPart.size();
-        DO_ASSERT(visibleStavesCount > 0);
+        if (visibleStavesCount == 0) {
+            // Reprise guard: a part can legitimately have NO visible staves on a system (hide-empty-staves), so this is
+            // not an error -- skip it rather than index an empty vector (front()/[count/2 - 1] on size 0 is an OOB
+            // deref -> SIGSEGV in a release build). Replaces the stock DO_ASSERT(visibleStavesCount > 0), which both
+            // aborts debug builds and spams the release log for this valid case.
+            staffIdx += nstaves;
+            continue;
+        }
 
         double y1 = 0;
         double y2 = 0;
@@ -716,7 +723,13 @@ void SystemHeaderLayout::setInstrumentNamesVerticalPos(System* system, LayoutCon
 
         std::vector<Part*> visibleParts = system->visiblePartsOfGroup(idx, groupName->ldata()->endIdxOfGroup());
         size_t visiblePartsCount = visibleParts.size();
-        DO_ASSERT(visiblePartsCount > 0);
+        if (visiblePartsCount == 0) {
+            // Reprise guard: a group can legitimately have NO visible parts on a system (hide-empty-staves), so this is
+            // not an error -- skip it rather than index visibleParts[(size_t)0 - 1] on the even branch below (OOB deref
+            // -> SIGSEGV in a release build). Replaces the stock DO_ASSERT(visiblePartsCount > 0), which both aborts
+            // debug builds and spams the release log for this valid case.
+            continue;
+        }
 
         double y1 = 0;
         double y2 = 0;

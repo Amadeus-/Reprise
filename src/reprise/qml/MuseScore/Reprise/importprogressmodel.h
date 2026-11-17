@@ -133,6 +133,12 @@ private:
     //! Open the recognised MusicXML through MuseScore's native import, armed to default every part to Grand Piano.
     void openImported(const QString& outputPath);
 
+    //! Count the <score-part> declarations in the produced MusicXML (.mxl ZIP or plain .xml). Used to detect a
+    //! degenerate scan (zero recognised parts) so it can be refused GRACEFULLY before opening, instead of handing
+    //! the engraving layout a zero-part / zero-visible-part score. Returns the part count, or -1 when the file
+    //! cannot be read/parsed -- in which case the caller must NOT refuse (fail open: proceed with the normal open).
+    int recognizedPartCount(const QString& outputPath) const;
+
     //! TEMPORARY Reprise default: force every imported part to Grand Piano (applied on the next master-notation change).
     void applyGrandPianoDefault();
 
