@@ -964,9 +964,10 @@ ImportPdfController::ImageInfo ImportPdfController::inspectImage(const muse::io:
 
     if (!isImage)
     {
-        //! PDF: count pages via the in-house byte-scan (no QtPdf in the kit). Show the page range UNLESS we can
-        //! CONFIDENTLY determine a single page; any uncertainty (compressed object streams, file past the read cap,
-        //! no page objects found) keeps it shown so pages are never silently dropped.
+        //! PDF: count pages via QPdfDocument (authoritative for all PDFs, incl. compressed-xref-stream files), with
+        //! the in-house byte-scan as the fallback. Show the page range UNLESS we can CONFIDENTLY determine a single
+        //! page; any uncertainty (QPdfDocument failed AND the byte-scan could not resolve it) keeps it shown so pages
+        //! are never silently dropped.
         const PdfPageCountResult pc = detectPdfPageCount(path);
         info.pageCount = pc.pageCount;
         info.pdfConfident = pc.confident;

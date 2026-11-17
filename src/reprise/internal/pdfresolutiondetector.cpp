@@ -26,6 +26,7 @@
 
 #include <QByteArray>
 #include <QFile>
+#include <QtPdf/QPdfDocument>
 
 using namespace mu::reprise;
 
@@ -371,6 +372,31 @@ PdfPageCountResult mu::reprise::detectPdfPageCount(const muse::io::path_t& pdfPa
 {
     PdfPageCountResult result;   // pageCount = 0, confident = false
 
+    //! PRIMARY: QPdfDocument is the AUTHORITATIVE page counter for ALL PDFs, including the PDF-1.5+
+    //! compressed-xref-stream / object-stream files (the common "edited + re-saved" case) that the byte-scan
+    //! fallback below cannot read. load() of a LOCAL file is synchronous -- QtPdf reads the whole document and
+    //! pageCount() is valid the moment load() returns -- so no event loop pumping or async handling is needed
+    //! even though QPdfDocument is a QObject (constructed on the stack here). On success (Error::None, status
+    //! Ready, pageCount > 0) this is the true count and we are confident. Any failure -- file not found, invalid
+    //! format, password-protected, or a non-positive page count -- FALLS THROUGH to the byte-scan, which still
+    //! enforces the safe contract (confident single page hides the range; any uncertainty shows it).
+    {
+        QPdfDocument doc;
+        if (doc.load(pdfPath.toQString()) == QPdfDocument::Error::None
+            && doc.status() == QPdfDocument::Status::Ready
+            && doc.pageCount() > 0)
+        {
+            result.pageCount = doc.pageCount();
+            result.confident = true;
+
+            return result;
+        }
+    }
+
+    //! FALLBACK (byte-scan): QPdfDocument could not load this file (or reported no pages). Resolve the page count
+    //! from the page-tree root's /Count via a no-dependency plaintext byte-scan. It can only read uncompressed
+    //! page trees, so a compressed object stream or any unresolvable chain link leaves confident == false and the
+    //! caller shows the page range -- pages are never silently dropped.
     QFile file(pdfPath.toQString());
     if (!file.open(QIODevice::ReadOnly))
     {

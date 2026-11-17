@@ -61,6 +61,17 @@ target_link_libraries(reprise PRIVATE Qt::Quick)
 #! out, so the fork links it explicitly here (user-initiated downloads only -- no background fetch / telemetry).
 target_link_libraries(reprise PRIVATE Qt::Network)
 
+#! NOTE: Reprise counts a PDF's pages authoritatively with QPdfDocument (Qt::Pdf), which reads compressed-xref-stream
+#! / object-stream PDFs that the no-dependency byte-scan fallback cannot. The muse framework's SetupQt6.cmake component
+#! list (in muse/, kept pristine) does not include Pdf, so the fork locates and links it here. A find_package with a
+#! single component is additive/idempotent -- it just resolves Qt6::Pdf without disturbing the top-level find_package.
+#! GLOBAL promotes the imported Qt::Pdf target to global scope: the app executable (MuseScoreStudio/Reprise.exe) is
+#! finalized in the sibling src/app directory, and without the promotion Qt's dependency finalizer there warns
+#! "non-existent target 'Qt::Pdf'" (the imported target would otherwise be visible only in this src/reprise scope),
+#! even though Qt6Pdf.lib is already on the exe link line. find_package GLOBAL needs CMake >= 3.24 (kit ships 3.31).
+find_package(Qt6 REQUIRED COMPONENTS Pdf GLOBAL)
+target_link_libraries(reprise PRIVATE Qt::Pdf)
+
 if (MUE_BUILD_PROJECT_QML)
     add_subdirectory(qml/MuseScore/Reprise)
 endif()
