@@ -101,6 +101,13 @@ public:
     //! Cancel button / the header X during a run: kill Audiveris, abort the import, request the popup to close.
     Q_INVOKABLE void cancel();
 
+    //! Register this popup's own QQuickWindow (passed from QML as root.window) with the app-lifetime progress tracker,
+    //! so ImportPdfController can close it DIRECTLY and settled on the success auto-close path -- see onRunnerFinished /
+    //! the masterNotationChanged handler. Closing the fire-and-forget popup via the controller's forceCloseAndSettle
+    //! (which only closes while the dialog is still on the interactive stack, then pumps until the window is destroyed)
+    //! avoids the bare root.hide() auto-close racing the project-open's stack churn and double-delivering onClose.
+    Q_INVOKABLE void registerPopupWindow(QObject* window);
+
 signals:
     void titleChanged();
     void progressChanged();

@@ -121,6 +121,14 @@ private:
     //! the top dialog for `query`. No-op (no delay) when nothing matching is open; bounded, so it can never hang.
     void forceCloseAndSettle(const muse::UriQuery& query, QQuickWindow* known) const;
 
+    //! Success auto-close of the recognition progress popup. Driven by ImportProgressModel via the shared tracker's
+    //! popupCloseRequested notification (observed in init()). Runs forceCloseAndSettle on the popup's own window --
+    //! registered by the popup through the tracker -- so the fire-and-forget popup is torn down safely from HERE (an
+    //! app-lifetime object that outlives it) instead of closing itself via a root.hide() that races the project-open's
+    //! interactive-stack churn and double-delivers Interactive::onClose. Invoked on a fresh event-loop turn (Async::call)
+    //! so the popup's own call stack has fully unwound before its window + view-model are destroyed.
+    void closeProgressPopup();
+
     //! Read-only MCP/API queries backed by the shared progress tracker.
     muse::RetVal<GetImportProgressCommand::Output> getImportProgress() const;
     muse::RetVal<GetImportErrorsCommand::Output> getImportErrors() const;

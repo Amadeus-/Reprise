@@ -125,7 +125,16 @@ void ImportProgressModel::initContext()
 
             if (closePopupOnComplete())
             {
-                QTimer::singleShot(AUTO_CLOSE_DELAY_MS, this, [this]() { emit closeRequested(); });
+                //! Auto-close the popup after the Done dwell. CRITICAL: do NOT emit closeRequested() -> root.hide() here.
+                //! root.hide() closes this fire-and-forget async-opened dialog from INSIDE itself, which races the
+                //! project-open's interactive-stack / dock-rebuild churn still in flight at this moment -- two close
+                //! deliveries then reach muse's Interactive::onClose for one objectId and the second trips its
+                //! obj.objectId.isValid() assert (interactive.cpp:1326) -> SIGSEGV (reproduced on 0.12.6). Instead ask
+                //! the app-lifetime ImportPdfController (which OUTLIVES this popup) to run forceCloseAndSettle on this
+                //! window: it closes the window only while the dialog is still on the stack (so onClose always finds a
+                //! valid objectId -- never a double-delivery), then pumps until the window is destroyed, draining any
+                //! racing teardown. Same close-settle idiom as the 0.9.9 capture-import-dialog fix.
+                QTimer::singleShot(AUTO_CLOSE_DELAY_MS, this, [this]() { importProgressTracker()->requestPopupClose(); });
             }
         }
     });
@@ -204,6 +213,14 @@ void ImportProgressModel::cancel()
     m_pendingDoneCounts = false;
     m_awaitingOpen = false;
     emit closeRequested();
+}
+
+void ImportProgressModel::registerPopupWindow(QObject* window)
+{
+    //! Called from the popup QML's Component.onCompleted with root.window (the dialog's QQuickWindow). Hand it to the
+    //! app-lifetime tracker so the controller can close + settle this window on the success auto-close (see the
+    //! masterNotationChanged handler). Held as a QPointer in the tracker, so it safely auto-nulls if closed elsewhere.
+    importProgressTracker()->setProgressWindow(window);
 }
 
 void ImportProgressModel::onRunnerProgress(int percent, int sheet, int total, const QString& stageHuman)

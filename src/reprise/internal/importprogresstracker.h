@@ -22,6 +22,9 @@
 
 #pragma once
 
+#include <QObject>
+#include <QPointer>
+
 #include "iimportprogresstracker.h"
 
 namespace mu::reprise {
@@ -67,7 +70,33 @@ public:
         return m_snapshot;
     }
 
+    void setProgressWindow(QObject* window) override
+    {
+        m_progressWindow = window;
+    }
+
+    QObject* progressWindow() const override
+    {
+        return m_progressWindow.data();
+    }
+
+    void requestPopupClose() override
+    {
+        m_popupCloseRequested.notify();
+    }
+
+    muse::async::Notification popupCloseRequested() const override
+    {
+        return m_popupCloseRequested;
+    }
+
 private:
     ImportProgressSnapshot m_snapshot;
+
+    //! The transient popup's own QQuickWindow (held as a QObject*/QPointer so it auto-nulls if the popup is destroyed
+    //! by some other path first). Used by ImportPdfController to close + settle the popup on the success auto-close.
+    QPointer<QObject> m_progressWindow;
+
+    muse::async::Notification m_popupCloseRequested;
 };
 }

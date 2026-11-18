@@ -25,6 +25,9 @@
 #include <string>
 
 #include "modularity/imoduleinterface.h"
+#include "async/notification.h"
+
+class QObject;
 
 namespace mu::reprise {
 //! NOTE: A persistent, app-lifetime snapshot of the LATEST Import-PDF / OMR run, written by the transient progress
@@ -62,5 +65,18 @@ public:
 
     //! The current snapshot (thread-confined to the UI thread; reads happen on the same thread as writes).
     virtual ImportProgressSnapshot snapshot() const = 0;
+
+    //! The progress popup registers its own QQuickWindow here when it opens (passed as a QObject* from QML). This lets
+    //! the app-lifetime ImportPdfController -- which outlives the transient popup -- close the popup's window DIRECTLY
+    //! and settled (forceCloseAndSettle) on the success auto-close path, instead of the popup closing itself via a bare
+    //! root.hide() that races the project-open's interactive-stack churn and double-delivers Interactive::onClose.
+    virtual void setProgressWindow(QObject* window) = 0;
+    virtual QObject* progressWindow() const = 0;
+
+    //! The popup asks (after the Done dwell) for its window to be closed safely. Fired by ImportProgressModel's
+    //! auto-close timer; observed by ImportPdfController, which runs the settled close on the next event-loop turn
+    //! (so the popup's own call stack has fully unwound before its window + view-model are destroyed).
+    virtual void requestPopupClose() = 0;
+    virtual muse::async::Notification popupCloseRequested() const = 0;
 };
 }

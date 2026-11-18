@@ -46,6 +46,8 @@
 #include "global/log.h"
 #include "global/types/val.h"
 
+#include "async/async.h"
+
 #include "reprise/reprisecommands.h"
 
 #include "pdfresolutiondetector.h"
@@ -608,6 +610,15 @@ void ImportPdfController::init()
     //! Dev tool: open + capture the Preferences dialog at the Reprise page to a PNG (headless verification).
     commandDispatcher()->onRequest<CapturePreferencesCommand>(this, std::function<muse::RetVal<CapturePreferencesCommand::Output>(const CapturePreferencesCommand&)>(
                                                                   [this](const CapturePreferencesCommand& c) { return capturePreferences(c); }));
+
+    //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
+    //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
+    //! the transient popup. Deferred to a fresh event-loop turn so the popup's own call stack (the asking QTimer lambda)
+    //! has unwound before its window + view-model are destroyed by forceCloseAndSettle's pump.
+    importProgressTracker()->popupCloseRequested().onNotify(this, [this]()
+    {
+        muse::async::Async::call(this, [this]() { closeProgressPopup(); });
+    });
 }
 
 muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
@@ -1254,6 +1265,35 @@ void ImportPdfController::forceCloseAndSettle(const muse::UriQuery& query, QQuic
     {
         pump(60);
     }
+}
+
+void ImportPdfController::closeProgressPopup()
+{
+    //! Close the recognition progress popup on the success auto-close path (see init()'s popupCloseRequested subscription
+    //! and ImportProgressModel's masterNotationChanged handler). The popup was opened fire-and-forget with
+    //! interactive()->open(progressQuery) in launchImport(); it registered its own QQuickWindow via the tracker. We close
+    //! that specific window + settle it. forceCloseAndSettle closes the window ONLY while the dialog is still on the
+    //! interactive stack (isOpened(query) true), so the resulting Interactive::onClose always finds a valid objectId --
+    //! never the double-delivery that the old self-close (root.hide() racing the project-open stack churn) tripped into a
+    //! SIGSEGV. Passing the known window makes it precise (it does not touch the just-opened notation window), and the
+    //! pump-until-destroyed drains any racing teardown before returning.
+    QQuickWindow* win = qobject_cast<QQuickWindow*>(importProgressTracker()->progressWindow());
+
+    //! Guard: a null handle means the popup is already gone (closed by some other path, QPointer auto-nulled). Do NOT
+    //! fall through to forceCloseAndSettle(query, nullptr) -- with no known window it would act on interactive()->topWindow(),
+    //! which by now is the just-opened NOTATION window. There is simply nothing to close here, so return.
+    if (!win)
+    {
+        return;
+    }
+
+    LOGI() << "Reprise: auto-closing the recognition progress popup (settled close of its own window)";
+
+    const UriQuery progressQuery("musescore://reprise/importpdf/progress");
+    forceCloseAndSettle(progressQuery, win);
+
+    //! Clear the stale handle (the window is destroyed now); the next import registers a fresh one.
+    importProgressTracker()->setProgressWindow(nullptr);
 }
 
 muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImportDialog(const CaptureImportDialogCommand& cmd)

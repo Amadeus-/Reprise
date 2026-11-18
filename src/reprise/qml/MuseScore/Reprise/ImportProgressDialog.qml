@@ -82,6 +82,10 @@ StyledDialogView {
     }
 
     Component.onCompleted: {
+        //! Hand the view-model this popup's own window, so the app-lifetime controller can close + settle it safely on
+        //! the success auto-close path (avoids a bare root.hide() racing the project-open churn -> onClose double-call).
+        progressModel.registerPopupWindow(root.window)
+
         progressModel.load(root.pdfPath, root.pages, root.dpi,
                            root.recognizeText, root.language, root.chordSymbols, root.lyricsAboveStaff)
     }
