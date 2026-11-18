@@ -48,7 +48,6 @@ static const Settings::Key LAST_OPENED_PROJECTS_PATH(module_name, "application/p
 static const Settings::Key LAST_SAVED_PROJECTS_PATH(module_name, "application/paths/lastSavedProjectsPath");
 static const Settings::Key USER_PROJECTS_PATH(module_name, "application/paths/myScores");
 static const Settings::Key LAST_OPENED_CONVERT_FILE_PATH(module_name, "application/paths/lastOpenedConvertFilePath");
-static const Settings::Key SHOULD_ASK_SAVE_LOCATION_TYPE(module_name, "project/shouldAskSaveLocationType");
 static const Settings::Key LAST_USED_SAVE_LOCATION_TYPE(module_name, "project/lastUsedSaveLocationType");
 static const Settings::Key SHOULD_WARN_BEFORE_PUBLISH(module_name, "project/shouldWarnBeforePublish");
 static const Settings::Key SHOULD_WARN_BEFORE_SAVING_PUBLICLY_TO_CLOUD(module_name, "project/shouldWarnBeforeSavingPubliclyToCloud");
@@ -95,7 +94,6 @@ void ProjectConfiguration::init()
 
     settings()->setDefaultValue(HOME_SCORES_PAGE_VIEW_TYPE, Val(HomeScoresPageViewType::List));
 
-    settings()->setDefaultValue(SHOULD_ASK_SAVE_LOCATION_TYPE, Val(true));
     settings()->setDefaultValue(LAST_USED_SAVE_LOCATION_TYPE, Val(SaveLocationType::Undefined));
 
     settings()->setDefaultValue(SHOULD_WARN_BEFORE_PUBLISH, Val(true));
@@ -264,16 +262,6 @@ muse::io::path_t ProjectConfiguration::defaultConvertFilePath() const
     return dir;
 }
 
-bool ProjectConfiguration::shouldAskSaveLocationType() const
-{
-    return settings()->value(SHOULD_ASK_SAVE_LOCATION_TYPE).toBool();
-}
-
-void ProjectConfiguration::setShouldAskSaveLocationType(bool shouldAsk)
-{
-    settings()->setSharedValue(SHOULD_ASK_SAVE_LOCATION_TYPE, Val(shouldAsk));
-}
-
 muse::io::path_t ProjectConfiguration::legacyCloudProjectsPath() const
 {
     return globalConfiguration()->userDataPath() + "/Cloud Scores";
@@ -339,6 +327,19 @@ muse::io::path_t ProjectConfiguration::defaultSavingFilePath(INotationProjectPtr
             if (io::isAbsolute(projectPath)) {
                 filename = io::filename(projectPath, false);
                 folderPath = io::dirpath(projectPath);
+
+                //! NOTE Reprise: an imported scan opens from a temporary "<original-scan>.reprise-stripped.musicxml" file
+                //! (produced by the scan-geometry stripper), so Save As would otherwise default to that temp folder and
+                //! suggest the ".reprise-stripped" name. Drop the marker and steer the suggestion to the user's Scores
+                //! folder, so an imported score defaults to "<original-scan>.mscz" there. This only changes the suggested
+                //! path shown in the Save As dialog; the project's own state (newly-created/unsaved, autosave) is untouched.
+                QString repriseName = filename.toQString();
+                const QString repriseStrippedMarker = QStringLiteral(".reprise-stripped");
+                if (repriseName.endsWith(repriseStrippedMarker)) {
+                    repriseName.chop(repriseStrippedMarker.size());
+                    filename = repriseName;
+                    folderPath = userProjectsPath();
+                }
             } else {
                 filename = io::filename(projectPath, true);
             }

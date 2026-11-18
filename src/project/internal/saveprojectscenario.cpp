@@ -1421,22 +1421,11 @@ static std::string saveCloudStatusCodeErrorMessage(const Ret& ret, bool withHelp
 Promise<RetVal<SaveLocation> > SaveProjectScenario::askSaveLocation(INotationProjectPtr project, SaveMode mode,
                                                                     SaveLocationType preselectedType) const
 {
-    if (preselectedType != SaveLocationType::Undefined) {
-        return askSaveLocationOfType(project, mode, preselectedType);
-    }
-
-    return saveLocationType()
-           .then<RetVal<SaveLocation> >(this, [this, project, mode](const RetVal<SaveLocationType>& type, auto resolve) {
-        if (!type.ret) {
-            return resolve(RetVal<SaveLocation>(type.ret));
-        }
-
-        askSaveLocationOfType(project, mode, type.val).onResolve(this, [resolve](const RetVal<SaveLocation>& location) {
-            (void)resolve(location);
-        });
-
-        return Promise<RetVal<SaveLocation> >::dummy_result();
-    });
+    //! NOTE Reprise: there is no cloud/computer save-location chooser. Save, Save As and the first save of an imported
+    //! score all go straight to a local file (the native file dialog in askLocalPath). A caller that explicitly asks for
+    //! a type (e.g. the corrupted-score "Save as..." flow passing Local) is still honored.
+    return askSaveLocationOfType(project, mode,
+                                 preselectedType != SaveLocationType::Undefined ? preselectedType : SaveLocationType::Local);
 }
 
 Promise<RetVal<SaveLocation> > SaveProjectScenario::askSaveLocationOfType(INotationProjectPtr project, SaveMode mode,
@@ -1538,38 +1527,6 @@ Promise<RetVal<muse::io::path_t> > SaveProjectScenario::askLocalPath(INotationPr
         }
 
         return resolve(RetVal<muse::io::path_t>(muse::make_ret(code, err)));
-    });
-}
-
-Promise<RetVal<SaveLocationType> > SaveProjectScenario::saveLocationType() const
-{
-    bool shouldAsk = configuration()->shouldAskSaveLocationType();
-    SaveLocationType lastUsed = configuration()->lastUsedSaveLocationType();
-    if (!shouldAsk && lastUsed != SaveLocationType::Undefined) {
-        return resolvedPromise(RetVal<SaveLocationType>::make_ok(lastUsed));
-    }
-
-    return askSaveLocationType();
-}
-
-Promise<RetVal<SaveLocationType> > SaveProjectScenario::askSaveLocationType() const
-{
-    UriQuery query("musescore://project/asksavelocationtype");
-    bool shouldAsk = configuration()->shouldAskSaveLocationType();
-    query.addParam("askAgain", Val(shouldAsk));
-
-    return openDialog(query).then<RetVal<SaveLocationType> >(this, [this](const RetVal<Val>& rv, auto resolve) {
-        if (!rv.ret) {
-            return resolve(RetVal<SaveLocationType>(rv.ret));
-        }
-
-        QVariantMap vals = rv.val.toQVariant().toMap();
-
-        bool askAgain = vals["askAgain"].toBool();
-        configuration()->setShouldAskSaveLocationType(askAgain);
-
-        SaveLocationType type = static_cast<SaveLocationType>(vals["saveLocationType"].toInt());
-        return resolve(RetVal<SaveLocationType>::make_ok(type));
     });
 }
 

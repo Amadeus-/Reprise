@@ -8,6 +8,28 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.8] — 2026-11-18
+
+### Removed
+- **The "How would you like to save?" cloud/computer chooser is gone.** Reprise is a free, offline app with
+  no cloud account, so the save-location chooser (and its "To the cloud (free)" / "On your computer" cards)
+  no longer served a purpose. **Save**, **Save As**, and the first save of an imported score now go straight
+  to a local file — the normal system **Save** dialog opens directly, with no extra screen in between.
+- **The leftover "Save to cloud" command.** Its menu entry was already removed earlier; the inert command
+  behind it (and its plumbing) is now deleted too.
+
+### Changed
+- **Save As on an imported scan now suggests the original scan's name in your Scores folder.** An imported
+  score is opened from a temporary working file, so Save As previously defaulted to that temp folder and
+  offered an awkward internal name (ending in `.reprise-stripped`). It now suggests **`<original scan
+  name>.mscz`** in your **Scores** folder instead. (This only changes the suggested path in the Save dialog;
+  nothing about the score's saved/unsaved state or autosave changes.)
+
+### Added
+- **The recognition error log is now selectable and has a "Copy" button.** When Audiveris cannot recognize a
+  scan, the error popup's log text can be selected with the mouse, and a new **Copy** button copies the whole
+  error message plus the recognition log to the clipboard in one click — ready to paste when asking for help.
+
 ## [0.12.7] — 2026-11-18
 
 ### Fixed
@@ -507,6 +529,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.6]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.5]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.4]: https://github.com/Amadeus-/Reprise/tree/reprise-main

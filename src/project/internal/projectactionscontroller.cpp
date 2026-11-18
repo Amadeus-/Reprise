@@ -66,7 +66,6 @@ void ProjectActionsController::init()
     d->onRequest(this, PROJECT_SAVE_SELECTION_COMMAND, [this]() {
         return runAsync(saveProject(SaveMode::SaveSelection, SaveLocationType::Local));
     });
-    d->onRequest(this, PROJECT_SAVE_TO_CLOUD_COMMAND, [this]() { return runAsync(saveProject(SaveMode::Save, SaveLocationType::Cloud)); });
     d->onRequest(this, PROJECT_SAVE_AT_COMMAND, [this](const rcommand::Params& params) { return runAsync(saveProjectAt(params)); });
 
     d->onRequest(this, PROJECT_PUBLISH_COMMAND, [this]() { return runAsync(publish()); });

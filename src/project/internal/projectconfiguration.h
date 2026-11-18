@@ -71,9 +71,6 @@ public:
     muse::io::path_t defaultConvertFilePath() const override;
     void setLastOpenedConvertFilePath(const muse::io::path_t& path) override;
 
-    bool shouldAskSaveLocationType() const override;
-    void setShouldAskSaveLocationType(bool shouldAsk) override;
-
     bool isCloudProject(const muse::io::path_t& projectPath) const override;
     bool isLegacyCloudProject(const muse::io::path_t& projectPath) const override;
     muse::io::path_t cloudProjectPath(int scoreId) const override;

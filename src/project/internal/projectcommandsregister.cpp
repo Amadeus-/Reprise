@@ -86,13 +86,6 @@ static const std::vector<CommandInfo> s_commandInfos = {
         Decoration()
     },
     CommandInfo{
-        PROJECT_SAVE_TO_CLOUD_COMMAND,
-        TranslatableString("project", "Save to clo&ud…"),
-        TranslatableString("project", "Save the project to cloud"),
-        InputSchema(),
-        Decoration(IconCode::Code::CLOUD_FILE)
-    },
-    CommandInfo{
         PROJECT_SAVE_AT_COMMAND,
         TranslatableString("project", "Save at…"),
         TranslatableString("project", "Save the project at"),

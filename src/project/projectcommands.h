@@ -37,7 +37,6 @@ inline static const muse::rcommand::Command PROJECT_SAVE_COMMAND("command://proj
 inline static const muse::rcommand::Command PROJECT_SAVE_AS_COMMAND("command://project/save-as");
 inline static const muse::rcommand::Command PROJECT_SAVE_A_COPY_COMMAND("command://project/save-a-copy");
 inline static const muse::rcommand::Command PROJECT_SAVE_SELECTION_COMMAND("command://project/save-selection");
-inline static const muse::rcommand::Command PROJECT_SAVE_TO_CLOUD_COMMAND("command://project/save-to-cloud");
 inline static const muse::rcommand::Command PROJECT_SAVE_AT_COMMAND("command://project/save-at");
 
 inline static const muse::rcommand::Command PROJECT_PUBLISH_COMMAND("command://project/publish");

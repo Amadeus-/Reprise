@@ -101,6 +101,10 @@ public:
     //! Cancel button / the header X during a run: kill Audiveris, abort the import, request the popup to close.
     Q_INVOKABLE void cancel();
 
+    //! Error state's "Copy" button: copy the whole error (the red headline message + the recognition log) to the system
+    //! clipboard, so the user can paste it when asking for help. Mirrors the About dialog's copyRevisionToClipboard idiom.
+    Q_INVOKABLE void copyErrorToClipboard() const;
+
     //! Register this popup's own QQuickWindow (passed from QML as root.window) with the app-lifetime progress tracker,
     //! so ImportPdfController can close it DIRECTLY and settled on the success auto-close path -- see onRunnerFinished /
     //! the masterNotationChanged handler. Closing the fire-and-forget popup via the controller's forceCloseAndSettle

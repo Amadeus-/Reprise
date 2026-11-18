@@ -474,14 +474,19 @@ StyledDialogView {
                         contentWidth: width
                         contentHeight: tailLabel.implicitHeight
 
-                        StyledTextLabel {
+                        //! Read-only but SELECTABLE so the user can drag-select the recognition error/log text (the Copy
+                        //! button beside Close copies the whole error in one click).
+                        TextEdit {
                             id: tailLabel
                             width: parent.width
                             text: progressModel.errorDetails
                             color: root.inkStep
                             font: ui.theme.bodyFont
                             horizontalAlignment: Text.AlignLeft
-                            wrapMode: Text.Wrap
+                            wrapMode: TextEdit.Wrap
+                            readOnly: true
+                            selectByMouse: true
+                            selectionColor: root.brandGold
                             opacity: 0.85
                         }
                     }
@@ -561,6 +566,25 @@ StyledDialogView {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: progressModel.closePopupOnComplete = !progressModel.closePopupOnComplete
                         }
+                    }
+
+                    //! Copy = GOLD (error state only): copies the whole error message + recognition log to the clipboard.
+                    FlatButton {
+                        text: qsTrc("global", "Copy")
+                        visible: progressModel.status === "error"
+
+                        normalColor: root.brandGold
+                        hoverHitColor: root.brandGoldLight
+
+                        contentItem: Component {
+                            StyledTextLabel {
+                                text: qsTrc("global", "Copy")
+                                color: root.brandNavyDeep
+                                font: ui.theme.bodyFont
+                            }
+                        }
+
+                        onClicked: progressModel.copyErrorToClipboard()
                     }
 
                     //! Cancel = GOLD (while running).

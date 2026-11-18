@@ -110,15 +110,6 @@ void ProjectConfigurationStub::setLastOpenedConvertFilePath(const muse::io::path
 {
 }
 
-bool ProjectConfigurationStub::shouldAskSaveLocationType() const
-{
-    return false;
-}
-
-void ProjectConfigurationStub::setShouldAskSaveLocationType(bool)
-{
-}
-
 bool ProjectConfigurationStub::isCloudProject(const muse::io::path_t&) const
 {
     return false;

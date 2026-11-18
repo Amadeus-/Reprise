@@ -111,8 +111,6 @@ private:
                                                                             SaveLocationType type) const;
     muse::async::Promise<muse::RetVal<muse::io::path_t> > askLocalPath(INotationProjectPtr project, SaveMode mode) const;
     muse::async::Promise<muse::Ret> saveProjectLocallyInstead(const INotationProjectPtr& project, SaveMode saveMode);
-    muse::async::Promise<muse::RetVal<SaveLocationType> > saveLocationType() const;
-    muse::async::Promise<muse::RetVal<SaveLocationType> > askSaveLocationType() const;
     muse::async::Promise<muse::RetVal<CloudProjectInfo> > askCloudLocation(INotationProjectPtr project, SaveMode mode) const;
     muse::async::Promise<muse::RetVal<CloudProjectInfo> > askPublishLocation(INotationProjectPtr project) const;
     muse::async::Promise<muse::RetVal<CloudAudioInfo> > askShareAudioLocation(INotationProjectPtr project) const;

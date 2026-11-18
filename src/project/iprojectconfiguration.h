@@ -72,9 +72,6 @@ public:
     virtual muse::io::path_t defaultConvertFilePath() const = 0;
     virtual void setLastOpenedConvertFilePath(const muse::io::path_t& path) = 0;
 
-    virtual bool shouldAskSaveLocationType() const = 0;
-    virtual void setShouldAskSaveLocationType(bool shouldAsk) = 0;
-
     virtual bool isCloudProject(const muse::io::path_t& projectPath) const = 0;
     virtual bool isLegacyCloudProject(const muse::io::path_t& projectPath) const = 0;
     virtual muse::io::path_t cloudProjectPath(int scoreId) const = 0;

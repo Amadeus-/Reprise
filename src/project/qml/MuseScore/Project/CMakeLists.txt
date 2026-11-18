@@ -60,7 +60,6 @@ qt_add_qml_module(project_qml
         internal/ScoresPage/scorethumbnailloader.h
     QML_FILES
         AlsoShareAudioComDialog.qml
-        AskSaveLocationTypeDialog.qml
         AudioGenerationSettings.qml
         AudioGenerationSettingsDialog.qml
         ConvertFileProcessingDialog.qml
@@ -121,7 +120,6 @@ qt_add_qml_module(project_qml
         internal/Properties/ProjectPropertiesFileInfoPanel.qml
         internal/Properties/ProjectPropertiesView.qml
         internal/Properties/PropertyItem.qml
-        internal/SaveToCloud/SaveLocationOption.qml
         internal/ScoresPage/CloudScoreIndicatorButton.qml
         internal/ScoresPage/RecentScoresView.qml
         internal/ScoresPage/ScoreGridItem.qml
@@ -143,8 +141,6 @@ qt_add_qml_module(project_qml
         UploadProgressDialog.qml
     RESOURCES
         internal/Migration/migration.png
-        internal/SaveToCloud/images/Cloud.png
-        internal/SaveToCloud/images/Laptop.png
         internal/ScoresPage/images/Placeholder_GP.png
         internal/ScoresPage/images/Placeholder_MEI.png
         internal/ScoresPage/images/Placeholder_MIDI.png

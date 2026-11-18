@@ -250,7 +250,6 @@ protected:
     //! Saving goes to a local file, without asking where.
     void givenLocalSaveLocation()
     {
-        ON_CALL(*m_configuration, shouldAskSaveLocationType()).WillByDefault(Return(false));
         ON_CALL(*m_configuration, lastUsedSaveLocationType()).WillByDefault(Return(SaveLocationType::Local));
     }
 
@@ -483,7 +482,6 @@ TEST_F(SaveProjectScenarioTests, SaveProject_ChosenCloudLocation_IsAppliedToTheP
 
     //! [GIVEN] ...and a user who picks the cloud for it, naming the score in the dialog
     givenReachableCloud();
-    ON_CALL(*m_configuration, shouldAskSaveLocationType()).WillByDefault(Return(false));
     ON_CALL(*m_configuration, lastUsedSaveLocationType()).WillByDefault(Return(SaveLocationType::Cloud));
 
     QVariantMap answer;
@@ -506,8 +504,9 @@ TEST_F(SaveProjectScenarioTests, SaveProject_ChosenCloudLocation_IsAppliedToTheP
     //! [THEN] The score is written to the path reserved for cloud scores on the way to the cloud
     EXPECT_CALL(*m_project, save(io::path_t("cloud.mscz"), SaveMode::Save, true)).Times(1);
 
-    //! [WHEN] Saving it...
-    saveProject(SaveMode::Save);
+    //! [WHEN] Saving it to the cloud (the cloud is reached by asking for it explicitly, since the
+    //! save-location chooser was removed; cloud saving itself is unchanged)...
+    saveProject(SaveMode::Save, SaveLocationType::Cloud);
 
     //! [THEN] The name the user gave in the dialog is what lands on the project
     ASSERT_FALSE(stored.empty());

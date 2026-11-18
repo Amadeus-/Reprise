@@ -63,7 +63,8 @@ compatibility.
   Tesseract training data itself (the OCR engine is bundled inside Audiveris); English works
   offline out of the box, and extra languages download on demand when you ask for them.
 - **Fully offline** — no account, sign-in, or network connection required; the
-  online/cloud module is compiled out entirely.
+  online/cloud module is compiled out entirely, and every save goes straight to a
+  local file (no cloud/computer save-location chooser).
 - **Built on MuseScore's editor** — full score editing, **MusicXML / MIDI import and
   export**, and **playback**.
 

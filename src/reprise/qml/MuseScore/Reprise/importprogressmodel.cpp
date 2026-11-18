@@ -24,8 +24,10 @@
 
 #include <vector>
 
+#include <QClipboard>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QTimer>
 #include <QUrl>
 
@@ -213,6 +215,33 @@ void ImportProgressModel::cancel()
     m_pendingDoneCounts = false;
     m_awaitingOpen = false;
     emit closeRequested();
+}
+
+void ImportProgressModel::copyErrorToClipboard() const
+{
+    //! Build the whole copyable blob: the red headline error message, then the recognition log beneath it. Prefer the
+    //! full streamed Audiveris log when it is present; otherwise fall back to the retained error tail (errorDetails).
+    //! Same clipboard idiom as AboutModel::copyRevisionToClipboard (QGuiApplication::clipboard()->setText()).
+    QString text = m_stageText;
+
+    const QString log = !m_logText.isEmpty() ? m_logText : m_errorDetails;
+    if (!log.isEmpty())
+    {
+        if (!text.isEmpty())
+        {
+            text += "\n\n";
+        }
+
+        text += log;
+    }
+
+    QClipboard* clipboard = QGuiApplication::clipboard();
+    if (clipboard)
+    {
+        clipboard->setText(text);
+    }
+
+    return;
 }
 
 void ImportProgressModel::registerPopupWindow(QObject* window)
