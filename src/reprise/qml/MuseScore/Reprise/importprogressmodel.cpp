@@ -51,6 +51,7 @@
 #include "project/projectcommands.h"
 
 #include "internal/audiverisrunner.h"
+#include "internal/scangeometrystripper.h"
 
 using namespace mu;
 using namespace mu::reprise;
@@ -378,6 +379,25 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
 
 void ImportProgressModel::openImported(const QString& outputPath)
 {
+    //! Reprise scan-geometry strip: Audiveris bakes the SCAN's layout into its MusicXML (per-measure widths,
+    //! system/page breaks, absolute positions, page/system/staff layout, slur beziers) and emits the title as
+    //! scan-positioned <credit>s that overprint the metadata-built title frame -- so MuseScore mirrors the scan
+    //! (stretched sparse bars, a doubled title) instead of engraving its own clean layout. Post-process the produced
+    //! MusicXML to strip that geometry + de-duplicate the title credits, then open the cleaned SIBLING file instead.
+    //! Applied UNCONDITIONALLY to every import. SAFE: on ANY failure stripToSibling returns empty and we fall back to
+    //! opening the ORIGINAL unmodified file (a layout nicety must never block an import).
+    QString pathToOpen = outputPath;
+    const QString strippedPath = ScanGeometryStripper::stripToSibling(outputPath);
+    if (!strippedPath.isEmpty())
+    {
+        pathToOpen = strippedPath;
+        LOGI() << "Reprise: opening scan-geometry-stripped MusicXML: " << strippedPath;
+    }
+    else
+    {
+        LOGW() << "Reprise: scan-geometry strip failed; opening original unmodified file: " << outputPath;
+    }
+
     //! Hand the produced MusicXML to MuseScore's native open path; a .mxl/.xml routes through MusicXmlReader.
     //! Arm the Grand-Piano override and the Done-line measure count for the score about to open, mark the open as
     //! awaited, then dispatch.
@@ -385,7 +405,7 @@ void ImportProgressModel::openImported(const QString& outputPath)
     m_pendingDoneCounts = true;
     m_awaitingOpen = true;
 
-    const QUrl url = QUrl::fromLocalFile(outputPath);
+    const QUrl url = QUrl::fromLocalFile(pathToOpen);
     commandDispatcher()->dispatch(project::PROJECT_OPEN_COMMAND, { { "url", muse::Val(url.toString()) } });
 
     //! Open-decline fallback. command://project/open returns before the async open resolves, and its dispatch Ret is

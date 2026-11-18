@@ -40,6 +40,8 @@ target_sources(reprise PRIVATE
     internal/mcpcuration.h
     internal/pdfresolutiondetector.cpp
     internal/pdfresolutiondetector.h
+    internal/scangeometrystripper.cpp
+    internal/scangeometrystripper.h
     internal/irepriseconfiguration.h
     internal/repriseconfiguration.cpp
     internal/repriseconfiguration.h
