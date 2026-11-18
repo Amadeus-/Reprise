@@ -8,6 +8,27 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.6] — 2026-11-18
+
+### Changed
+- **Imported scans are now re-engraved with MuseScore's own layout.** Audiveris bakes the *scan's*
+  geometry into its MusicXML — per-measure widths, system and page breaks, absolute pixel positions,
+  and page/system/staff layout blocks — which MuseScore faithfully reproduced, so a recognized score
+  mirrored the paper original (stretched, sparse bars such as a lone over-wide measure on its own
+  line, and uneven scan-mirrored spacing). Reprise now post-processes the recognized MusicXML before
+  it opens, stripping that geometry (plus slur bezier control points and per-measure widths) so
+  MuseScore engraves a clean, evenly spaced layout of its own. Applied to every import; all notes,
+  rests, lyrics, dynamics, slurs, text, and metadata are preserved exactly.
+
+### Fixed
+- **The title block no longer doubles or overlaps on imported scans.** Audiveris emits the title,
+  subtitle, composer, and arranger as *scan-positioned* credits, several of which landed in the same
+  title-frame slot and overprinted each other (e.g. "Organ Transcription" over "from the Nutcracker
+  Suite", and the arranger over the composer). Reprise now de-duplicates the scan credits into one
+  clean text per slot, promotes the real title into the score's Title property, and drops stray scan
+  artifacts (page numbers, stray marks, organ-manual registration labels), leaving a single tidy
+  title block.
+
 ## [0.12.5] — 2026-11-17
 
 ### Fixed
@@ -471,6 +492,7 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[0.12.6]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.5]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.4]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.3]: https://github.com/Amadeus-/Reprise/tree/reprise-main

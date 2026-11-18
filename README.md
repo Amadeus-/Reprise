@@ -39,7 +39,9 @@ compatibility.
   OMR on a PDF or a scan image (PNG/JPG/JPEG/TIFF/BMP/GIF) and opens the recognized score.
   Pick a page range (`all`, `1-5`, `1,3,8`) and a **Recognition quality** — *Faster /
   Standard / Best*. Reprise reads the PDF's own resolution and pre-selects the matching
-  quality for you.
+  quality for you. Each recognized score is **re-engraved with MuseScore's own layout** —
+  the scanner's baked-in page geometry is stripped so measures are evenly spaced (not
+  stretched to mirror the paper) and the title block is clean and un-duplicated.
 - **Text & lyric recognition** — titles, lyrics, and tempo markings are read automatically
   during import. The **Tesseract OCR engine is bundled inside Audiveris** — not a separate
   program — and Reprise ships the training data it needs and points it there for you, so
