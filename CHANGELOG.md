@@ -8,6 +8,21 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.7] — 2026-11-18
+
+### Fixed
+- **The import progress popup could crash (SIGSEGV) when it auto-closed after a successful import.** With
+  "Close this window after importing" enabled, the popup closed itself (`root.hide()`) ~1.4 s after the
+  recognized score opened — but at that moment the project-open was often still rebuilding the notation
+  view and its docks, churning the interactive window stack. The popup's self-close then raced that churn
+  and, intermittently, the popup's close was delivered twice to the framework, tripping an internal
+  assertion (`Interactive::onClose`, `objectId.isValid()`) and crashing the app with a SIGSEGV. The
+  auto-close is now performed by the application-level import controller, which outlives the popup: it
+  closes the popup's own window only while it is still on the interactive stack (so the close is never
+  double-delivered) and then waits for the window to be fully torn down, draining any racing teardown —
+  the same settle-on-close technique used for the intake-dialog fix. Both settings still behave as before
+  (auto-close on, or the user closing the window manually), and the score opens correctly either way.
+
 ## [0.12.6] — 2026-11-18
 
 ### Changed
