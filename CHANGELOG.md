@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.16] — 2026-11-19
+
+### Changed
+- **The recognition progress popup's "Details" expander now shows its open/closed state with a rotating chevron, and the
+  redundant "Show/Hide recognition log" text is gone.** The "Details" control alone expands and collapses the recognition
+  log, so the separate "Show recognition log" / "Hide recognition log" label beside it was removed. The icon to the left of
+  "Details" is now a disclosure chevron that points right when the log is collapsed and rotates down (with a smooth
+  animation) when it is expanded — the same affordance the intake "Import Scan" dialog's "Options" section uses — so the
+  state is self-evident. The recognition log itself, Cancel/Close, the auto-close on success, and the modeless draggable
+  popup behavior are unchanged.
+
 ## [0.12.15] — 2026-11-19
 
 ### Fixed

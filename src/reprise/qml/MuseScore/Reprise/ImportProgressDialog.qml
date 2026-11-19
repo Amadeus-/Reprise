@@ -428,9 +428,18 @@ StyledDialogView {
                         spacing: 6
 
                         StyledIconLabel {
-                            iconCode: detailsBlock.expanded ? IconCode.SMALL_ARROW_DOWN : IconCode.SMALL_ARROW_RIGHT
+                            id: detailsDiscIcon
+
+                            iconCode: IconCode.SMALL_ARROW_DOWN
+                            //! Points right when collapsed, down when expanded; the rotation animates for a smooth
+                            //! disclosure. Matches the intake "Options" chevron (ImportPdfOptionsDialog.qml).
+                            rotation: detailsBlock.expanded ? 0 : -90
                             color: root.brandGold
                             font.pixelSize: 12
+
+                            Behavior on rotation {
+                                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                            }
                         }
 
                         StyledTextLabel {
@@ -441,13 +450,6 @@ StyledDialogView {
                         }
 
                         Item { Layout.fillWidth: true }
-
-                        StyledTextLabel {
-                            text: detailsBlock.expanded ? qsTrc("reprise", "Hide recognition log")
-                                                        : qsTrc("reprise", "Show recognition log")
-                            color: root.brandGold
-                            horizontalAlignment: Text.AlignRight
-                        }
 
                         MouseArea {
                             anchors.fill: parent
