@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.15] — 2026-11-19
+
+### Fixed
+- **Scans whose systems are indented are no longer mis-imported as only their first movement.** Audiveris treats an
+  indented system (a system that starts further to the right than its neighbours) as the beginning of a new *movement*,
+  and when a scan contains more than one such movement it exports a separate MusicXML (`.mxl`) file per movement. Reprise
+  assumes a single `.mxl` and imports only the first one, so everything after the first indented system was silently
+  dropped. Reprise now passes Audiveris `ProcessingSwitches.indentations=false` on *every* import — both PDF and image,
+  unconditionally, regardless of the recognition/OCR options — which disables indentation-based movement splitting so
+  Audiveris emits one combined `.mxl` and the whole scan is imported.
+
 ## [0.12.14] — 2026-11-19
 
 ### Changed

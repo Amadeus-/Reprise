@@ -591,6 +591,11 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
         "-export",
         //! Scan resolution. Runtime-confirmed effect on the rasterised image (e.g. =400 -> 3305x4677 vs 300-default 2479x3508).
         "-constant", "org.audiveris.omr.image.ImageLoading.pdfResolution=" + std::to_string(dpi),
+        //! Force a SINGLE .mxl export. Audiveris treats an INDENTED system as the start of a new movement and then emits one
+        //! .mxl per movement; Reprise assumes a single .mxl and imports only the first -> a mis-import. Disabling indentation
+        //! detection makes Audiveris emit one combined export. ALWAYS applied -- every PDF and image import, independent of the
+        //! text/OCR options (so it sits here beside pdfResolution, not in buildTextConstants()).
+        "-constant", "org.audiveris.omr.sheet.ProcessingSwitches.indentations=false",
         "-output", m_outDir.toStdString()
     };
 
