@@ -33,15 +33,15 @@
 
 #include "notation/inotation.h"
 #include "notation/inotationundostack.h"
-#include "notationscene/notationcommands.h"
+#include "notation/notationcommands.h"
 
 #include "appshell/appshellcommands.h"
 #include "project/projectcommands.h"
 #include "reprise/reprisecommands.h"
-#include "notationscene/notationcommands.h"
+#include "notation/notationcommands.h"
 #include "playback/playbackcommands.h"
 #include "palette/palettecommands.h"
-#include "dockwindow_v2/dockcommands.h"
+#include "dockwindow/dockcommands.h"
 #include "update/updatecommands.h"
 #include "diagnostics/diagnosticscommands.h"
 #include "musesampler/musesamplercommands.h"
@@ -206,17 +206,17 @@ MenuItem* AppMenuModel::makeFileMenu()
 MenuItem* AppMenuModel::makeEditMenu()
 {
     MenuItemList editItems {
-        makeMenuItem(UNDO_COMMAND),
-        makeMenuItem(REDO_COMMAND),
+        makeMenuItem(UndoCommand::id),
+        makeMenuItem(RedoCommand::id),
         makeMenuItem(DOCK_TOGGLE_UNDO_HISTORY_COMMAND),
         makeSeparator(),
-        makeMenuItem(CUT_COMMAND),
-        makeMenuItem(COPY_COMMAND),
-        makeMenuItem(PASTE_COMMAND),
-        makeMenuItem(PASTE_HALF_COMMAND),
-        makeMenuItem(PASTE_DOUBLE_COMMAND),
-        makeMenuItem(COPY_PASTE_SWAP_COMMAND),
-        makeMenuItem(DELETE_COMMAND),
+        makeMenuItem(CutCommand::id),
+        makeMenuItem(CopyCommand::id),
+        makeMenuItem(PasteDefaultCommand::id),
+        makeMenuItem(PasteHalfCommand::id),
+        makeMenuItem(PasteDoubleCommand::id),
+        makeMenuItem(CopyPasteSwapCommand::id),
+        makeMenuItem(DeleteCommand::id),
         makeSeparator(),
         makeMenuItem(SelectAllCommand::id),
         makeMenuItem(SelectSectionCommand::id),
@@ -238,13 +238,13 @@ void AppMenuModel::updateUndoRedoItems()
 {
     auto stack = undoStack();
 
-    MenuItem& undoItem = findItem(UNDO_COMMAND);
+    MenuItem& undoItem = findItem(UndoCommand::id);
     const TranslatableString undoActionName = stack ? stack->topMostUndoActionName() : TranslatableString();
     undoItem.setTitle(undoActionName.isEmpty()
                       ? TranslatableString("action", "Undo")
                       : TranslatableString("action", "Undo ‘%1’").arg(undoActionName));
 
-    MenuItem& redoItem = findItem(REDO_COMMAND);
+    MenuItem& redoItem = findItem(RedoCommand::id);
     const TranslatableString redoActionName = stack ? stack->topMostRedoActionName() : TranslatableString();
     redoItem.setTitle(redoActionName.isEmpty()
                       ? TranslatableString("action", "Redo")
@@ -309,9 +309,9 @@ MenuItem* AppMenuModel::makeFormatMenu()
 {
     MenuItemList formatItems {
         makeMenuItem(OPEN_EDIT_STYLE_COMMAND),
-        makeMenuItem(OPEN_PAGE_SETTINGS_COMMAND),
+        makeMenuItem(OpenPageSettingsCommand::id),
         makeSeparator(),
-        makeMenuItem(OPEN_BREAKS_COMMAND),
+        makeMenuItem(OpenBreaksCommand::id),
         makeMenu(TranslatableString("appshell/menu/format", "Str&etch"), {
             makeMenuItem(STRETCH_INCREASE_COMMAND),
             makeMenuItem(STRETCH_DECREASE_COMMAND),
@@ -333,7 +333,7 @@ MenuItem* AppMenuModel::makeFormatMenu()
 MenuItem* AppMenuModel::makeToolsMenu()
 {
     MenuItemList toolsItems {
-        makeMenuItem(OPEN_TRANSPOSE_COMMAND),
+        makeMenuItem(OpenTransposeCommand::id),
         makeSeparator(),
         makeMenu(TranslatableString("appshell/menu/tools", "&Voices"), {
             makeMenuItem(SwapVoice12Command::id),
@@ -360,7 +360,7 @@ MenuItem* AppMenuModel::makeToolsMenu()
         makeMenuItem(REGROUP_RHYTHMS_COMMAND),
         makeMenuItem(RESEQUENCE_REHEARSAL_MARKS_COMMAND),
         makeSeparator(),
-        makeMenuItem(COPY_LYRICS_COMMAND),
+        makeMenuItem(CopyLyricsCommand::id),
         makeMenuItem(REMOVE_EMPTY_TRAILING_MEASURES_COMMAND),
     };
 
@@ -598,26 +598,26 @@ MenuItemList AppMenuModel::makeNotesItems()
 MenuItemList AppMenuModel::makeIntervalsItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_INTERVAL_PLUS_1_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_2_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_3_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_4_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_5_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_6_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_7_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_8_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_9_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_10_COMMAND),
+        makeMenuItem(AddInterval1Command::id),
+        makeMenuItem(AddInterval2Command::id),
+        makeMenuItem(AddInterval3Command::id),
+        makeMenuItem(AddInterval4Command::id),
+        makeMenuItem(AddInterval5Command::id),
+        makeMenuItem(AddInterval6Command::id),
+        makeMenuItem(AddInterval7Command::id),
+        makeMenuItem(AddInterval8Command::id),
+        makeMenuItem(AddInterval9Command::id),
+        makeMenuItem(AddInterval10Command::id),
         makeSeparator(),
-        makeMenuItem(ADD_INTERVAL_MINUS_2_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_3_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_4_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_5_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_6_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_7_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_8_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_9_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_10_COMMAND)
+        makeMenuItem(AddIntervalMinus2Command::id),
+        makeMenuItem(AddIntervalMinus3Command::id),
+        makeMenuItem(AddIntervalMinus4Command::id),
+        makeMenuItem(AddIntervalMinus5Command::id),
+        makeMenuItem(AddIntervalMinus6Command::id),
+        makeMenuItem(AddIntervalMinus7Command::id),
+        makeMenuItem(AddIntervalMinus8Command::id),
+        makeMenuItem(AddIntervalMinus9Command::id),
+        makeMenuItem(AddIntervalMinus10Command::id)
     };
 
     return items;
@@ -678,22 +678,22 @@ MenuItemList AppMenuModel::makeFramesItems()
 MenuItemList AppMenuModel::makeTextItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_TITLE_TEXT_COMMAND),
-        makeMenuItem(ADD_SUBTITLE_TEXT_COMMAND),
-        makeMenuItem(ADD_COMPOSER_TEXT_COMMAND),
-        makeMenuItem(ADD_LYRICIST_TEXT_COMMAND),
-        makeMenuItem(ADD_PART_TEXT_COMMAND),
+        makeMenuItem(AddTitleTextCommand::id),
+        makeMenuItem(AddSubtitleTextCommand::id),
+        makeMenuItem(AddComposerTextCommand::id),
+        makeMenuItem(AddLyricistTextCommand::id),
+        makeMenuItem(AddPartTextCommand::id),
         makeSeparator(),
-        makeMenuItem(ADD_SYSTEM_TEXT_COMMAND),
-        makeMenuItem(ADD_STAFF_TEXT_COMMAND),
+        makeMenuItem(AddSystemTextCommand::id),
+        makeMenuItem(AddStaffTextCommand::id),
         makeMenuItem(ADD_DYNAMIC_COMMAND),
-        makeMenuItem(ADD_EXPRESSION_TEXT_COMMAND),
-        makeMenuItem(ADD_REHEARSALMARK_TEXT_COMMAND),
-        makeMenuItem(ADD_FINGERING_TEXT_COMMAND),
+        makeMenuItem(AddExpressionTextCommand::id),
+        makeMenuItem(AddRehearsalMarkTextCommand::id),
+        makeMenuItem(AddFingeringTextCommand::id),
         makeSeparator(),
-        makeMenuItem(ADD_STICKING_TEXT_COMMAND),
-        makeMenuItem(ADD_LYRICS_COMMAND),
-        makeMenuItem(ADD_TEMPO_COMMAND)
+        makeMenuItem(AddStickingTextCommand::id),
+        makeMenuItem(AddLyricsCommand::id),
+        makeMenuItem(AddTempoCommand::id)
     };
 
     return items;
@@ -702,7 +702,7 @@ MenuItemList AppMenuModel::makeTextItems()
 MenuItemList AppMenuModel::makeLinesItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_SLUR_COMMAND),
+        makeMenuItem(AddSlurCommand::id),
         makeMenuItem(ADD_HAIRPIN_COMMAND),
         makeMenuItem(ADD_HAIRPIN_REVERSE_COMMAND),
         makeMenuItem(ADD_OTTAVA_8VA_COMMAND),

@@ -72,8 +72,14 @@ DockWindow {
 
             navigationSection: topToolbarKeyNavSec
 
-            MainToolBar {
+            PageTabBar {
                 id: toolBar
+
+                model: MainToolBarModel {}
+
+                navigation.name: "MainToolBar"
+                accessibleName: qsTrc("appshell", "Main toolbar")
+
                 navigation.section: mainToolBar.navigationSection
                 navigation.order: 1
 

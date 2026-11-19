@@ -30,7 +30,7 @@
 #include "notation/inotationselection.h"
 #include "notation/inotationundostack.h"
 
-#include "notationcommands.h"
+#include "notation/notationcommands.h"
 
 using namespace mu;
 using namespace mu::notation;
@@ -132,9 +132,9 @@ const muse::ui::ToolConfig& NoteInputBarModel::defaultNoteInputConfig()
             { ToggleSharpCommand::id, true },
             { ToggleSharp2Command::id, true },
             { ToolConfig::____________, true },
-            { TOGGLE_TIE_COMMAND, true },
-            { ADD_SLUR_COMMAND, true },
-            { TOGGLE_LV_COMMAND, false },
+            { ToggleTieCommand::id, true },
+            { AddSlurCommand::id, true },
+            { ToggleLaissezVibrerCommand::id, false },
             { ToolConfig::____________, true },
             { TOGGLE_MARCATO_COMMAND, true },
             { TOGGLE_SFORZATO_COMMAND, true },
@@ -301,26 +301,26 @@ MenuItemList NoteInputBarModel::makeNotesItems()
 MenuItemList NoteInputBarModel::makeIntervalsItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_INTERVAL_PLUS_1_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_2_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_3_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_4_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_5_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_6_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_7_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_8_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_9_COMMAND),
-        makeMenuItem(ADD_INTERVAL_PLUS_10_COMMAND),
+        makeMenuItem(AddInterval1Command::id),
+        makeMenuItem(AddInterval2Command::id),
+        makeMenuItem(AddInterval3Command::id),
+        makeMenuItem(AddInterval4Command::id),
+        makeMenuItem(AddInterval5Command::id),
+        makeMenuItem(AddInterval6Command::id),
+        makeMenuItem(AddInterval7Command::id),
+        makeMenuItem(AddInterval8Command::id),
+        makeMenuItem(AddInterval9Command::id),
+        makeMenuItem(AddInterval10Command::id),
         makeSeparator(),
-        makeMenuItem(ADD_INTERVAL_MINUS_2_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_3_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_4_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_5_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_6_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_7_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_8_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_9_COMMAND),
-        makeMenuItem(ADD_INTERVAL_MINUS_10_COMMAND)
+        makeMenuItem(AddIntervalMinus2Command::id),
+        makeMenuItem(AddIntervalMinus3Command::id),
+        makeMenuItem(AddIntervalMinus4Command::id),
+        makeMenuItem(AddIntervalMinus5Command::id),
+        makeMenuItem(AddIntervalMinus6Command::id),
+        makeMenuItem(AddIntervalMinus7Command::id),
+        makeMenuItem(AddIntervalMinus8Command::id),
+        makeMenuItem(AddIntervalMinus9Command::id),
+        makeMenuItem(AddIntervalMinus10Command::id)
     };
 
     return items;
@@ -364,27 +364,27 @@ MenuItemList NoteInputBarModel::makeFramesItems()
 MenuItemList NoteInputBarModel::makeTextItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_TITLE_TEXT_COMMAND),
-        makeMenuItem(ADD_SUBTITLE_TEXT_COMMAND),
-        makeMenuItem(ADD_COMPOSER_TEXT_COMMAND),
-        makeMenuItem(ADD_LYRICIST_TEXT_COMMAND),
-        makeMenuItem(ADD_PART_TEXT_COMMAND),
+        makeMenuItem(AddTitleTextCommand::id),
+        makeMenuItem(AddSubtitleTextCommand::id),
+        makeMenuItem(AddComposerTextCommand::id),
+        makeMenuItem(AddLyricistTextCommand::id),
+        makeMenuItem(AddPartTextCommand::id),
         makeSeparator(),
-        makeMenuItem(ADD_SYSTEM_TEXT_COMMAND),
-        makeMenuItem(ADD_STAFF_TEXT_COMMAND),
+        makeMenuItem(AddSystemTextCommand::id),
+        makeMenuItem(AddStaffTextCommand::id),
         makeMenuItem(ADD_DYNAMIC_COMMAND),
-        makeMenuItem(ADD_EXPRESSION_TEXT_COMMAND),
-        makeMenuItem(ADD_REHEARSALMARK_TEXT_COMMAND),
-        makeMenuItem(ADD_INSTRUMENT_CHANGE_TEXT_COMMAND),
-        makeMenuItem(ADD_FINGERING_TEXT_COMMAND),
+        makeMenuItem(AddExpressionTextCommand::id),
+        makeMenuItem(AddRehearsalMarkTextCommand::id),
+        makeMenuItem(AddInstrumentChangeTextCommand::id),
+        makeMenuItem(AddFingeringTextCommand::id),
         makeSeparator(),
-        makeMenuItem(ADD_STICKING_TEXT_COMMAND),
-        makeMenuItem(ADD_CHORD_TEXT_COMMAND),
-        makeMenuItem(ADD_ROMAN_NUMERAL_TEXT_COMMAND),
-        makeMenuItem(ADD_NASHVILLE_NUMBER_TEXT_COMMAND),
-        makeMenuItem(ADD_LYRICS_COMMAND),
+        makeMenuItem(AddStickingTextCommand::id),
+        makeMenuItem(AddChordTextCommand::id),
+        makeMenuItem(AddRomanNumeralTextCommand::id),
+        makeMenuItem(AddNashvilleNumberTextCommand::id),
+        makeMenuItem(AddLyricsCommand::id),
         makeMenuItem(ADD_FIGURED_BASS_COMMAND),
-        makeMenuItem(ADD_TEMPO_COMMAND)
+        makeMenuItem(AddTempoCommand::id)
     };
 
     return items;
@@ -393,7 +393,7 @@ MenuItemList NoteInputBarModel::makeTextItems()
 MenuItemList NoteInputBarModel::makeLinesItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_SLUR_COMMAND),
+        makeMenuItem(AddSlurCommand::id),
         makeMenuItem(ADD_HAIRPIN_COMMAND),
         makeMenuItem(ADD_HAIRPIN_REVERSE_COMMAND),
         makeMenuItem(ADD_OTTAVA_8VA_COMMAND),
@@ -407,7 +407,7 @@ MenuItemList NoteInputBarModel::makeLinesItems()
 MenuItemList NoteInputBarModel::makeChordAndFretboardDiagramsItems()
 {
     MenuItemList items {
-        makeMenuItem(ADD_CHORD_TEXT_COMMAND),
+        makeMenuItem(AddChordTextCommand::id),
         makeMenuItem(ADD_FRETBOARD_DIAGRAM_COMMAND),
         makeSeparator(),
         makeMenuItem(InsertFretFrameCommand::id, TranslatableString("notation", "Fretboard diagram legend"))

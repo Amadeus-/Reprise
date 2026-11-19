@@ -65,13 +65,13 @@ class LayoutPanelTreeModel : public QAbstractItemModel, public QQmlParserStatus,
 
     QML_ELEMENT
 
+public:
     muse::GlobalInject<muse::shortcuts::ICommandShortcutsRegister> commandShortcutsRegister;
     muse::ContextInject<project::IProjectSession> context = { this };
     muse::ContextInject<notation::ISelectInstrumentsScenario> selectInstrumentsScenario = { this };
     muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
     muse::ContextInject<muse::IInteractive> interactive = { this };
 
-public:
     explicit LayoutPanelTreeModel(QObject* parent = nullptr);
     ~LayoutPanelTreeModel() override;
 
@@ -131,6 +131,7 @@ signals:
     void selectedItemsTypeChanged(int type);
     void isStaveSharingEnabledChanged(bool enabled);
     void isHideEmptyStavesEnabledChanged(bool enabled);
+    void sharedGroupEnabledChanged();
     void scoreChanged();
 
 private slots:
@@ -142,6 +143,7 @@ private slots:
     void updateIsAddingSystemMarkingsAvailable();
     void updateIsStaveSharingEnabled();
     void updateIsHideEmptyStavesEnabled();
+    void updateSharedGroupRoles();
 
 private:
     void classBegin() override;
@@ -183,7 +185,7 @@ private:
     void setItemsSelected(const QModelIndexList& indexes, bool selected);
 
     bool needWarnOnRemoveRows(int row, int count);
-    bool warnAboutRemovingInstrumentsIfNecessary(int count);
+    muse::async::Promise<bool> askAboutRemovingInstruments(int count);
 
     AbstractLayoutPanelTreeItem* buildSharedPartItem(const notation::Part* part);
     AbstractLayoutPanelTreeItem* buildMasterPartItem(const notation::Part* masterPart);
@@ -223,7 +225,6 @@ private:
 
     bool m_dragInProgress = false;
     AbstractLayoutPanelTreeItem* m_dragSourceParentItem = nullptr;
-    MoveParams m_activeDragMoveParams;
 
     muse::ID m_systemStaffToSelect;
 };

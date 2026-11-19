@@ -39,7 +39,7 @@ public:
 
     NoteLineSegment* clone() const override { return new NoteLineSegment(*this); }
 
-    EngravingObject* propertyDelegate(Pid) const override;
+    PropertyDelegate resolvePropertyDelegate(Pid) const override;
 };
 
 class NoteLine final : public TextLineBase
@@ -70,7 +70,7 @@ public:
 
     void reset() override;
 
-    bool enforceMinLength() { return m_lineEndPlacement != NoteLineEndPlacement::LEFT_EDGE; }
+    bool enforceMinLength() const { return m_lineEndPlacement != NoteLineEndPlacement::LEFT_EDGE; }
 
 protected:
     Sid defaultPosSid() const override;

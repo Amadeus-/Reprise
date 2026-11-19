@@ -51,6 +51,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/durationtype_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/dynamic_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/earlymusic_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/editpart_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/eid_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/element_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/exchangevoices_tests.cpp
@@ -71,6 +72,8 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/midi/midirenderer_bend_tests.cpp
     #${CMAKE_CURRENT_LIST_DIR}/midimapping_tests.cpp doesn't compile and needs actualization
     ${CMAKE_CURRENT_LIST_DIR}/note_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/noteinputmeasurerepeat_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/editmeasurerepeat_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/parent_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/parts_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/partialtie_tests.cpp
@@ -93,6 +96,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/system_dividers_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tempotimeline_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/textbase_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/textstyle_tests.cpp
     #${CMAKE_CURRENT_LIST_DIR}/textedit_tests.cpp doesn't compile and needs actualization
     ${CMAKE_CURRENT_LIST_DIR}/timesig_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/tools_tests.cpp

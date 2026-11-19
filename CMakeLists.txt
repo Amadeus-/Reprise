@@ -83,8 +83,6 @@ set(MUSE_APP_BUILD_MODE "dev" CACHE STRING "Build mode")
 
 set(MUSESCORE_REVISION "" CACHE STRING "Build revision")
 
-option(MUSE_MODULE_DOCKWINDOW_KDDOCKWIDGETS_V2 "Use KDDockWidgets v2" ON)
-
 # Reprise: no update server and no telemetry. Force the update module OFF for every
 # build of this fork (the muse submodule defaults it ON; FORCE overrides any stale
 # cache entry too). OFF swaps in the update stub, a supported config also used by
