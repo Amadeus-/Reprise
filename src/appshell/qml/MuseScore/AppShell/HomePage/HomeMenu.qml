@@ -70,7 +70,7 @@ Item {
             spacing: 0
 
             model: [
-                { "name": "scores", "title": qsTrc("appshell", "Scans"), "iconCode": IconCode.MUSIC_NOTES },
+                { "name": "scores", "title": qsTrc("appshell", "Scans"), "iconCode": IconCode.IMAGE_MOUNTAINS },
                 { "name": "extensions", "title": qsTrc("appshell", "Plugins"), "iconCode":  IconCode.PLUGIN },
                 { "name": "learn", "title": qsTrc("appshell", "Learn"), "iconCode":  IconCode.MORTAR_BOARD }
             ]

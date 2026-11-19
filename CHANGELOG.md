@@ -8,6 +8,27 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.18] — 2026-11-19
+
+### Fixed
+- **The Import Scan dialog's "File:" line now shows just the file's name, not a path.** The read-only header was built with
+  MuseScore's `io::filename()` helper, whose path splitter only recognizes the `/` separator. On Windows a file picked
+  through the native dialog arrives with `\` separators, so the helper failed to find the final separator and returned the
+  whole path with only the drive letter stripped (for example `\Users\you\scans\rochut-p5-300dpi.png`) instead of the
+  basename. The line now derives the name with Qt's `QFileInfo`, which handles both `/` and `\` on every platform, so it
+  reads a clean `rochut-p5-300dpi.png`. Applies to both the interactive import and the MCP dialog-capture path.
+
+### Changed
+- **The left "Scans" sidebar item has a clearer icon.** It previously reused the generic music-notes glyph (shared with
+  the editor); it now uses an image/picture glyph, which better signals that this is where scanned PDFs and images are
+  brought in.
+
+### Docs
+- **`CONTRIBUTING.md` now points contributors to Reprise.** It directed people to MuseScore's Contributing wiki page;
+  it now sends issues and pull requests to the Reprise repository, while still pointing changes to the underlying
+  notation/engraving/playback engine upstream to MuseScore and asking that MuseScore's copyright and license headers be
+  kept intact.
+
 ## [0.12.17] — 2026-11-19
 
 ### Fixed

@@ -28,6 +28,7 @@
 #include <QEventLoop>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
 #include <QJsonArray>
@@ -784,7 +785,10 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     //! pdfConfident drive the "Pages:" line (a non-confident PDF shows "multiple", never a guess); embeddedDpi is the
     //! image's real resolution metadata if any (0 == omit the dpi suffix); detectedDpi is the PDF's raw detected native
     //! resolution shown in the "why" caption when matched.
-    query.addParam("fileName", Val(io::filename(pdfPath).toStdString()));
+    //! Bare filename for the dialog header. QFileInfo (not muse io::filename) because the latter's FileInfo::fileName()
+    //! splits on '/' only -- a native Windows backslash path yields a drive-letter-dropped folder path instead of the
+    //! basename. QFileInfo handles both separators cross-platform (same helper already used in audiverisrunner).
+    query.addParam("fileName", Val(QFileInfo(pdfPath.toQString()).fileName().toStdString()));
     query.addParam("pageCount", Val(imageInfo.pageCount));
     query.addParam("pdfConfident", Val(imageInfo.pdfConfident));
     query.addParam("embeddedDpi", Val(imageInfo.embeddedDpi));
@@ -1370,7 +1374,9 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
     query.addParam("showPageRange", Val(imageInfo.showPageRange));
     query.addParam("imageWidth", Val(imageInfo.width));
     query.addParam("imageHeight", Val(imageInfo.height));
-    query.addParam("fileName", Val(io::filename(filePath).toStdString()));
+    //! Bare filename for the dialog header -- QFileInfo (handles both separators), not muse io::filename (splits on '/'
+    //! only, so a native Windows backslash path would show a drive-letter-dropped folder path). Matches importPdf().
+    query.addParam("fileName", Val(QFileInfo(filePath.toQString()).fileName().toStdString()));
     query.addParam("pageCount", Val(imageInfo.pageCount));
     query.addParam("pdfConfident", Val(imageInfo.pdfConfident));
     query.addParam("embeddedDpi", Val(imageInfo.embeddedDpi));
