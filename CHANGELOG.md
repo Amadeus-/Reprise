@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.12] — 2026-11-18
+
+### Fixed
+- **A slow import that eventually opens successfully is no longer wrongly reported as failed.** 0.12.3 added a graceful
+  "could not produce a usable score" error for scans whose recognised MusicXML is too corrupt or incomplete to open, but
+  it detected that failure with a fixed 8-second wall-clock timer — and a large multi-sheet score can take much longer
+  than that to open (one Pastoral scan takes ~18 s, partly because the #711 pad-and-retry runs Audiveris twice). A fully
+  successful but slow import could therefore trip the timer and be shown as a failure even as the score opened. Reprise
+  now takes the real open result directly from MuseScore's open path instead of racing a clock: a declined open reports
+  its error the instant it resolves, and a slow-but-valid open is simply one still in progress — it is never mis-flagged,
+  however long it takes. A genuinely corrupt or unopenable scan still shows the same graceful error (never a silent
+  "Done" and never a crash), and the 0.12.2 empty-recognition refusal is unchanged.
+
 ## [0.12.11] — 2026-11-18
 
 ### Fixed
@@ -573,6 +586,7 @@ with the first slice of the PDF scan-and-correct workflow.
   added to the import flow.
 
 [Unreleased]: https://github.com/Amadeus-/Reprise/tree/reprise-main
+[0.12.12]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.9]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.6]: https://github.com/Amadeus-/Reprise/tree/reprise-main

@@ -50,7 +50,7 @@
 #include "engraving/dom/masterscore.h"
 
 #include "reprise/reprisecommands.h"
-#include "project/projectcommands.h"
+#include "project/iopenprojectscenario.h"
 
 #include "internal/audiverisrunner.h"
 #include "internal/scangeometrystripper.h"
@@ -63,13 +63,14 @@ using namespace muse;
 //! just-opened score's master-notation change fire so the Grand-Piano override lands before the model is gone.
 static constexpr int AUTO_CLOSE_DELAY_MS = 1400;
 
-//! How long to wait for command://project/open to resolve before concluding the recognised score never opened. The
-//! dispatch returns before the async open completes and its Ret is always ok (ProjectActionsController::runAsync
-//! swallows the real outcome), so the only reliable success signal is masterNotationChanged firing; this bounded
-//! window -- re-checked against masterNotation() so a slow-but-valid open can never be mis-flagged -- is how a silent
-//! open-decline becomes a clear error. Generous on purpose: a local MusicXML open is sub-second, so it never trips a
-//! legitimately slow open.
-static constexpr int OPEN_RESOLVE_TIMEOUT_MS = 8000;
+//! Backstop deadline (ms) for the import open -- purely a safety net, NOT how failure is normally detected. The open
+//! outcome is taken from the open-scenario promise owned in openImported(): a declined open reports its error Ret the
+//! instant it resolves, and a successful open is finalized by masterNotationChanged -- so a slow-but-valid open is never
+//! a race, it is just a promise that has not resolved yet (the popup stays on "Opening score..." for exactly as long as
+//! the open genuinely takes). This deadline exists only for the pathological case where the promise resolves ok yet no
+//! master ever becomes current, so the popup can never hang forever. It is success-aware (reportOpenFailed() re-checks
+//! masterNotation()) and deliberately far longer than any real open, so it can never mis-flag a legitimately slow import.
+static constexpr int32_t OPEN_BACKSTOP_TIMEOUT_MS = 120000;
 
 ImportProgressModel::ImportProgressModel(QObject* parent)
     : QObject(parent), muse::Contextable(muse::iocCtxForQmlObject(this))
@@ -446,44 +447,67 @@ void ImportProgressModel::openImported(const QString& outputPath)
 
     //! Hand the produced MusicXML to MuseScore's native open path; a .mxl/.xml routes through MusicXmlReader.
     //! Arm the Grand-Piano override and the Done-line measure count for the score about to open, mark the open as
-    //! awaited, then dispatch.
+    //! awaited, then open it.
     m_pendingGrandPianoReset = true;
     m_pendingDoneCounts = true;
     m_awaitingOpen = true;
 
+    //! Open through MuseScore's own open scenario and OWN the resulting promise, so the REAL open outcome is visible
+    //! here. The equivalent command://project/open dispatch swallows that outcome (its dispatch Ret is always ok --
+    //! ProjectActionsController::runAsync discards the async result), which is why 0.12.3 had to INFER failure from a
+    //! fixed wall-clock timer. A large multi-sheet score can take far longer to open than any fixed window (the #711
+    //! pad+retry alone is two Audiveris passes), so that 8s timer false-flagged slow-but-valid opens as failures. With
+    //! the promise owned, a declined open (MusicXML too corrupt/incomplete for the reader to accept -> an error Ret, or
+    //! the user declining the force-load prompt) reports its error the INSTANT it resolves -- no race -- while a
+    //! successful open is still finalized by masterNotationChanged (Grand-Piano override + Done counts). A slow open is
+    //! simply a promise that has not resolved yet, so it can never be mistaken for a failure however long it takes.
     const QUrl url = QUrl::fromLocalFile(pathToOpen);
-    commandDispatcher()->dispatch(project::PROJECT_OPEN_COMMAND, { { "url", muse::Val(url.toString()) } });
-
-    //! Open-decline fallback. command://project/open returns before the async open resolves, and its dispatch Ret is
-    //! always ok, so a successful open is signalled ONLY by masterNotationChanged firing (which finalizes the Done
-    //! state above) -- it never fires on a declined open (e.g. MusicXML too corrupt/incomplete for the reader to
-    //! accept). If, after a generous window, that signal has not arrived AND no master notation is present, the score
-    //! never opened: surface a graceful error instead of leaving the popup on the interim "Opening score..." forever.
-    //! The master-notation re-check means a slow-but-valid open that lands first can never be mistaken for a failure.
-    QTimer::singleShot(OPEN_RESOLVE_TIMEOUT_MS, this, [this]()
+    openProjectScenario()->openProject(muse::rcommand::Params{ { "url", muse::Val(url.toString()) } })
+    .onResolve(this, [this](const muse::Ret& ret)
     {
-        if (!m_awaitingOpen)
+        //! Only a genuine open failure concerns us here: on success masterNotationChanged has already finalized the Done
+        //! state (and cleared m_awaitingOpen), so reportOpenFailed() no-ops. reportOpenFailed() also re-checks
+        //! master-presence, so even an ok-looking resolve can never mis-flag a score that is in fact present.
+        if (!ret)
         {
-            return;   //! the open already resolved to success (masterNotationChanged finalized it)
+            reportOpenFailed();
         }
-
-        if (projectSession()->masterNotation())
-        {
-            return;   //! a score is present -> the open succeeded; let the success path finalize it
-        }
-
-        //! Definitively no score opened -- refuse GRACEFULLY, consistent with the zero-part guard (status = error +
-        //! reprise.get-import-errors), never a silent "Done".
-        m_awaitingOpen = false;
-        m_pendingGrandPianoReset = false;
-        m_pendingDoneCounts = false;
-        m_errorDetails.clear();
-        m_stageText = muse::qtrc("reprise", "Reprise could not produce a usable score from this scan - it may be too "
-                                            "incomplete or damaged to open.");
-        emit progressChanged();
-        setStatus("error");
-        importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
     });
+
+    //! Backstop ONLY (see OPEN_BACKSTOP_TIMEOUT_MS): the owned promise above is the normal success/failure signal. This
+    //! generous, success-aware deadline exists solely for the pathological case where the promise resolves ok yet no
+    //! master ever becomes current, so the popup can never hang on the interim "Opening score..." forever. Deliberately
+    //! far longer than any real open, so it can never race a legitimately slow import.
+    QTimer::singleShot(OPEN_BACKSTOP_TIMEOUT_MS, this, [this]() { reportOpenFailed(); });
+
+    return;
+}
+
+void ImportProgressModel::reportOpenFailed()
+{
+    if (!m_awaitingOpen)
+    {
+        return;   //! the open already resolved to success (masterNotationChanged finalized it) or failure fired once
+    }
+
+    if (projectSession()->masterNotation())
+    {
+        return;   //! a score is present -> the open succeeded; let the success path finalize it
+    }
+
+    //! Definitively no score opened -- refuse GRACEFULLY, consistent with the zero-part guard (status = error +
+    //! reprise.get-import-errors), never a silent "Done".
+    m_awaitingOpen = false;
+    m_pendingGrandPianoReset = false;
+    m_pendingDoneCounts = false;
+    m_errorDetails.clear();
+    m_stageText = muse::qtrc("reprise", "Reprise could not produce a usable score from this scan - it may be too "
+                                        "incomplete or damaged to open.");
+    emit progressChanged();
+    setStatus("error");
+    importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+
+    return;
 }
 
 int ImportProgressModel::recognizedPartCount(const QString& outputPath) const

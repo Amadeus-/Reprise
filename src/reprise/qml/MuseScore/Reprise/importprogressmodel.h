@@ -30,9 +30,9 @@
 
 #include "modularity/ioc.h"
 #include "async/asyncable.h"
-#include "rcommand/icommanddispatcher.h"
-#include "rcommand/commandable.h"
+#include "rcommand/commandtypes.h"
 #include "project/iprojectsession.h"
+#include "project/iopenprojectscenario.h"
 #include "notation/iinstrumentsrepository.h"
 
 #include "internal/irepriseconfiguration.h"
@@ -45,8 +45,7 @@ class AudiverisRunner;
 //! streams its parsed progress into bindable properties, and on success performs the import (opens the recognised
 //! MusicXML) + the temporary Grand-Piano override, then flips to the Done state (and auto-closes if the user asked).
 //! On failure it exposes the error state (message + a tail of Audiveris output). Cancel kills Audiveris and aborts.
-class ImportProgressModel : public QObject, public muse::Contextable, public muse::async::Asyncable,
-    public muse::rcommand::Commandable
+class ImportProgressModel : public QObject, public muse::Contextable, public muse::async::Asyncable
 {
     Q_OBJECT
 
@@ -68,8 +67,8 @@ class ImportProgressModel : public QObject, public muse::Contextable, public mus
 
     QML_ELEMENT
 
-    muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
+    muse::ContextInject<mu::project::IOpenProjectScenario> openProjectScenario = { this };
     muse::GlobalInject<mu::notation::IInstrumentsRepository> instrumentsRepository;
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
@@ -144,6 +143,13 @@ private:
     //! Open the recognised MusicXML through MuseScore's native import, armed to default every part to Grand Piano.
     void openImported(const QString& outputPath);
 
+    //! Declare the import a graceful failure because the recognised score never opened -- the open-scenario promise
+    //! resolved with an error Ret, or the generous backstop elapsed with no master ever becoming current. Guarded by
+    //! m_awaitingOpen (fires at most once, never after a successful open) and re-checks masterNotation() so a
+    //! slow-but-valid open that landed first is never mis-flagged. Surfaces the error in the popup AND via
+    //! reprise.get-import-errors, consistent with the zero-part guard -- never a silent "Done".
+    void reportOpenFailed();
+
     //! Count the <score-part> declarations in the produced MusicXML (.mxl ZIP or plain .xml). Used to detect a
     //! degenerate scan (zero recognised parts) so it can be refused GRACEFULLY before opening, instead of handing
     //! the engraving layout a zero-part / zero-visible-part score. Returns the part count, or -1 when the file
@@ -175,9 +181,9 @@ private:
     bool m_pendingDoneCounts = false;
 
     //! Set when the imported score's open is dispatched; cleared when the open resolves either way. On a successful
-    //! open masterNotationChanged fires and finalizes the Done state; if that signal has not arrived once the open has
-    //! had ample time to resolve AND no master notation is present, the score never opened -> a graceful error. Guards
-    //! both the success finalization and the open-decline fallback so each fires exactly once per import.
+    //! open masterNotationChanged fires and finalizes the Done state; a declined open resolves the open-scenario
+    //! promise with an error Ret and reportOpenFailed() surfaces a graceful error. Guards both the success
+    //! finalization and the open-failure path so each fires exactly once per import.
     bool m_awaitingOpen = false;
 };
 }
