@@ -21,11 +21,11 @@
  */
 #include "recentscoresmodel.h"
 
+#include <QFileInfo>
+
 #include "translation.h"
 #include "dataformatter.h"
 #include "io/fileinfo.h"
-
-#include "engraving/infrastructure/mscio.h"
 
 #include "log.h"
 
@@ -142,17 +142,37 @@ void RecentScoresModel::removeItem(const muse::io::path_t& path)
     endRemoveRows();
 }
 
+// Reprise: DISPLAY-ONLY clean name for the Scans list NAME column. Strips the final extension using LAST-dot logic
+// (QFileInfo::completeBaseName keeps every internal dot, unlike a first-dot split) then removes the fork's trailing
+// ".reprise-stripped" marker. The underlying path (PATH_KEY) is untouched, so open/sort/identity are unaffected.
+static QString cleanDisplayName(const RecentFile& file)
+{
+    if (!file.displayNameOverride.isEmpty())
+    {
+        return file.displayNameOverride;
+    }
+
+    QString baseName = QFileInfo(file.path.toQString()).completeBaseName();
+
+    static const QString repriseStrippedSuffix(".reprise-stripped");
+    if (baseName.endsWith(repriseStrippedSuffix))
+    {
+        baseName.chop(repriseStrippedSuffix.size());
+    }
+
+    return baseName;
+}
+
 QVariantMap RecentScoresModel::makeItem(const RecentFile& file) const
 {
     QVariantMap obj;
 
     std::string suffix = io::suffix(file.path);
-    bool isSuffixInteresting = suffix != engraving::MSCZ;
 
     RetVal<uint64_t> fileSize = fileSystem()->fileSize(file.path);
     QString fileSizeString = (fileSize.ret && fileSize.val > 0) ? DataFormatter::formatFileSize(fileSize.val).toQString() : QString();
 
-    obj[NAME_KEY] = file.displayName(isSuffixInteresting);
+    obj[NAME_KEY] = cleanDisplayName(file);
     obj[PATH_KEY] = file.path.toQString();
     obj[SUFFIX_KEY] = QString::fromStdString(suffix);
     obj[FILE_SIZE_KEY] = fileSizeString;

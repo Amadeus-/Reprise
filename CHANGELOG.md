@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.19] — 2026-11-19
+
+### Changed
+- **The "Scans" home list now shows a clean base name in the NAME column.** Each entry previously displayed the full file
+  name, including the `.musicxml`/`.mscz`/`.mxl` extension and Reprise's internal `.reprise-stripped` marker (for example
+  `Tchaikovsky Waltz of the Flower.reprise-stripped.musicxml`). The list now derives the shown text with Qt's
+  `QFileInfo::completeBaseName()` (last-dot logic, so internal dots such as those in `Saint Saens... Hostia. Christmas
+  Oratorio` are preserved) and then strips a trailing `.reprise-stripped`, leaving just `Tchaikovsky Waltz of the Flower`.
+  This is display-only: the underlying path used to open, sort, and identify each entry — and the files on disk — are
+  untouched. Markers that are part of the real name, such as a `-padded` suffix, are kept.
+
 ## [0.12.18] — 2026-11-19
 
 ### Fixed
