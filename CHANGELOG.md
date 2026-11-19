@@ -8,6 +8,18 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.22] — 2026-11-19
+
+### Fixed
+- **The "Clear recent scans" confirmation dialog's affirmative button is no longer blank.** The confirm dialog raised by
+  the Scans page overflow menu passed the bare standard `IInteractive::Button::Clear` enum to `question()`. In muse,
+  `Interactive::buttonData()` only assigns label text to a handful of standard buttons (Ok/Save/Cancel/Discard/Yes/No/...);
+  `Button::Clear` falls through to an empty-text `ButtonData`, so the button rendered with no caption. The affirmative button
+  is now built fork-side as a custom `ButtonData` with explicit text ("Clear recent scans"), `accent = true`, and
+  `AcceptRole`, while Cancel reuses the labeled standard `buttonData(Button::Cancel)`. The default button stays Cancel and
+  the confirm behavior is unchanged (the resolve handler still matches `Button::Clear` because the custom button keeps that
+  id).
+
 ## [0.12.21] — 2026-11-19
 
 ### Fixed

@@ -84,14 +84,22 @@ void ScoresPageModel::clearRecentScores()
     std::string title = muse::trc("project", "Clear recent scans history?");
     std::string body = muse::trc("project", "This won't delete your files.");
 
-    interactive()->question(title, body, {
-        muse::IInteractive::Button::Cancel, muse::IInteractive::Button::Clear
-    }, muse::IInteractive::Button::Cancel)
+    // Build explicit ButtonData so the affirmative button carries a label: the bare standard
+    // Button::Clear enum has no text in muse's Interactive::buttonData(), so it rendered blank.
+    muse::IInteractive::ButtonData cancelBtn = interactive()->buttonData(muse::IInteractive::Button::Cancel);
+    muse::IInteractive::ButtonData clearBtn(int(muse::IInteractive::Button::Clear),
+                                            muse::trc("project", "Clear recent scans"), true, false,
+                                            muse::IInteractive::AcceptRole);
+
+    interactive()->question(title, muse::IInteractive::Text(body), { cancelBtn, clearBtn },
+                            int(muse::IInteractive::Button::Cancel))
     .onResolve(this, [this](const muse::IInteractive::Result& res) {
         if (res.isButton(muse::IInteractive::Button::Clear)) {
             commandDispatcher()->dispatch(project::PROJECT_CLEAR_RECENT_COMMAND);
         }
     });
+
+    return;
 }
 
 ScoresPageModel::ViewType ScoresPageModel::viewType() const
