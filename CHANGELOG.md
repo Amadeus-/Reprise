@@ -8,7 +8,21 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
-## [0.12.10] — 2026-11-18
+## [0.12.11] — 2026-11-18
+
+### Fixed
+- **TIFF scans are now padded with a white margin before recognition, just like every other image.** 0.12.10 added
+  the Audiveris #711 edge-crash white-margin pad for PNG/JPG/BMP/GIF (and a retry pad for PDFs) but had to leave TIFF
+  unpadded because the Qt kit shipped no TIFF plugin. With that plugin now present, TIFF gets the same protection:
+  - **Single-page TIFF:** padded exactly like any other image (centered, unscaled, on a 100-pixel white border).
+  - **Multi-page TIFF:** every page is decoded, each padded with the same border, and the pages are re-assembled into a
+    single multi-page file that Audiveris reads — so all pages are recognized, in order, with the edge-crash fix applied
+    to each. (The padded pages are carried in a PDF, because the Qt TIFF plugin cannot write a multi-page TIFF; the page
+    content is unchanged, only a white border is added.)
+  The oversized-scan guard now measures the padded TIFF size too, skipping the margin for any page already near the
+  20-megapixel limit. And if anything about the TIFF pad is uncertain — a page cannot be decoded, the page count cannot
+  be confirmed — Reprise falls back to feeding Audiveris the original TIFF, which it reads natively, so a multi-page TIFF
+  import can never drop, reorder, or corrupt a page.
 
 ### Fixed
 - **Scans whose top or bottom staff sits right at the page edge no longer crash recognition.** Audiveris has a known

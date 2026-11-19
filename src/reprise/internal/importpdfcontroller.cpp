@@ -109,10 +109,11 @@ static uint32_t rdU32(const QByteArray& d, int64_t pos, bool le)
 
 //! In-house TIFF inspector: count frames (image file directories) by walking the IFD chain, and read the LARGEST
 //! frame's pixel width/height (tags 256/257, max by pixel count across all frames) plus its native resolution (DPI,
-//! from tags 282 XResolution / 296 ResolutionUnit, with 283 YResolution as a fallback). This Qt kit ships NO TIFF image
-//! plugin, so QImageReader cannot read a TIFF at all -- hence this plugin-independent fallback, used both for the page
-//! count/resolution info line and for the oversized-image pre-flight (whose Audiveris cap is per-SHEET, i.e. per frame,
-//! so the biggest frame is what must be judged). Classic TIFF only (BigTIFF magic 43 -> false). Returns false on any
+//! from tags 282 XResolution / 296 ResolutionUnit, with 283 YResolution as a fallback). The kit now ships qtiff, so
+//! QImageReader could supply the same facts (a future cleanup), but this plugin-independent walk is kept because it serves
+//! both the page count/resolution info line and the oversized-image pre-flight in one pass (whose Audiveris cap is
+//! per-SHEET, i.e. per frame, so the biggest frame is what must be judged). Classic TIFF only (BigTIFF magic 43 -> false).
+//! Returns false on any
 //! parse failure (not a classic TIFF, truncated, offset out of range) so the caller treats the frame count as unknown.
 //! outDpi is the resolved DPI of the reported (largest) frame, or 0 when it cannot be determined (ResolutionUnit none,
 //! resolution tags absent, or denominator 0) -- never invented here; the caller then shows a labelled default.
@@ -565,7 +566,7 @@ static int readBmpDpi(const QByteArray& d)
 
 //! Dispatch a non-TIFF image's bytes to the matching in-house resolution reader. Returns the genuinely-measured embedded
 //! DPI, or 0 when the file carries none (GIF -- and any unrecognised suffix -- has no physical-resolution concept). TIFF
-//! is handled separately by readTiffInfo (the kit ships no TIFF plugin). suffix is io::suffix (lower-cased, no dot).
+//! resolution is handled separately by readTiffInfo (its IFD walk, kept despite qtiff). suffix is io::suffix (lower-cased, no dot).
 static int readImageDpi(const QByteArray& d, const std::string& suffix)
 {
     if (suffix == "png")
@@ -900,10 +901,12 @@ muse::Ret ImportPdfController::preflightImageSize(const muse::io::path_t& path) 
 
     qint64 maxPixels = 0;
 
-    //! This Qt kit ships NO TIFF image plugin, so QImageReader reads a TIFF as 0 frames / 0x0 -- the oversized check
-    //! would then see 0 pixels and SILENTLY PASS an oversized TIFF, which Audiveris later rejects per-sheet at its own
-    //! 20 MP cap (cryptically). So read TIFF dimensions with the in-house, plugin-independent IFD walk, which reports
-    //! the LARGEST frame's pixel count (Audiveris's cap is per-sheet / per-frame).
+    //! TIFF dimensions still come from the in-house, plugin-independent IFD walk, which reports the LARGEST frame's pixel
+    //! count (Audiveris's cap is per-sheet / per-frame). The kit now ships qtiff so QImageReader COULD read a TIFF here too
+    //! (a future cleanup), but readTiffInfo also yields the page count + DPI the intake dialog needs, so it is kept. As of
+    //! 0.12.11 TIFF is padded like any other image (padTiffToTemp), so judge the PADDED pixel count Audiveris will see --
+    //! falling back to the original count when the border alone would exceed the cap (the runner then skips the pad for
+    //! that frame), consistent with the non-TIFF branch below.
     const std::string suffix = io::suffix(path);
     const bool isTiff = suffix == "tif" || suffix == "tiff";
     if (isTiff)
@@ -923,11 +926,14 @@ muse::Ret ImportPdfController::preflightImageSize(const muse::io::path_t& path) 
         const bool tiffOk = readTiffInfo(tiffData, tiffFrames, tiffWidth, tiffHeight, tiffDpi);
         if (tiffOk)
         {
-            maxPixels = static_cast<qint64>(tiffWidth) * static_cast<qint64>(tiffHeight);
+            const qint64 origPixels = static_cast<qint64>(tiffWidth) * static_cast<qint64>(tiffHeight);
+            const qint64 paddedPixels = static_cast<qint64>(tiffWidth + 2 * IMAGE_PAD_MARGIN)
+                                        * static_cast<qint64>(tiffHeight + 2 * IMAGE_PAD_MARGIN);
+            maxPixels = paddedPixels <= AUDIVERIS_MAX_PIXELS ? paddedPixels : origPixels;
         }
 
         LOGI() << "Reprise: image pre-flight (TIFF) largest frame " << tiffWidth << "x" << tiffHeight << " = "
-               << maxPixels << " pixels, frames=" << tiffFrames << ", tiffOk=" << (tiffOk ? "true" : "false")
+               << maxPixels << " padded pixels, frames=" << tiffFrames << ", tiffOk=" << (tiffOk ? "true" : "false")
                << (maxPixels > AUDIVERIS_MAX_PIXELS ? " -> blocked oversized" : " -> passed") << ": "
                << path.toQString();
     }
@@ -954,8 +960,7 @@ muse::Ret ImportPdfController::preflightImageSize(const muse::io::path_t& path) 
                 //! of IMAGE_PAD_MARGIN px on every side. BUT if the border alone would push an otherwise-OK frame past the
                 //! cap, the runner skips the pad for that frame (feeds it unpadded), so fall back to the original pixel
                 //! count then: this blocks only a scan that is genuinely too large on its own, never one our own border
-                //! inflated over the limit. (TIFF is handled above and is left unpadded for 0.12.10, so its branch is
-                //! unchanged.)
+                //! inflated over the limit. (TIFF takes the same padded judgment in its own branch above.)
                 const qint64 origPixels = static_cast<qint64>(size.width()) * static_cast<qint64>(size.height());
                 const qint64 paddedPixels = static_cast<qint64>(size.width() + 2 * IMAGE_PAD_MARGIN)
                                             * static_cast<qint64>(size.height() + 2 * IMAGE_PAD_MARGIN);
@@ -1006,12 +1011,11 @@ ImportPdfController::ImageInfo ImportPdfController::inspectImage(const muse::io:
         return info;
     }
 
-    //! Image frame count + native resolution. CRITICAL: this Qt kit ships NO TIFF image plugin, so QImageReader cannot
-    //! read a TIFF at all (imageCount() == -1, size() invalid) -- that is the real cause of a multi-page TIFF showing no
-    //! page selector, not an imageCount() quirk. We therefore count frames two ways and take the larger: QImageReader's
-    //! jumpToNextImage() (works for the formats that DO have a plugin: PNG/JPG/GIF/...), and an in-house TIFF IFD-chain
-    //! walk (plugin-independent). jumpToImage() is deliberately NOT used: in Qt 6 it returns false even for frame 0 of a
-    //! perfectly readable image, so it always under-counts.
+    //! Image frame count + native resolution. The kit now ships qtiff, so QImageReader reads a TIFF too; we still count
+    //! frames two ways and take the larger -- QImageReader's jumpToNextImage() (PNG/JPG/GIF/TIFF/...) and the in-house TIFF
+    //! IFD-chain walk (readTiffInfo, kept for its page-count + DPI read) -- so a plugin hiccup can never silently hide a
+    //! page. jumpToImage() is deliberately NOT used: in Qt 6 it returns false even for frame 0 of a perfectly readable
+    //! image, so it always under-counts (the multi-frame pad path relies on this same gotcha).
     int rawImageCount = 0;
     int qtWidth = 0;
     int qtHeight = 0;
@@ -1039,7 +1043,7 @@ ImportPdfController::ImageInfo ImportPdfController::inspectImage(const muse::io:
         }
     }
 
-    //! In-house TIFF fallback (no Qt TIFF plugin): walk the IFD chain for the real frame count + first-frame dimensions.
+    //! In-house TIFF read (kept despite qtiff now being present): walk the IFD chain for the real frame count + first-frame dimensions.
     const std::string suffix = io::suffix(path);
     const bool isTiff = suffix == "tif" || suffix == "tiff";
     int tiffFrames = 0;
@@ -1060,7 +1064,7 @@ ImportPdfController::ImageInfo ImportPdfController::inspectImage(const muse::io:
         tiffOk = readTiffInfo(tiffData, tiffFrames, tiffWidth, tiffHeight, tiffDpi);
     }
 
-    //! Did EITHER method actually read this image? A TIFF with no plugin AND a failed byte-scan is genuinely unknown.
+    //! Did EITHER method actually read this image? A TIFF whose IFD walk failed AND an empty reader count is genuinely unknown.
     const bool frameCountKnown = nextCount >= 1 || tiffOk;
 
     int reliable = nextCount;
@@ -1080,7 +1084,7 @@ ImportPdfController::ImageInfo ImportPdfController::inspectImage(const muse::io:
     //! non-TIFF image we byte-scan for real resolution metadata (PNG pHYs chunk, JPEG JFIF/EXIF density, BMP
     //! biXPelsPerMeter; GIF has none). We deliberately do NOT use QImage::dotsPerMeterX(): this Qt kit BACK-FILLS 96 dpi
     //! for a PNG with no pHYs chunk, so dotsPerMeterX() cannot distinguish "measured 96" from "no metadata" and would
-    //! show a bogus (~96 dpi) as if measured. For TIFF (no Qt plugin) the in-house IFD walk reads the RATIONAL tags
+    //! show a bogus (~96 dpi) as if measured. For TIFF the in-house IFD walk reads the RATIONAL tags
     //! (282/283/296). In BOTH cases embeddedDpi stays 0 when no real metadata is present; the dialog then shows the
     //! clearly-labelled "assumed" default (never a silently-invented measurement). embeddedDpi > 0 always means a value
     //! genuinely read from the file.

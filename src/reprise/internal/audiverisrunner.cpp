@@ -33,6 +33,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QImage>
+#include <QImageReader>
 #include <QMarginsF>
 #include <QPageSize>
 #include <QPainter>
@@ -135,8 +136,9 @@ muse::io::path_t AudiverisRunner::locateOutput(const muse::io::path_t& dir, cons
 
 bool AudiverisRunner::isQtDecodableImage(const std::string& suffix)
 {
-    //! Formats this Qt kit has an image plugin for and that Audiveris reads as a single raster sheet. TIFF is excluded on
-    //! purpose (no qtiff plugin yet -> 0.12.11). GIF is decodable; an animated GIF is never a music scan, and QImage then
+    //! SINGLE-frame raster formats this Qt kit has an image plugin for and that Audiveris reads as one raster sheet, so the
+    //! single-image pad (padImageToTemp) is correct for them. TIFF is NOT here: it is a multi-frame container handled by
+    //! padTiffToTemp, which preserves every page. GIF is decodable; an animated GIF is never a music scan, and QImage then
     //! simply loads its first frame, which pads fine.
     return suffix == "png" || suffix == "jpg" || suffix == "jpeg" || suffix == "bmp" || suffix == "gif";
 }
@@ -197,6 +199,129 @@ muse::io::path_t AudiverisRunner::padImageToTemp(const muse::io::path_t& imagePa
 
     LOGI() << "Reprise: image pad: " << src.width() << "x" << src.height() << " -> " << paddedW << "x" << paddedH
            << " (margin " << kMargin << " px) -> " << outPath;
+
+    return io::path_t(outPath);
+}
+
+muse::io::path_t AudiverisRunner::padTiffToTemp(const muse::io::path_t& imagePath) const
+{
+    //! Frame count FIRST: QImageReader::imageCount() runs qtiff's ensureHaveDirectoryCount(), which both returns the real
+    //! page count AND populates the handler's directoryCount. Populating it is REQUIRED -- without it jumpToNextImage()
+    //! fails its bounds check immediately and the walk stops after frame 0 (observed on this kit). jumpToImage() is NOT
+    //! used (unreliable here via QImageReader -- the inspectImage gotcha), but jumpToNextImage() works after a read() once
+    //! the count is known (traced in qtiff's qtiffhandler.cpp).
+    QImageReader reader(imagePath.toQString());
+    const int32_t frameCount = reader.imageCount();
+
+    //! Count unreadable (unexpected now the kit ships qtiff) -> feed the ORIGINAL unpadded TIFF, which Audiveris reads
+    //! natively. Never crash, never drop a page.
+    if (frameCount < 1)
+    {
+        LOGW() << "Reprise: TIFF pad: could not read a frame count from " << imagePath.toQString()
+               << "; feeding Audiveris the original.";
+        return io::path_t();
+    }
+
+    //! A single-frame TIFF is just an image: take the proven single-image pad (a padded PNG at native scale), exactly like
+    //! any other raster format. The multi-page PDF path below is only for a TIFF that genuinely holds more than one page.
+    if (frameCount == 1)
+    {
+        return padImageToTemp(imagePath);
+    }
+
+    //! Decode EVERY frame in document order: frame 0 is current after imageCount(), and jumpToNextImage() advances one
+    //! directory before each subsequent read(). Any seek/decode miss -> feed the ORIGINAL unpadded TIFF so a partial or
+    //! reordered page set is never produced.
+    std::vector<QImage> frames;
+    frames.reserve(static_cast<size_t>(frameCount));
+    for (int32_t i = 0; i < frameCount; ++i)
+    {
+        if (i > 0 && !reader.jumpToNextImage())
+        {
+            LOGW() << "Reprise: TIFF pad: could not advance to frame " << i << " of " << imagePath.toQString()
+                   << "; feeding Audiveris the original to avoid dropping a page.";
+            return io::path_t();
+        }
+
+        const QImage frame = reader.read();
+        if (frame.isNull())
+        {
+            LOGW() << "Reprise: TIFF pad: could not decode frame " << i << " of " << imagePath.toQString()
+                   << "; feeding Audiveris the original to avoid dropping a page.";
+            return io::path_t();
+        }
+
+        frames.push_back(frame);
+    }
+
+    //! Local to avoid a Unity-build name clash with the same-named file-scope constants in importpdfcontroller.cpp. The
+    //! per-sheet pixel cap (SheetStub maxPixelCount) and the fixed image border, matching padImageToTemp (TIFF frames are
+    //! native rasters like any other image, so a fixed 100 px border -- not a DPI-scaled one -- is the right pad).
+    constexpr int64_t kMaxPixels = 20000000;
+    constexpr int32_t kMargin = 100;
+
+    //! Qt 6's qtiff handler cannot WRITE a multi-page TIFF (its write() opens a fresh handle per call with no
+    //! TIFFWriteDirectory/append), so re-emit the padded frames as a single multi-page PDF, which Audiveris reads
+    //! identically. Size each page so paddedW px at the run DPI maps 1:1 (page = paddedW*72/dpi points); Audiveris then
+    //! rasterizes the PDF back at pdfResolution=dpi to the same pixel grid, so the DPI cancels and native pixels survive.
+    const int32_t dpi = m_dpi > 0 ? m_dpi : 300;
+
+    const QString outPath = QDir(m_outDir).absoluteFilePath(
+        QFileInfo(imagePath.toQString()).completeBaseName() + "-padded.pdf");
+
+    QPdfWriter writer(outPath);
+    writer.setResolution(dpi);
+    //! Zero page margins so the painter origin is the page corner and the whole page is paintable (the image fills it 1:1).
+    writer.setPageMargins(QMarginsF(0.0, 0.0, 0.0, 0.0));
+
+    QPainter painter;
+    bool painting = false;
+    for (const QImage& frame : frames)
+    {
+        //! Per-frame cap (mirrors preflightImageSize): pad the frame unless the border alone would push it past Audiveris's
+        //! per-sheet cap, in which case draw it unpadded (no margin) so this frame is still carried rather than rejected.
+        const int64_t paddedW = static_cast<int64_t>(frame.width()) + 2 * kMargin;
+        const int64_t paddedH = static_cast<int64_t>(frame.height()) + 2 * kMargin;
+        const bool padThisFrame = paddedW * paddedH <= kMaxPixels;
+        const int32_t canvasW = padThisFrame ? static_cast<int32_t>(paddedW) : frame.width();
+        const int32_t canvasH = padThisFrame ? static_cast<int32_t>(paddedH) : frame.height();
+
+        QImage canvas(canvasW, canvasH, QImage::Format_RGB32);
+        canvas.fill(Qt::white);
+        {
+            QPainter cp(&canvas);
+            cp.drawImage(padThisFrame ? kMargin : 0, padThisFrame ? kMargin : 0, frame);
+        }
+
+        //! One PDF page sized to the canvas raster at this DPI (device px == canvasW/canvasH), so the image draws 1:1.
+        const QPageSize ps(QSizeF(canvasW * 72.0 / static_cast<double>(dpi), canvasH * 72.0 / static_cast<double>(dpi)),
+                           QPageSize::Point);
+        writer.setPageSize(ps);
+        if (!painting)
+        {
+            if (!painter.begin(&writer))
+            {
+                LOGW() << "Reprise: TIFF pad: could not open QPdfWriter at " << outPath
+                       << "; feeding Audiveris the original.";
+                return io::path_t();
+            }
+            painting = true;
+        }
+        else
+        {
+            writer.newPage();
+        }
+
+        painter.drawImage(QPoint(0, 0), canvas);
+    }
+
+    if (painting)
+    {
+        painter.end();
+    }
+
+    LOGI() << "Reprise: TIFF pad: re-emitted " << frames.size() << " frame(s) with a " << kMargin
+           << " px white margin as a multi-page PDF at " << dpi << " dpi -> " << outPath;
 
     return io::path_t(outPath);
 }
@@ -438,10 +563,20 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
 
     //! Always-on image pad (Audiveris #711 edge-probe crash): a staff touching the raster edge trips AreaUtil.verticalCore
     //! with an ArrayIndexOutOfBoundsException. The maintainer workaround is a white margin, so for any QtGui-decodable
-    //! raster image we composite it centered on a larger white canvas and feed Audiveris THAT padded PNG instead. TIFF is
-    //! left unpadded for now (no qtiff plugin in the kit); PDFs take the retry-on-crash pad in onFinished(). On any pad
-    //! failure or an over-cap border, padImageToTemp returns empty and we feed the original unchanged (never crash).
-    if (isQtDecodableImage(io::suffix(pdfPath)))
+    //! raster image we composite it centered on a larger white canvas and feed Audiveris THAT padded copy instead. TIFF now
+    //! pads too (the kit ships qtiff) via padTiffToTemp, which preserves every frame of a multi-page TIFF. PDFs take the
+    //! retry-on-crash pad in onFinished(). On any pad failure or an over-cap border, the pad helper returns empty and we
+    //! feed the original unchanged (never crash, never drop a page).
+    const std::string inputSuffix = io::suffix(pdfPath);
+    if (inputSuffix == "tif" || inputSuffix == "tiff")
+    {
+        const io::path_t padded = padTiffToTemp(pdfPath);
+        if (!padded.empty())
+        {
+            m_pdfPath = padded;
+        }
+    }
+    else if (isQtDecodableImage(inputSuffix))
     {
         const io::path_t padded = padImageToTemp(pdfPath);
         if (!padded.empty())

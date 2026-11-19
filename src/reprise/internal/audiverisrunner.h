@@ -128,8 +128,9 @@ private:
     //! Search a directory (recursively) for the first file named <base>.<ext>, else any *.<ext>. Empty if none.
     muse::io::path_t locateOutput(const muse::io::path_t& dir, const std::string& base, const std::string& ext) const;
 
-    //! True if `suffix` (io::suffix: lower-case, no dot) is a raster image this Qt kit can decode, so it is eligible for
-    //! the always-on white-margin pad. TIFF is deliberately excluded (no qtiff plugin in the kit yet -> 0.12.11).
+    //! True if `suffix` (io::suffix: lower-case, no dot) is a SINGLE-frame raster image this Qt kit can decode, so it is
+    //! eligible for the always-on single-image white-margin pad (padImageToTemp). TIFF is handled separately by
+    //! padTiffToTemp (a TIFF may hold many frames, which the single-frame pad would destroy -> 0.12.11).
     static bool isQtDecodableImage(const std::string& suffix);
 
     //! Composite a decodable raster image centered onto a larger white canvas (a fixed 100 px border) and write it to a
@@ -137,6 +138,15 @@ private:
     //! or the border would push the frame past Audiveris's per-sheet pixel cap). Fixes the Audiveris #711 edge-probe
     //! crash (AreaUtil.verticalCore ArrayIndexOutOfBoundsException when a staff sits at the image edge) for image intake.
     muse::io::path_t padImageToTemp(const muse::io::path_t& imagePath) const;
+
+    //! Pad a TIFF (now that the kit ships qtiff) with the same white margin as other images, preserving ALL frames. A
+    //! single-frame TIFF takes the ordinary single-image pad (padImageToTemp, a padded PNG). A MULTI-frame TIFF is a
+    //! page container like a PDF, so every frame is decoded via QImageReader, padded, and re-emitted as ONE multi-page
+    //! padded PDF (Qt 6's qtiff handler cannot WRITE a multi-page TIFF -- its write() has no TIFFWriteDirectory/append --
+    //! so a PDF is used, which Audiveris reads identically; the page round-trip at the run DPI preserves native pixels).
+    //! Returns empty on ANY decode/write failure or an unreadable frame count, so the caller feeds the ORIGINAL unpadded
+    //! TIFF (which Audiveris reads natively) -- the worst case equals today's behavior, never a dropped/reordered page.
+    muse::io::path_t padTiffToTemp(const muse::io::path_t& imagePath) const;
 
     //! Re-rasterize a PDF to grayscale, anti-aliasing-OFF page images (matching PDFBox's ImageType.GRAY at the run DPI),
     //! pad each with a DPI-scaled white margin, and re-emit a single multi-page PDF; returns that path, or empty on any
