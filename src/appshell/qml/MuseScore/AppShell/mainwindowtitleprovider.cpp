@@ -26,6 +26,8 @@
 
 #include "notation/inotation.h"
 #include "project/inotationproject.h"
+#include "project/types/projecturis.h"
+#include "project/types/reprisenameutils.h"
 
 using namespace mu::appshell;
 
@@ -51,6 +53,14 @@ void MainWindowTitleProvider::load()
     });
 
     context()->currentNotationChanged().onNotify(this, [this]() {
+        update();
+    });
+
+    //! Reprise: recompute the title whenever the current page changes (e.g. Edit <-> Home/Scans), so the
+    //! title drops back to "Reprise" the moment the Home page is shown even if a score remains the current
+    //! project. Dialogs/popups push on top of the primary page, so this fires for them too, but update()
+    //! keys off the primary page (isEditingNotation) and is therefore stable under transient dialogs.
+    interactive()->currentUri().ch.onReceive(this, [this](const muse::Uri&) {
         update();
     });
 
@@ -109,21 +119,51 @@ void MainWindowTitleProvider::setFileModified(bool fileModified)
     emit fileModifiedChanged(fileModified);
 }
 
+bool MainWindowTitleProvider::isEditingNotation() const
+{
+    if (!interactive())
+    {
+        return false;
+    }
+
+    return interactive()->isOpened(project::NOTATION_PAGE_URI).val
+           || interactive()->isOpened(project::NOTATION_REVIEW_PAGE_URI).val;
+}
+
 void MainWindowTitleProvider::update()
 {
     project::INotationProjectPtr project = context()->project();
 
-    if (!project) {
-        setTitle(muse::qtrc("appshell", "Reprise"));
-        setFilePath("");
-        setFileModified(false);
+    //! Reprise: file path + modified state drive the OS document-proxy icon and the unsaved-changes
+    //! indicator (via MainWindowBridge). Keep them in sync regardless of which page is shown.
+    setFilePath((!project || project->isNewlyCreated() || project->isCloudProject())
+                ? "" : project->path().toQString());
+    setFileModified(project && project->isNeedSave());
+
+    //! Reprise: the window title reads "Reprise" on Home / with no score, and "<clean name> - Reprise"
+    //! (em dash) only while a score is actually being edited on the notation page. This keys off the
+    //! current MAIN page, not merely whether a project exists, which stops the old MuseScore behavior of
+    //! leaking the current score's filename into the title while the Home/Scans page is showing.
+    static const QString appName = muse::qtrc("appshell", "Reprise");
+
+    if (!project || !isEditingNotation())
+    {
+        setTitle(appName);
+
         return;
     }
 
-    notation::INotationPtr notation = context()->currentNotation();
-    setTitle(notation->projectNameAndPartName());
+    //! Reprise: reuse the fork's shared clean-name transform (same one the Scans list uses) on the project
+    //! path (LAST-dot extension strip, keeps internal dots, then drops the ".reprise-stripped" marker).
+    //! A newly created / cloud project has no on-disk path, so fall back to its display name.
+    const QString path = project->path().toQString();
+    QString cleanName = project::repriseCleanDisplayName(path.isEmpty() ? project->displayName() : path);
+    if (cleanName.isEmpty())
+    {
+        cleanName = project->displayName();
+    }
 
-    setFilePath((project->isNewlyCreated() || project->isCloudProject())
-                ? "" : project->path().toQString());
-    setFileModified(project->isNeedSave());
+    setTitle(cleanName + QString(" ") + QChar(0x2014) + QString(" ") + appName);
+
+    return;
 }

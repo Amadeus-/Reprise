@@ -21,11 +21,10 @@
  */
 #include "recentscoresmodel.h"
 
-#include <QFileInfo>
-
 #include "translation.h"
 #include "dataformatter.h"
 #include "io/fileinfo.h"
+#include "types/reprisenameutils.h"
 
 #include "log.h"
 
@@ -142,9 +141,10 @@ void RecentScoresModel::removeItem(const muse::io::path_t& path)
     endRemoveRows();
 }
 
-// Reprise: DISPLAY-ONLY clean name for the Scans list NAME column. Strips the final extension using LAST-dot logic
-// (QFileInfo::completeBaseName keeps every internal dot, unlike a first-dot split) then removes the fork's trailing
-// ".reprise-stripped" marker. The underlying path (PATH_KEY) is untouched, so open/sort/identity are unaffected.
+// Reprise: DISPLAY-ONLY clean name for the Scans list NAME column. Delegates to the shared fork helper
+// repriseCleanDisplayName() (LAST-dot extension strip + trailing ".reprise-stripped" removal) so the Scans
+// list and the main-window title stay in lock-step. The underlying path (PATH_KEY) is untouched, so
+// open/sort/identity are unaffected.
 static QString cleanDisplayName(const RecentFile& file)
 {
     if (!file.displayNameOverride.isEmpty())
@@ -152,15 +152,7 @@ static QString cleanDisplayName(const RecentFile& file)
         return file.displayNameOverride;
     }
 
-    QString baseName = QFileInfo(file.path.toQString()).completeBaseName();
-
-    static const QString repriseStrippedSuffix(".reprise-stripped");
-    if (baseName.endsWith(repriseStrippedSuffix))
-    {
-        baseName.chop(repriseStrippedSuffix.size());
-    }
-
-    return baseName;
+    return repriseCleanDisplayName(file.path.toQString());
 }
 
 QVariantMap RecentScoresModel::makeItem(const RecentFile& file) const

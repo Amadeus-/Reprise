@@ -8,6 +8,21 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.21] — 2026-11-19
+
+### Fixed
+- **The desktop window title bar no longer leaks the open score's raw filename on the Scans home page.** The title is
+  produced by `MainWindowTitleProvider`, which keyed only off "is a project current" — so once a score became the current
+  project, its raw file name (for example `rochut-p5-300dpi-padded.reprise-stripped.musicxml`, extension and internal
+  `.reprise-stripped` marker included) stayed in the title bar even after navigating back to the Scans/Home page, where it
+  was never Reprise-branded. The provider now also tracks the current *main page* (via `IInteractive::isOpened()` against the
+  notation page URIs, which is stable under transient dialogs/popups). The title now reads exactly **`Reprise`** on the
+  Home/Scans page or with no score open, and **`<clean name> — Reprise`** (em dash) only while a score is being edited on
+  the notation page. The `<clean name>` uses the same shared clean-name transform as the Scans list
+  (`repriseCleanDisplayName()`: last-dot extension strip that keeps internal dots, then a trailing `.reprise-stripped`
+  removal), so `rochut-p5-300dpi-padded.reprise-stripped.musicxml` shows as `rochut-p5-300dpi-padded — Reprise`. The
+  unsaved-changes indicator (the separate `fileModified` state fed to `MainWindowBridge`) is unchanged.
+
 ## [0.12.20] — 2026-11-19
 
 ### Added

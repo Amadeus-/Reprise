@@ -27,6 +27,7 @@
 #include "async/asyncable.h"
 #include "project/iprojectsession.h"
 #include "modularity/ioc.h"
+#include "interactive/iinteractive.h"
 
 #include "internal/iappshellcommandscontroller.h"
 
@@ -48,6 +49,7 @@ class MainWindowTitleProvider : public QObject, public muse::Contextable, public
 
     muse::ContextInject<project::IProjectSession> context = { this };
     muse::ContextInject<IAppshellCommandsController> commandsController = { this };
+    muse::ContextInject<muse::IInteractive> interactive = { this };
 
 public:
     explicit MainWindowTitleProvider(QObject* parent = nullptr);
@@ -67,6 +69,11 @@ signals:
 
 private:
     void update();
+
+    //! Reprise: true only while a score is actually being edited on the notation page. Keys off the current
+    //! MAIN page (the notation page is in the interactive stack only when it is the current primary page), so
+    //! the Home/Scans page never inherits the open score's filename in the window title.
+    bool isEditingNotation() const;
 
     void setTitle(const QString& title);
     void setFilePath(const QString& filePath);

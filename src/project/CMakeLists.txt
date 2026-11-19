@@ -56,6 +56,7 @@ target_sources(project PRIVATE
     types/template.h
     types/converttypes.h
     types/projecturis.h
+    types/reprisenameutils.h
 
     internal/projectcommandsregister.cpp
     internal/projectcommandsregister.h
