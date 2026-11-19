@@ -31,6 +31,7 @@
 
 #include "cloud/clouderrors.h"
 #include "cloud/cloudtypes.h"
+#include "global/io/dir.h"
 #include "engraving/engravingerrors.h"
 #include "engraving/infrastructure/mscio.h"
 
@@ -280,8 +281,11 @@ Promise<Ret> OpenProjectScenario::openProject(const ProjectFile& file)
 Promise<Ret> OpenProjectScenario::openProject(const muse::io::path_t& givenPath, const QString& displayNameOverride)
 {
     return runIfNotBusy(BusyStatus::Opening, [this, givenPath, displayNameOverride]() -> Promise<Ret> {
+        // Reprise: normalize separators so any raw backslash open path is robust (the MCP open url is already '/'-normalized by QUrl).
+        muse::io::path_t normalizedGivenPath = muse::io::Dir::fromNativeSeparators(givenPath);
+
         //! Step 1. Take absolute path
-        muse::io::path_t actualPath = fileSystem()->absoluteFilePath(givenPath);
+        muse::io::path_t actualPath = fileSystem()->absoluteFilePath(normalizedGivenPath);
         if (actualPath.empty()) {
             // We assume that a valid path has been specified to this method
             return resolvedPromise(make_ret(Ret::Code::UnknownError));

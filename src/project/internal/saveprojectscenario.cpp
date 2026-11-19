@@ -33,6 +33,7 @@
 
 #include "cloud/clouderrors.h"
 #include "cloud/qml/Muse/Cloud/enums.h"
+#include "global/io/dir.h"
 #include "engraving/infrastructure/mscio.h"
 
 #include "notation/imasternotation.h"
@@ -329,8 +330,11 @@ Promise<Ret> SaveProjectScenario::saveProjectAt(const muse::rcommand::Params& pa
         return resolvedPromise(make_ret(Ret::Code::BadArgs));
     }
 
-    return runIfNotBusy(BusyStatus::Saving, [this, path]() {
-        return saveProjectAt(SaveLocation(muse::io::path_t(path)));
+    // Reprise: normalize separators so a backslash MCP save-at arg is robust at the fork entry point.
+    const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(muse::io::path_t(path));
+
+    return runIfNotBusy(BusyStatus::Saving, [this, normalizedPath]() {
+        return saveProjectAt(SaveLocation(normalizedPath));
     });
 }
 

@@ -30,6 +30,7 @@
 
 #include "global/concurrency/concurrent.h"
 #include "global/io/buffer.h"
+#include "global/io/dir.h"
 #include "global/io/file.h"
 #include "global/io/ioretcodes.h"
 #include "global/io/devtools/allzerosbuffercorruptor.h"
@@ -671,9 +672,12 @@ Ret NotationProject::doSave(const muse::io::path_t& path, engraving::MscIoMode i
 {
     TRACEFUNC;
 
-    QString targetContainerPath = engraving::containerPath(path).toQString();
-    muse::io::path_t targetMainFilePath = engraving::mainFilePath(path);
-    muse::io::path_t targetMainFileName = engraving::mainFileName(path);
+    // Reprise: normalize separators so a Windows backslash save target (e.g. an MCP save-at arg) yields a correct basename .mscx entry and '/'-rootfile. Upstream muse FileInfo::completeBaseName splits on '/' only, so a '\' path would make the whole drive-stripped path the ZIP entry name and break reopen. Covers every save caller (save-at / Save / Save-As / autosave).
+    const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(path);
+
+    QString targetContainerPath = engraving::containerPath(normalizedPath).toQString();
+    muse::io::path_t targetMainFilePath = engraving::mainFilePath(normalizedPath);
+    muse::io::path_t targetMainFileName = engraving::mainFileName(normalizedPath);
     QString savePath = targetContainerPath + "_saving";
 
     // Step 1: check writable

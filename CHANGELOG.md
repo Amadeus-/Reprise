@@ -8,6 +8,18 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.9] — 2026-11-18
+
+### Fixed
+- **Saving to a path with Windows backslash separators produced a `.mscz` that could not be reopened.** When a
+  save target used `\` separators (as an MCP `save-at` argument could), the written archive's internal `.mscx`
+  entry name and the `container.xml` rootfile became the whole drive-stripped path instead of a plain basename,
+  and the two disagreed on separators — so the reader could not find the root `.mscx` and the file silently
+  failed to reopen (also leaving a `*.mscz_saving` orphan). Reprise now normalizes separators at the save
+  chokepoint (covering Save, Save As, Save at, and autosave) and at the MCP save-at/open entry points, so
+  backslash paths round-trip correctly. (Note: the underlying cause is upstream — muse's
+  `FileInfo::completeBaseName` splits on `/` only; flagged for an upstream fix.)
+
 ## [0.12.8] — 2026-11-18
 
 ### Removed
@@ -529,6 +541,8 @@ with the first slice of the PDF scan-and-correct workflow.
   instruments OMR guesses — a deliberate stopgap until instrument selection is
   added to the import flow.
 
+[Unreleased]: https://github.com/Amadeus-/Reprise/tree/reprise-main
+[0.12.9]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.8]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.6]: https://github.com/Amadeus-/Reprise/tree/reprise-main
 [0.12.5]: https://github.com/Amadeus-/Reprise/tree/reprise-main
