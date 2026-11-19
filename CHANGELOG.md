@@ -8,6 +8,24 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.14] — 2026-11-19
+
+### Changed
+- **The last-used "New Scan" import folder is now permanently protected from being reset by future app-identity changes.**
+  This is hardening, not a fix for an active bug: at the current version the remembered import folder already persists
+  across launches *and* across version upgrades, because Reprise stores it in the normal user-settings file whose location
+  is keyed by the application name — and that name is now the stable, version-independent constant `RepriseDevelopment`.
+  Earlier in the fork's life the application identity changed several times (MuseScore Studio 5 → Reprise 5 → Reprise), and
+  each change moved the settings file and so appeared to "reset" the remembered folder on a new build. That churn has
+  settled, so the folder already sticks today; this release simply *pins* the settings identity to that constant (mirroring
+  upstream's own fix for the same class of problem) so that a future rebrand, version bump, or other identity change can
+  never again orphan a user's settings. The pinned name equals the name in use today, so no existing settings are moved or
+  lost. The remembered folder continues to be written with the same cross-instance-synced setter as before.
+- **The "New Scan" dialog's first-run / empty fallback folder is documented as the platform's top-level Documents folder.**
+  When no import folder has been remembered yet (or the remembered one no longer exists), the dialog opens at the operating
+  system's Documents folder — Windows `C:\Users\<you>\Documents`, macOS `~/Documents`, Linux `~/Documents` — resolved
+  per-OS, never the program's working directory. No behavior change; the cross-platform intent is now stated in the code.
+
 ## [0.12.13] — 2026-11-18
 
 ### Changed

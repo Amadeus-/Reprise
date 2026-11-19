@@ -1577,6 +1577,9 @@ muse::io::path_t ImportPdfController::defaultImportPdfDir() const
         return dir;
     }
 
+    //! Empty/first-run fallback: the platform's top-level Documents folder. documentsPath() wraps
+    //! QStandardPaths::DocumentsLocation, which resolves per-OS (Windows C:\Users\<u>\Documents, macOS ~/Documents,
+    //! Linux ~/Documents) -- cross-platform-correct for the future macOS build, and never the process CWD.
     return globalConfiguration()->documentsPath();
 }
 

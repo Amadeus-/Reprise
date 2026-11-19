@@ -120,10 +120,16 @@ int main(int argc, char** argv)
 
     QGuiApplication::styleHints()->setMousePressAndHoldInterval(250);
 
+    //! NOTE This "application name" determines where user settings (the QSettings ini) are stored. Changing it
+    //!      orphans every existing user setting (e.g. the remembered last-import folder), which is why older identity
+    //!      changes reset them. It is therefore PINNED to a version-independent constant and must NOT be derived from
+    //!      the version or the rebrandable machine-readable name, so a future rebrand/version change can never reset
+    //!      user settings again. These literals equal the current derived names, so the existing ini is NOT moved.
+    //!      (Mirrors upstream commit ccc3a38a8f.)
 #ifdef MUSE_APP_UNSTABLE
-    QCoreApplication::setApplicationName(MUSE_APP_NAME_MACHINE_READABLE "Development");
+    QCoreApplication::setApplicationName("RepriseDevelopment");
 #else
-    QCoreApplication::setApplicationName(MUSE_APP_NAME_MACHINE_READABLE);
+    QCoreApplication::setApplicationName("Reprise");
 #endif
     QCoreApplication::setOrganizationName("MuseScore");
     QCoreApplication::setOrganizationDomain("musescore.org");
