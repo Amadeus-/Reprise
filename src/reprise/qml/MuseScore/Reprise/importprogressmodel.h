@@ -150,6 +150,15 @@ private:
     //! reprise.get-import-errors, consistent with the zero-part guard -- never a silent "Done".
     void reportOpenFailed();
 
+    //! Finalize "Done" for a NEW-WINDOW open (a second import while a score is already open). MuseScore routes such an
+    //! open to a separate instance (OpenProjectScenario::openProject step 4 -> openNewWindow -> QProcess::startDetached),
+    //! so masterNotationChanged never fires in THIS instance and the imported score never becomes the current master
+    //! here. Called off the resolved open-scenario promise (success) when a project was already open at import time, so
+    //! the popup still reaches Done + auto-closes. Guarded by m_awaitingOpen so it fires at most once per import. Because
+    //! the imported score lives in another instance, the Grand-Piano override and the real measure count are NOT applied
+    //! here (the current master is the previously-open score and must never be touched) -- the Done line is plain "Done".
+    void finalizeOpenedInNewWindow();
+
     //! Count the <score-part> declarations in the produced MusicXML (.mxl ZIP or plain .xml). Used to detect a
     //! degenerate scan (zero recognised parts) so it can be refused GRACEFULLY before opening, instead of handing
     //! the engraving layout a zero-part / zero-visible-part score. Returns the part count, or -1 when the file

@@ -452,6 +452,14 @@ void ImportProgressModel::openImported(const QString& outputPath)
     m_pendingDoneCounts = true;
     m_awaitingOpen = true;
 
+    //! Was a score already open in THIS instance before this import opened? If so, MuseScore routes the open to a SEPARATE
+    //! instance (OpenProjectScenario::openProject step 4 -> openNewWindow -> QProcess::startDetached), so setProject() is
+    //! never called here and masterNotationChanged never fires in this instance -- the only signal the in-window success
+    //! path relies on. That case is finalized off the resolved promise below (finalizeOpenedInNewWindow). When no score was
+    //! open, the import opens in-window, setProject() fires masterNotationChanged synchronously, and that handler finalizes
+    //! Done (Grand-Piano override + real counts) exactly as before -- so the promise path leaves it alone.
+    const bool hadProjectBefore = (projectSession()->project() != nullptr);
+
     //! Open through MuseScore's own open scenario and OWN the resulting promise, so the REAL open outcome is visible
     //! here. The equivalent command://project/open dispatch swallows that outcome (its dispatch Ret is always ok --
     //! ProjectActionsController::runAsync discards the async result), which is why 0.12.3 had to INFER failure from a
@@ -463,14 +471,23 @@ void ImportProgressModel::openImported(const QString& outputPath)
     //! simply a promise that has not resolved yet, so it can never be mistaken for a failure however long it takes.
     const QUrl url = QUrl::fromLocalFile(pathToOpen);
     openProjectScenario()->openProject(muse::rcommand::Params{ { "url", muse::Val(url.toString()) } })
-    .onResolve(this, [this](const muse::Ret& ret)
+    .onResolve(this, [this, hadProjectBefore](const muse::Ret& ret)
     {
-        //! Only a genuine open failure concerns us here: on success masterNotationChanged has already finalized the Done
-        //! state (and cleared m_awaitingOpen), so reportOpenFailed() no-ops. reportOpenFailed() also re-checks
-        //! master-presence, so even an ok-looking resolve can never mis-flag a score that is in fact present.
+        //! A genuine open failure: reportOpenFailed() (it re-checks master-presence, so an ok-looking resolve can never
+        //! mis-flag a score that is in fact present).
         if (!ret)
         {
             reportOpenFailed();
+            return;
+        }
+
+        //! Open succeeded. In-window (no score was open): setProject() already fired masterNotationChanged synchronously,
+        //! which finalized Done and cleared m_awaitingOpen -- nothing to do here. New-window (a score was already open):
+        //! the import opened in a SEPARATE instance, masterNotationChanged never fires here, so finalize Done off this
+        //! resolved promise. m_awaitingOpen keeps it exactly-once (and no-ops if the in-window handler already finalized).
+        if (hadProjectBefore && m_awaitingOpen)
+        {
+            finalizeOpenedInNewWindow();
         }
     });
 
@@ -506,6 +523,34 @@ void ImportProgressModel::reportOpenFailed()
     emit progressChanged();
     setStatus("error");
     importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+
+    return;
+}
+
+void ImportProgressModel::finalizeOpenedInNewWindow()
+{
+    if (!m_awaitingOpen)
+    {
+        return;   //! already finalized (in-window success path) or failed once
+    }
+
+    //! The imported score opened in a SEPARATE instance (see finalizeOpenedInNewWindow's declaration). The current master
+    //! in THIS instance is still the previously-open score, so the armed Grand-Piano override and the measure-count read
+    //! must NOT run here -- they would mutate / report the wrong score. Drop both pending overrides and show a plain "Done".
+    m_awaitingOpen = false;
+    m_pendingGrandPianoReset = false;
+    m_pendingDoneCounts = false;
+    m_stageText = muse::qtrc("reprise", "Done");
+    emit progressChanged();
+    setStatus("done");
+    importProgressTracker()->reportFinished(true, std::string(), std::string());
+
+    if (closePopupOnComplete())
+    {
+        //! Same settled auto-close as the in-window path: ask the app-lifetime controller to close + settle this popup's
+        //! own window after the Done dwell (never a self-close, which races teardown and double-delivers onClose -> SIGSEGV).
+        QTimer::singleShot(AUTO_CLOSE_DELAY_MS, this, [this]() { importProgressTracker()->requestPopupClose(); });
+    }
 
     return;
 }

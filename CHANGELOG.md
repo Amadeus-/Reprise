@@ -8,6 +8,22 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.17] — 2026-11-19
+
+### Fixed
+- **A second scan imported without closing the first no longer leaves its progress popup stuck forever.** When you import a
+  scan while a score is already open, MuseScore opens the new score in a separate window (a separate program instance), and
+  the recognition popup lives in the original instance. The popup's "Done" step — which fills in the measure count, applies
+  the temporary Grand-Piano default, and auto-closes the popup — was driven only by the imported score becoming the current
+  score *in the popup's own instance*. On that second import the score opens elsewhere, so that signal never arrives: the
+  popup sat on the last recognition line ("finishing the page") indefinitely and never closed (no crash, just a stuck
+  popup). Reprise now also finalizes "Done" directly from the import's own open result, so a second (or third, …) import in
+  one session reliably reaches "Done" and auto-closes. Because that score opened in another window, the popup shows a plain
+  "Done" without the measure count, and the Grand-Piano default is not applied from here (it would otherwise be applied to
+  the wrong score — the one still open in this window). The first import of a session is unchanged: it still opens in-window
+  and shows the full "Done — recognized N measures across M pages" line with the Grand-Piano default applied. Real open
+  failures and the settled auto-close (no close-time crash) are preserved.
+
 ## [0.12.16] — 2026-11-19
 
 ### Changed
