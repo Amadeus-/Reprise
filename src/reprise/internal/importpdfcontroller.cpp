@@ -62,6 +62,11 @@ using namespace muse;
 //! so Reprise can block an oversized image BEFORE launching Audiveris.
 static constexpr qint64 AUDIVERIS_MAX_PIXELS = 20000000;
 
+//! White-border width (px per side) the always-on image pad adds before Audiveris (the #711 edge-probe fix in
+//! AudiverisRunner::padImageToTemp). The pre-flight judges the PADDED pixel count because that is what Audiveris actually
+//! sees. Kept in sync with IMAGE_PAD_MARGIN in audiverisrunner.cpp.
+static constexpr int IMAGE_PAD_MARGIN = 100;
+
 //! DPI shown (clearly labelled "(assumed)") on the intake dialog's Resolution line when an image carries no real
 //! resolution metadata. The user prefers a shown value over a blank; for images DPI is informational anyway (Audiveris
 //! recognizes at native pixel resolution). The QML dialog uses this same value for the "(~N dpi, assumed)" suffix. This
@@ -945,10 +950,19 @@ muse::Ret ImportPdfController::preflightImageSize(const muse::io::path_t& path) 
             const QSize size = reader.size();
             if (size.isValid())
             {
-                const qint64 pixels = static_cast<qint64>(size.width()) * static_cast<qint64>(size.height());
-                if (pixels > maxPixels)
+                //! Judge the PADDED pixel count Audiveris will actually see -- the always-on image pad adds a white border
+                //! of IMAGE_PAD_MARGIN px on every side. BUT if the border alone would push an otherwise-OK frame past the
+                //! cap, the runner skips the pad for that frame (feeds it unpadded), so fall back to the original pixel
+                //! count then: this blocks only a scan that is genuinely too large on its own, never one our own border
+                //! inflated over the limit. (TIFF is handled above and is left unpadded for 0.12.10, so its branch is
+                //! unchanged.)
+                const qint64 origPixels = static_cast<qint64>(size.width()) * static_cast<qint64>(size.height());
+                const qint64 paddedPixels = static_cast<qint64>(size.width() + 2 * IMAGE_PAD_MARGIN)
+                                            * static_cast<qint64>(size.height() + 2 * IMAGE_PAD_MARGIN);
+                const qint64 effectivePixels = paddedPixels <= AUDIVERIS_MAX_PIXELS ? paddedPixels : origPixels;
+                if (effectivePixels > maxPixels)
                 {
-                    maxPixels = pixels;
+                    maxPixels = effectivePixels;
                 }
             }
         }

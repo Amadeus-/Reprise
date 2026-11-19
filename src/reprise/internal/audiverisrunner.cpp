@@ -22,18 +22,34 @@
 
 #include "audiverisrunner.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
 #include <QByteArray>
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QImage>
+#include <QMarginsF>
+#include <QPageSize>
+#include <QPainter>
+#include <QPdfWriter>
+#include <QPoint>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QRect>
 #include <QRegularExpression>
+#include <QSize>
+#include <QSizeF>
 #include <QStandardPaths>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QtPdf/QPdfDocument>
+#include <QtPdf/QPdfDocumentRenderOptions>
 
 #include "global/translation.h"
 #include "global/log.h"
@@ -115,6 +131,172 @@ muse::io::path_t AudiverisRunner::locateOutput(const muse::io::path_t& dir, cons
     }
 
     return firstAny.isEmpty() ? io::path_t() : io::path_t(firstAny);
+}
+
+bool AudiverisRunner::isQtDecodableImage(const std::string& suffix)
+{
+    //! Formats this Qt kit has an image plugin for and that Audiveris reads as a single raster sheet. TIFF is excluded on
+    //! purpose (no qtiff plugin yet -> 0.12.11). GIF is decodable; an animated GIF is never a music scan, and QImage then
+    //! simply loads its first frame, which pads fine.
+    return suffix == "png" || suffix == "jpg" || suffix == "jpeg" || suffix == "bmp" || suffix == "gif";
+}
+
+muse::io::path_t AudiverisRunner::padImageToTemp(const muse::io::path_t& imagePath) const
+{
+    QImage src(imagePath.toQString());
+    if (src.isNull())
+    {
+        //! Unexpected for a format we claimed decodable -> feed the original unpadded (graceful, never crash).
+        LOGW() << "Reprise: image pad: could not decode " << imagePath.toQString() << "; feeding Audiveris the original.";
+        return io::path_t();
+    }
+
+    //! Local to avoid a Unity-build name clash with the same-named file-scope constants in importpdfcontroller.cpp (both
+    //! .cpp are concatenated into one Unity TU). Audiveris's per-sheet pixel cap (SheetStub maxPixelCount) and the fixed
+    //! image border, kept in sync with preflightImageSize in that file, which applies the matching skip-the-pad fallback.
+    constexpr int64_t kMaxPixels = 20000000;
+    constexpr int32_t kMargin = 100;
+
+    //! Judge the PADDED pixel count against Audiveris's per-sheet cap; if the border alone would push it over, skip the
+    //! pad (feed the original) rather than trading the #711 crash for Audiveris's own oversize rejection.
+    const int64_t paddedW = static_cast<int64_t>(src.width()) + 2 * kMargin;
+    const int64_t paddedH = static_cast<int64_t>(src.height()) + 2 * kMargin;
+    if (paddedW * paddedH > kMaxPixels)
+    {
+        LOGI() << "Reprise: image pad skipped (padded " << paddedW << "x" << paddedH
+               << " exceeds the 20 MP cap); feeding Audiveris the original.";
+        return io::path_t();
+    }
+
+    //! Composite centered onto a white canvas at 1:1 (no rescale). RGB32 keeps the write lossless; grayscale content maps
+    //! exactly, so only a white border is added and OMR quality is unchanged. Preserve any resolution metadata so Audiveris
+    //! still reads the image at its native scale.
+    QImage canvas(static_cast<int32_t>(paddedW), static_cast<int32_t>(paddedH), QImage::Format_RGB32);
+    canvas.fill(Qt::white);
+    if (src.dotsPerMeterX() > 0)
+    {
+        canvas.setDotsPerMeterX(src.dotsPerMeterX());
+    }
+    if (src.dotsPerMeterY() > 0)
+    {
+        canvas.setDotsPerMeterY(src.dotsPerMeterY());
+    }
+
+    {
+        QPainter painter(&canvas);
+        painter.drawImage(kMargin, kMargin, src);
+    }
+
+    const QString outPath = QDir(m_outDir).absoluteFilePath(
+        QFileInfo(imagePath.toQString()).completeBaseName() + "-padded.png");
+    if (!canvas.save(outPath, "PNG"))
+    {
+        LOGW() << "Reprise: image pad: could not write padded image " << outPath << "; feeding Audiveris the original.";
+        return io::path_t();
+    }
+
+    LOGI() << "Reprise: image pad: " << src.width() << "x" << src.height() << " -> " << paddedW << "x" << paddedH
+           << " (margin " << kMargin << " px) -> " << outPath;
+
+    return io::path_t(outPath);
+}
+
+muse::io::path_t AudiverisRunner::buildPaddedPdf(const muse::io::path_t& pdfPath, int32_t dpi) const
+{
+    QPdfDocument doc;
+    if (doc.load(pdfPath.toQString()) != QPdfDocument::Error::None || doc.status() != QPdfDocument::Status::Ready)
+    {
+        LOGW() << "Reprise: PDF pad: could not load " << pdfPath.toQString() << " for re-rasterization.";
+        return io::path_t();
+    }
+
+    const int32_t pageCount = doc.pageCount();
+    if (pageCount < 1)
+    {
+        LOGW() << "Reprise: PDF pad: " << pdfPath.toQString() << " reports no pages.";
+        return io::path_t();
+    }
+
+    //! Match Audiveris/PDFBox rasterization: grayscale + anti-aliasing OFF (text/image/path), at the SAME DPI the run
+    //! used -- never a downgrade -- so the retry reproduces the original page content with only a white border added.
+    QPdfDocumentRenderOptions options;
+    options.setRenderFlags(QPdfDocumentRenderOptions::RenderFlag::Grayscale
+                           | QPdfDocumentRenderOptions::RenderFlag::TextAliased
+                           | QPdfDocumentRenderOptions::RenderFlag::ImageAliased
+                           | QPdfDocumentRenderOptions::RenderFlag::PathAliased);
+
+    //! PDF pages: a DPI-scaled margin (at least 100 px) so the border is proportionate at any resolution.
+    const int32_t margin = std::max<int32_t>(100, static_cast<int32_t>(std::lround(static_cast<double>(dpi) / 3.0)));
+
+    const QString outPath = QDir(m_outDir).absoluteFilePath(
+        QFileInfo(pdfPath.toQString()).completeBaseName() + "-padded.pdf");
+
+    QPdfWriter writer(outPath);
+    writer.setResolution(dpi);
+    //! Zero page margins so the painter's origin is the page corner and the full page is paintable (the image fills it 1:1).
+    writer.setPageMargins(QMarginsF(0.0, 0.0, 0.0, 0.0));
+
+    QPainter painter;
+    bool painting = false;
+    for (int32_t page = 0; page < pageCount; ++page)
+    {
+        //! Target raster size at the run DPI (PDF points are 1/72 inch): matches PDFBox renderImageWithDPI(page, dpi).
+        const QSizeF pts = doc.pagePointSize(page);
+        const QSize pagePx(static_cast<int32_t>(std::lround(pts.width() * static_cast<double>(dpi) / 72.0)),
+                           static_cast<int32_t>(std::lround(pts.height() * static_cast<double>(dpi) / 72.0)));
+
+        const QImage rendered = doc.render(page, pagePx, options);
+        if (rendered.isNull())
+        {
+            LOGW() << "Reprise: PDF pad: page " << page << " rendered empty; aborting pad.";
+            if (painting)
+            {
+                painter.end();
+            }
+            return io::path_t();
+        }
+
+        //! Composite centered onto a white canvas with the margin, 1:1 (no rescale) -> content is the rendered page plus a
+        //! border only, so OMR quality is unchanged (and the retry only ever runs after an actual crash).
+        const int32_t paddedW = rendered.width() + 2 * margin;
+        const int32_t paddedH = rendered.height() + 2 * margin;
+        QImage canvas(paddedW, paddedH, QImage::Format_RGB32);
+        canvas.fill(Qt::white);
+        {
+            QPainter cp(&canvas);
+            cp.drawImage(margin, margin, rendered);
+        }
+
+        //! One PDF page sized to the padded raster at this DPI (device px == paddedW/paddedH), so the image draws 1:1.
+        const QPageSize ps(QSizeF(paddedW * 72.0 / static_cast<double>(dpi), paddedH * 72.0 / static_cast<double>(dpi)),
+                           QPageSize::Point);
+        writer.setPageSize(ps);
+        if (!painting)
+        {
+            if (!painter.begin(&writer))
+            {
+                LOGW() << "Reprise: PDF pad: could not open QPdfWriter at " << outPath;
+                return io::path_t();
+            }
+            painting = true;
+        }
+        else
+        {
+            writer.newPage();
+        }
+
+        painter.drawImage(QPoint(0, 0), canvas);
+    }
+
+    if (painting)
+    {
+        painter.end();
+    }
+
+    LOGI() << "Reprise: PDF pad: re-emitted " << pageCount << " page(s) with a " << margin
+           << " px white margin at " << dpi << " dpi -> " << outPath;
+
+    return io::path_t(outPath);
 }
 
 std::vector<int> AudiverisRunner::expandSheets(const QString& pages) const
@@ -222,7 +404,11 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     }
 
     m_pdfPath = pdfPath;
+    m_pages = pages;
+    m_dpi = dpi;
+    m_options = options;
     m_cancelled = false;
+    m_sawArrayIndexCrash = false;
     m_totalSheets = -1;
     m_currentSheet = -1;
     m_requestedSheetCount = 0;
@@ -232,6 +418,8 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_currentStep.clear();
     m_stdoutBuffer.clear();
     m_tail.clear();
+    //! NOTE: m_retriedWithPad is deliberately NOT reset here -- the PDF retry re-enters start(), and the guard must
+    //! survive that re-entry so the pad is applied at most once per import.
 
     //! A persistent temp dir: outputs (.mxl, .omr) must survive the run. Durable copy is a later step.
     QTemporaryDir tempDir(QDir::tempPath() + "/reprise-omr-XXXXXX");
@@ -247,6 +435,20 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     }
 
     m_outDir = tempDir.path();
+
+    //! Always-on image pad (Audiveris #711 edge-probe crash): a staff touching the raster edge trips AreaUtil.verticalCore
+    //! with an ArrayIndexOutOfBoundsException. The maintainer workaround is a white margin, so for any QtGui-decodable
+    //! raster image we composite it centered on a larger white canvas and feed Audiveris THAT padded PNG instead. TIFF is
+    //! left unpadded for now (no qtiff plugin in the kit); PDFs take the retry-on-crash pad in onFinished(). On any pad
+    //! failure or an over-cap border, padImageToTemp returns empty and we feed the original unchanged (never crash).
+    if (isQtDecodableImage(io::suffix(pdfPath)))
+    {
+        const io::path_t padded = padImageToTemp(pdfPath);
+        if (!padded.empty())
+        {
+            m_pdfPath = padded;
+        }
+    }
 
     std::vector<std::string> args = {
         "-batch",
@@ -286,7 +488,9 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     }
 
     args.push_back("--");
-    args.push_back(pdfPath.toQString().toStdString());
+    //! m_pdfPath is the ACTUAL input fed to Audiveris -- the padded PNG when the image pad above substituted it, else the
+    //! original path. onFinished() reads the same member for the output base name and the PDF retry check.
+    args.push_back(m_pdfPath.toQString().toStdString());
 
     QStringList qargs;
     for (const std::string& a : args)
@@ -558,6 +762,14 @@ QString AudiverisRunner::humanStage(const QString& rawStep) const
 
 void AudiverisRunner::pushTail(const QString& line)
 {
+    //! Detect the Audiveris #711 edge-probe signature on EVERY line (stdout + stderr both route here). The error tail is a
+    //! short ring that can scroll the signature out before the process exits, so the PDF retry decision reads this sticky
+    //! flag instead of re-scanning the tail. Set-once per run; reset at the top of start().
+    if (!m_sawArrayIndexCrash && line.contains("ArrayIndexOutOfBoundsException"))
+    {
+        m_sawArrayIndexCrash = true;
+    }
+
     //! Small ring of the most recent output lines, surfaced in the popup's error state.
     static const int MAX_TAIL = 16;
     m_tail << line;
@@ -606,6 +818,28 @@ void AudiverisRunner::onFinished(int exitCode)
 
     if (exitCode != 0)
     {
+        //! PDF retry-on-crash for Audiveris #711: when a PDF run crashes with the edge-probe signature
+        //! (ArrayIndexOutOfBoundsException) and we have not padded yet, re-rasterize the PDF to padded pages and re-run
+        //! ONCE on the padded copy. Guarded by m_retriedWithPad so a padded re-run that still fails is reported, never
+        //! re-padded. Images never reach here (they are padded up front in start()), so m_pdfPath is the original PDF.
+        if (!m_retriedWithPad && m_sawArrayIndexCrash && io::suffix(m_pdfPath) == "pdf")
+        {
+            m_retriedWithPad = true;
+            LOGW() << "Reprise: Audiveris #711 edge-probe crash detected on " << m_pdfPath.toQString()
+                   << "; retrying once on a white-margin-padded copy.";
+
+            const io::path_t paddedPdf = buildPaddedPdf(m_pdfPath, m_dpi);
+            if (!paddedPdf.empty())
+            {
+                //! Re-launch an identical run on the padded PDF. start() swaps m_pdfPath and resets per-run state, but
+                //! leaves m_retriedWithPad set, so this cannot loop.
+                start(paddedPdf, m_pages, m_dpi, m_options);
+                return;
+            }
+
+            LOGW() << "Reprise: PDF pad failed; reporting the original Audiveris failure.";
+        }
+
         LOGE() << "Reprise: Audiveris exited with code " << exitCode;
         emit finished(false, QString(),
                       muse::qtrc("reprise", "Audiveris failed to recognise the scan (exit code %1).").arg(exitCode), tail);

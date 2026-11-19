@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -127,6 +128,21 @@ private:
     //! Search a directory (recursively) for the first file named <base>.<ext>, else any *.<ext>. Empty if none.
     muse::io::path_t locateOutput(const muse::io::path_t& dir, const std::string& base, const std::string& ext) const;
 
+    //! True if `suffix` (io::suffix: lower-case, no dot) is a raster image this Qt kit can decode, so it is eligible for
+    //! the always-on white-margin pad. TIFF is deliberately excluded (no qtiff plugin in the kit yet -> 0.12.11).
+    static bool isQtDecodableImage(const std::string& suffix);
+
+    //! Composite a decodable raster image centered onto a larger white canvas (a fixed 100 px border) and write it to a
+    //! PNG in the run's output dir; returns that padded path, or empty to feed the ORIGINAL unchanged (decode failure,
+    //! or the border would push the frame past Audiveris's per-sheet pixel cap). Fixes the Audiveris #711 edge-probe
+    //! crash (AreaUtil.verticalCore ArrayIndexOutOfBoundsException when a staff sits at the image edge) for image intake.
+    muse::io::path_t padImageToTemp(const muse::io::path_t& imagePath) const;
+
+    //! Re-rasterize a PDF to grayscale, anti-aliasing-OFF page images (matching PDFBox's ImageType.GRAY at the run DPI),
+    //! pad each with a DPI-scaled white margin, and re-emit a single multi-page PDF; returns that path, or empty on any
+    //! failure. The PDF retry-on-crash counterpart to the always-on image pad (same #711 fix), run at full DPI only.
+    muse::io::path_t buildPaddedPdf(const muse::io::path_t& pdfPath, int32_t dpi) const;
+
     //! Drain + parse new stdout; drives progressChanged().
     void onReadyReadStandardOutput();
     void onReadyReadStandardError();
@@ -149,6 +165,22 @@ private:
     muse::io::path_t m_pdfPath;
     QString m_outDir;
     QString m_stdoutBuffer;
+
+    //! The exact run parameters (page range, resolution, recognition options), kept so the PDF retry-on-crash path in
+    //! onFinished() can re-launch an identical run on the padded copy. m_pdfPath holds the actual input fed to Audiveris
+    //! (the padded PNG for an image intake), so the retry's PDF check reads it directly.
+    QString m_pages;
+    int32_t m_dpi = 0;
+    RecognitionOptions m_options;
+
+    //! Set once the #711 signature (ArrayIndexOutOfBoundsException) is seen anywhere in this run's output. Scanned over
+    //! EVERY line (not just the short error tail, whose ring can scroll the signature out), so the PDF retry trigger is
+    //! reliable. Reset per fresh run in start(); drives the one-shot pad retry together with m_retriedWithPad.
+    bool m_sawArrayIndexCrash = false;
+
+    //! Guards the PDF pad retry so it happens at most ONCE per import: a padded re-run that still fails is reported, not
+    //! re-padded. Deliberately NOT reset in start() (the retry re-enters start()), only default-initialised per runner.
+    bool m_retriedWithPad = false;
 
     int m_totalSheets = -1;
     int m_currentSheet = -1;

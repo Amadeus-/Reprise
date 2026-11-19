@@ -8,6 +8,23 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.10] — 2026-11-18
+
+### Fixed
+- **Scans whose top or bottom staff sits right at the page edge no longer crash recognition.** Audiveris has a known
+  bug (#711) where a staff touching the image border trips an internal edge probe
+  (`AreaUtil.verticalCore` → `ArrayIndexOutOfBoundsException`) and aborts the whole scan. The maintainer's workaround is
+  to pad the image with a white margin, which Reprise now does automatically:
+  - **Image scans (PNG/JPG/BMP/GIF):** before recognition, the image is composited, centered and unscaled, onto a
+    slightly larger white canvas (a 100-pixel border on every side) and that padded copy is what Audiveris reads. The
+    music content is untouched — only a white border is added — so recognition quality is unchanged.
+  - **PDF scans:** the original PDF is tried first. Only if it crashes with the #711 signature does Reprise re-render
+    the PDF to grayscale page images (matching Audiveris's own rasterization), add the same white margin, re-assemble a
+    padded PDF, and re-run recognition once. Normal PDFs are completely unaffected.
+  The fix keeps full scan resolution (the margin never lowers the DPI), and the oversized-scan guard now measures the
+  padded size, automatically skipping the margin on a scan that is already near the 20-megapixel limit rather than
+  rejecting it. (Multi-page TIFF padding is a separate follow-up.)
+
 ## [0.12.9] — 2026-11-18
 
 ### Fixed
