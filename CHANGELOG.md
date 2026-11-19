@@ -8,6 +8,20 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.13] — 2026-11-18
+
+### Changed
+- **The "Recognizing sheet music" progress popup no longer blocks the rest of Reprise.** Recognition can take minutes, so
+  the popup is now modeless instead of modal: while it is up you can click, move, and minimize the main Reprise window and
+  keep working. The popup floats above the Reprise main window (and only the main window — it is not globally on top of
+  other applications): it stays above the score so it is never lost behind it, follows normal window order (it goes behind
+  when you switch to another app), and minimizes and restores together with Reprise. After "Done" the score behind it
+  stays clickable. The dark header strip (the Reprise mark and the "Recognizing sheet music" title) is now a drag handle
+  you can use to move the popup; the body controls (Details, the recognition log, the "Close this window after importing"
+  checkbox, Cancel, and Close) stay fully clickable and are never a drag surface. The popup re-centers over the main
+  window every time it opens and never remembers a dragged position. Everything else is unchanged: same look, same
+  controls, the same auto-close on success, and Cancel.
+
 ## [0.12.12] — 2026-11-18
 
 ### Fixed

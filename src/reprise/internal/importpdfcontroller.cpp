@@ -1253,9 +1253,16 @@ void ImportPdfController::forceCloseAndSettle(const muse::UriQuery& query, QQuic
     //! for a fire-and-forget async-opened dialog (verified from the log: isOpened stays true through a full pump), so we
     //! close the QQuickWindow itself -- that fires Hide -> WindowView::onHidden -> closed -> Interactive::onClose, which
     //! pops it off m_stack synchronously.
+    //! Gate on the URI-level isOpened (params IGNORED), NOT the full UriQuery: a dialog is registered on the interactive
+    //! stack under the EXACT query it was opened with -- params included -- but a caller may close by a reconstructed query
+    //! that omits them (closeProgressPopup rebuilds a bare "importpdf/progress" while the popup was opened with pdfPath /
+    //! dpi / recognition-option params). UriQuery::operator== compares params too, so a full-query isOpened() misses the
+    //! registered popup and the close never fires (0.12.13: that left the modeless popup lingering after Done). Matching on
+    //! the URI is sufficient here -- each of these dialog URIs is single-instance -- and keeps the close exactly-once: it
+    //! stops the instant the object leaves the stack, so Interactive::onClose always finds a valid objectId (no SIGSEGV).
     QElapsedTimer t1;
     t1.start();
-    while (t1.elapsed() < timeoutMs && interactive()->isOpened(query).val)
+    while (t1.elapsed() < timeoutMs && interactive()->isOpened(query.uri()).val)
     {
         acted = true;
         QQuickWindow* w = !guard.isNull() ? guard.data() : qobject_cast<QQuickWindow*>(interactive()->topWindow());

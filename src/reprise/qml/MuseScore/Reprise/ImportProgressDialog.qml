@@ -68,7 +68,13 @@ StyledDialogView {
     contentHeight: mainColumn.implicitHeight
     margins: 0
 
-    modal: true
+    //! MODELESS (0.12.13): recognition can take MINUTES, so the popup must NOT block the main window -- the user can keep
+    //! working in / move / minimize Reprise while Audiveris runs. It is deliberately NOT globally topmost: the base
+    //! DialogView already makes it a window OWNED by (transient-parented to) the Reprise main window, so it floats above
+    //! the MAIN WINDOW ONLY -- it follows normal z-order (goes behind when the user switches to another app) and minimizes
+    //! / restores together with Reprise. Re-centre on every open with NO position memory is inherent: each open is a fresh
+    //! instance that DialogView::updateGeometry() centres over the main window, and nothing persists the dragged geometry.
+    modal: false
     frameless: true
     //! A run is only ended by Cancel / Close / the header X -- never by a stray Escape that would orphan Audiveris.
     closeOnEscape: false
@@ -125,6 +131,39 @@ StyledDialogView {
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: "#2A2E54" }
                     GradientStop { position: 1.0; color: root.brandNavyDeep }
+                }
+
+                //! TITLE-BAR DRAG (0.12.13): the dark header strip is the ONLY drag handle. This fills the header but is
+                //! declared FIRST, so it sits at the bottom of the header's z-order -- the close/cancel X (its own MouseArea,
+                //! declared later in the RowLayout) stays clickable, and a press on the logo / wordmark / empty header (none
+                //! of which has a MouseArea) falls through to here and moves the frameless top-level window. All body controls
+                //! (Details / log / checkbox / Cancel / Close) live OUTSIDE the header, so they can never be dragged.
+                //! onPositionChanged fires only while a button is held (hoverEnabled stays false), so a hover never moves it.
+                MouseArea {
+                    id: headerDrag
+
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+
+                    property int pressX: 0
+                    property int pressY: 0
+
+                    onPressed: function(mouse) {
+                        headerDrag.pressX = mouse.x
+                        headerDrag.pressY = mouse.y
+                    }
+
+                    //! Manual move (delta from the press point): the window is frameless, so there is no OS title bar to grab.
+                    //! The MouseArea moves with the window, so the next event's mouse.x/y is re-measured in the moved frame --
+                    //! the standard frameless-window drag idiom.
+                    onPositionChanged: function(mouse) {
+                        if (!root.window) {
+                            return
+                        }
+
+                        root.window.x += mouse.x - headerDrag.pressX
+                        root.window.y += mouse.y - headerDrag.pressY
+                    }
                 }
 
                 //! Subtle deeper band at the very bottom of the header for a little depth.
