@@ -177,6 +177,27 @@ FocusScope {
                 }
             }
         }
+
+        MenuButton {
+            id: overflowButton
+
+            implicitWidth: ui.theme.defaultButtonSize
+            implicitHeight: ui.theme.defaultButtonSize
+
+            navigation.panel: viewButtonsNavPanel
+            navigation.order: viewTypeRadioButtons.navigationOrderStart + 2
+            navigation.accessible.name: qsTrc("project", "Scans options")
+
+            menuModel: [
+                { id: "clear-recent", title: qsTrc("project", "Clear recent scans") }
+            ]
+
+            onHandleMenuItem: function(itemId) {
+                if (itemId === "clear-recent") {
+                    scoresPageModel.clearRecentScores()
+                }
+            }
+        }
     }
 
     Loader {

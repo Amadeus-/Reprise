@@ -30,6 +30,7 @@
 #include "iprojectconfiguration.h"
 #include "rcommand/icommanddispatcher.h"
 #include "interactive/iplatforminteractive.h"
+#include "interactive/iinteractive.h"
 #include "cloud/musescorecom/imusescorecomservice.h"
 
 class QString;
@@ -46,6 +47,7 @@ class ScoresPageModel : public QObject, public muse::Contextable, public muse::a
     muse::GlobalInject<IProjectConfiguration> configuration;
     muse::GlobalInject<muse::cloud::IMuseScoreComService> museScoreComService;
     muse::GlobalInject<muse::IPlatformInteractive> platformInteractive;
+    muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
 
 public:
@@ -64,6 +66,7 @@ public:
     Q_INVOKABLE void openScore(const QString& scorePath, const QString& displayNameOverride);
     Q_INVOKABLE void revealInFileBrowser(const QString& scorePath);
     Q_INVOKABLE void viewOnline(int scoreId);
+    Q_INVOKABLE void clearRecentScores();
 
 signals:
     void viewTypeChanged();

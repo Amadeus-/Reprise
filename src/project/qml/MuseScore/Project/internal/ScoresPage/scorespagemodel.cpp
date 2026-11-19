@@ -26,6 +26,7 @@
 
 #include "project/projectcommands.h"
 #include "reprise/reprisecommands.h"
+#include "translation.h"
 #include "log.h"
 
 using namespace mu::project;
@@ -75,6 +76,21 @@ void ScoresPageModel::viewOnline(int scoreId)
         }
 
         platformInteractive()->openUrl(scoreUrl);
+    });
+}
+
+void ScoresPageModel::clearRecentScores()
+{
+    std::string title = muse::trc("project", "Clear recent scans history?");
+    std::string body = muse::trc("project", "This won't delete your files.");
+
+    interactive()->question(title, body, {
+        muse::IInteractive::Button::Cancel, muse::IInteractive::Button::Clear
+    }, muse::IInteractive::Button::Cancel)
+    .onResolve(this, [this](const muse::IInteractive::Result& res) {
+        if (res.isButton(muse::IInteractive::Button::Clear)) {
+            commandDispatcher()->dispatch(project::PROJECT_CLEAR_RECENT_COMMAND);
+        }
     });
 }
 

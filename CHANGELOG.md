@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.12.20] — 2026-11-19
+
+### Added
+- **The "Scans" home page can now clear its recent-scans list.** A new "..." overflow button in the page's top-right
+  toolbar (beside the search box and the grid/list view toggle) opens a menu with **Clear recent scans**. Choosing it
+  shows a light confirmation — "Clear recent scans history?" / "This won't delete your files." — and, on confirm, forgets
+  every entry in the list. This is non-destructive: it only clears the recent-opened *references* (via MuseScore's existing
+  `IRecentFilesController::clearRecentFiles()`); the scanned files on disk are never read or deleted. The per-item
+  right-click context menu's **Remove from recent files list** (stock MuseScore, backed by `removeRecentFile()`) continues
+  to forget a single entry the same non-destructive way.
+
 ## [0.12.19] — 2026-11-19
 
 ### Changed
