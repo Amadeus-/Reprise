@@ -22,12 +22,14 @@ REM    5. git submodule update --init --recursive
 REM       ^-- CRITICAL: the superproject pins muse (muse_framework) and
 REM           muse_deps; a merge does NOT move the submodule working trees,
 REM           so this re-syncs BOTH. Skipping it = stale framework/deps.
-REM    6. If anything changed:
-REM       a. PUSH origin main immediately (pristine mirror, always safe).
-REM       b. Build-verify reprise-main (run the release build) BEFORE pushing it.
-REM          Only on build SUCCESS offer to PUSH origin reprise-main; on build
-REM          FAILURE or decline, SKIP the push (a git-clean but uncompilable
-REM          merge must not reach origin/reprise-main) and print a manual-push note.
+REM    3b. PUSH origin main immediately after its fast-forward (pristine mirror,
+REM        always safe) -- BEFORE the step-4 merge, so main publishes even when
+REM        the reprise-main merge conflicts (the common case).
+REM    6. If reprise-main changed:
+REM       Build-verify reprise-main (run the release build) BEFORE pushing it.
+REM       Only on build SUCCESS offer to PUSH origin reprise-main; on build
+REM       FAILURE or decline, SKIP the push (a git-clean but uncompilable
+REM       merge must not reach origin/reprise-main) and print a manual-push note.
 REM ============================================================
 setlocal
 cd /d "C:\Dev\+MuseScore+"
@@ -49,6 +51,15 @@ if errorlevel 1 goto :mainnotff
 
 for /f "delims=" %%h in ('git rev-parse main') do set "MAIN_AFTER=%%h"
 
+REM --- Push the pristine main mirror NOW, right after its fast-forward and BEFORE
+REM     the merge below, so main always publishes even when the reprise-main merge
+REM     conflicts (the common case). Only pushes if main actually moved. ---
+if "%MAIN_BEFORE%"=="%MAIN_AFTER%" goto :mainpushed
+echo === Pushing origin main (pristine mirror; pre-merge, always safe) ===
+git push origin main
+if errorlevel 1 goto :error
+:mainpushed
+
 echo === 4/5 Merging upstream fixes (via main) into reprise-main ===
 git merge --no-edit main
 if errorlevel 1 goto :conflict
@@ -67,14 +78,8 @@ echo     main:         %MAIN_BEFORE:~0,9%  to  %MAIN_AFTER:~0,9%
 echo     reprise-main: %RM_BEFORE:~0,9%  to  %RM_AFTER:~0,9%
 echo.
 
-REM --- main is the pristine upstream mirror: always safe to publish now. ---
-set /p "DOPUSH=Push updated main to origin now? [Y/n]: "
-if "%DOPUSH%"=="" set "DOPUSH=Y"
-if /i not "%DOPUSH%"=="Y" goto :skipmainpush
-echo.
-echo === Pushing origin main ===
-git push origin main
-:skipmainpush
+REM --- main (pristine mirror) was already pushed above, right after its step-3
+REM     fast-forward, so it publishes even when the merge above conflicted. ---
 
 REM --- reprise-main is NOT pushed until a release build verifies the merge. ---
 REM     A git-clean merge can still fail to compile; building here BEFORE the
