@@ -24,6 +24,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 
 import Muse.Ui
 import Muse.UiComponents
@@ -153,17 +154,33 @@ Rectangle {
         readonly property real pageDispH: sheetH * imgScale
 
         //! Vertical scroll position (px, >= 0) of the page within the viewport: the page's top is drawn at
-        //! y = -scrollOffset, so a larger offset reveals lower systems. Set DIRECTLY by scrollToCurrent (not animated).
+        //! y = -scrollOffset, so a larger offset reveals lower systems. Assigned by scrollToCurrent; the Behavior
+        //! below animates the move SMOOTHLY while the window is visible, or snaps it instantly while minimized.
         property real scrollOffset: 0
 
-        //! Centre the followed measure's system in the viewport, clamped to the page bounds. The band is a plain
-        //! clipping Item scrolled by offsetting its page Image, and the offset is assigned DIRECTLY -- deliberately
-        //! NOT via a scroll animation (a `Behavior on` the offset, nor a NumberAnimation, nor a Flickable with an
-        //! animated contentY). A QML animation only advances while the host window is being rendered; when the window
-        //! is minimized (or otherwise not exposed) Qt pauses the animation driver, so an animated scroll stays frozen
-        //! at its start value and the band is left stuck at the top of the page (the symptom behind the original "band
-        //! shows the title block for a mid-page measure" report, which was observed via a minimized-window capture).
-        //! A direct assignment is window-state-independent and lands -- and stays -- on the correct system every time.
+        //! True while the containing window is minimized. A minimized / non-exposed window FREEZES Qt's QML
+        //! animation driver, so an animated scrollOffset would stay stuck at its start value -- which is exactly
+        //! what broke the earlier animated band under our minimized-window capture harness (the "band shows the
+        //! title block for a mid-page measure" symptom). Only real/visible users ever see a non-minimized window.
+        readonly property bool windowMinimized: Window.window ? (Window.window.visibility === Window.Minimized) : false
+
+        //! GATED smooth scroll: when the window is visible, animate scrollOffset to the target (the page Image and
+        //! the highlight overlay both bind to scrollOffset, so they glide in lockstep and the measure box stays
+        //! aligned during the move). When minimized, the Behavior is disabled so the assignment lands DIRECTLY
+        //! (instant) -- a minimized window (our capture harness) can't freeze mid-animation and always settles on
+        //! the correct system. Only HOW we reach the offset is gated; the target math in scrollToCurrent is unchanged.
+        Behavior on scrollOffset {
+            enabled: !bandArea.windowMinimized
+
+            NumberAnimation {
+                duration: 220
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        //! Centre the followed measure's system in the viewport, clamped to the page bounds. Assigns scrollOffset to
+        //! the target; the Behavior above animates (visible window) or snaps instantly (minimized) based on window
+        //! state -- what we scroll TO is window-state-independent, only HOW (animate vs direct-set) varies.
         function scrollToCurrent() {
             if (!bandModel.hasCurrent || imgScale <= 0) {
                 return
