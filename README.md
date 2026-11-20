@@ -1,17 +1,17 @@
 <p align="center"><img src="share/icons/reprise_readme_banner.png" alt="Reprise" width="760"></p>
 
-**From scan to score.** Open a PDF of sheet music, recognize it (OMR), correct it, and export.
+**From scan to score.** Open a PDF or image of sheet music, recognize it (OMR), correct it, and export.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 Reprise is a focused music-scanning and correction tool built on
 [MuseScore Studio](https://github.com/musescore/MuseScore). It takes a scanned PDF
-of sheet music, runs optical music recognition (OMR) with
+or image of sheet music, runs optical music recognition (OMR) with
 [Audiveris](https://github.com/Audiveris/audiveris), and gives you a streamlined
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.12.0) — work in progress.** Reprise is early software under
+> **Pre-release (0.13.1) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -50,11 +50,15 @@ compatibility.
   recognition per import: toggle text/lyric OCR on or off, pick the OCR **language**, and opt in
   to **chord-symbol** detection or **lyrics-above-the-staff** scores. Sensible defaults mean you
   can ignore it entirely and still get the full text and lyric recognition.
-- **Live recognition progress** — a progress window shows each page as Audiveris
-  works, with a recognition log and a cancel option.
+- **Live recognition progress** — a movable progress window shows each page as Audiveris
+  works, with a recognition log and a cancel option, and you can keep using the rest of
+  the app while recognition runs.
 - **Streamlined, correction-focused UI** — the interface is pared down around
   scanning and correcting: a **Scans** home, a dedicated **Edit** workspace, and
   menus trimmed to what the workflow needs.
+- **Manage your recent scans** — the Scans home lists your recent imports with clean
+  names; clear the whole list or remove individual entries (your files are never deleted —
+  only the shortcuts to them are forgotten).
 - **Easy setup** — Preferences auto-detects your Audiveris install on first run, with
   manual override. There is no separate Tesseract to install or configure — its OCR engine
   ships **inside Audiveris**.
