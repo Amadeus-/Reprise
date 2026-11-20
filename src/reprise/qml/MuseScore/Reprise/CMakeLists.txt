@@ -28,10 +28,13 @@ qt_add_qml_module(reprise_qml
         importprogressmodel.h
         proofingstripmodel.cpp
         proofingstripmodel.h
+        proofingmagnifiermodel.cpp
+        proofingmagnifiermodel.h
     QML_FILES
         ImportPdfOptionsDialog.qml
         ImportProgressDialog.qml
         ProofingStrip.qml
+        ProofingMagnifier.qml
     RESOURCES
         resources/titlebar-mark.svg
     IMPORTS

@@ -73,6 +73,9 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API tool: select a measure by global index and report its proofing-map rect (drives the A3 band)
     makeCommandInfo<ProofingDebugGotoCommand>(),
+
+    // Reprise dev MCP/API tool: select a note by measure/staff/index and report its head box (drives the B2 magnifier)
+    makeCommandInfo<ProofingDebugSelectNoteCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

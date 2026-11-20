@@ -176,6 +176,13 @@ private:
     //! globalMeasureIndex. Runs on the Qt GUI thread (synchronous dispatch). ok=false + error on no score / out of range.
     muse::RetVal<ProofingDebugGotoCommand::Output> proofingDebugGoto(const ProofingDebugGotoCommand& cmd);
 
+    //! Dev MCP/API "drive" tool for the Two-Pane Proofing FULL DETAIL VIEW magnifier (Phase B2): select ONE note by
+    //! measure/staff/index -- which drives the live selectionChanged the floating magnifier observes -- and report the
+    //! note's Phase B1 runtime key plus whether the proofing map holds a head box for it (and that box's geometry). Lets
+    //! a headless agent verify the magnifier zooms + highlights the correct note, and check the note<->box match against
+    //! reprise.get-proofing-map. Runs on the Qt GUI thread. ok=false + error on no score / out-of-range measure or index.
+    muse::RetVal<ProofingDebugSelectNoteCommand::Output> proofingDebugSelectNote(const ProofingDebugSelectNoteCommand& cmd);
+
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;
     //! Persist the folder of the picked PDF (Reprise-private, independent of File > Open). Non-empty picks only.

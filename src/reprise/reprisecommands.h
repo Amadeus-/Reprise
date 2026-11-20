@@ -391,6 +391,90 @@ struct ProofingDebugGotoCommand {
     };
 };
 
+//! NOTE Reprise dev MCP/API "drive" tool for the Two-Pane Proofing FULL DETAIL VIEW magnifier (Phase B2): select ONE
+//! NOTE in the current score by its measure + staff + in-measure index, which drives the live selectionChanged the
+//! floating magnifier observes, so a headless agent can verify the magnifier zooms + highlights the CORRECT recognised
+//! note. The handler walks to the Nth positional measure (pickup = 0), scans its ChordRest segments in tick order on the
+//! requested staff, picks the `index`-th note, and selects it SINGLE. It ALSO computes the Phase B1 runtime key straight
+//! from that Note (gm/staffIdx/tickInMeasure/step/octave/voice) and reports whether the proofing map holds a head box
+//! for it plus that box's geometry -- so the note<->box match can be checked directly against reprise.get-proofing-map
+//! (self-check: the reported staff == the note's staffIdx by construction; a box MISS flags the grace/untrusted fallback
+//! the magnifier then shows as a dashed measure marker). Runs synchronously on the Qt GUI thread. ok=false + error on no
+//! current score / out-of-range measure or index. Marked ReadOnly so it is allowlisted with the other dev tools -- it
+//! only changes the selection, not the document.
+struct ProofingDebugSelectNoteCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/proofing-debug-select-note");
+    static const inline auto title = muse::MnemonicString("reprise", "Proofing debug select note");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Select a note by measure/staff/index and report its proofing-map head box (drives the magnifier)");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    int measure = 0;      // required: global measure index (0-based, pickup = 0)
+    int staff = 0;        // optional: global 0-based staff index (default 0)
+    int index = 0;        // optional: 0-based note index within that measure+staff, tick then chord order (default 0)
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "measure", &ProofingDebugSelectNoteCommand::measure,
+                               "Global measure index to select within, 0-based (pickup/anacrusis = 0)",
+                               muse::rcommand::Presence::Required },
+        muse::rcommand::Field{ "staff", &ProofingDebugSelectNoteCommand::staff,
+                               "Global 0-based staff index to pick the note from (optional; default 0)",
+                               muse::rcommand::Presence::Optional },
+        muse::rcommand::Field{ "index", &ProofingDebugSelectNoteCommand::index,
+                               "0-based note index within the measure+staff, in tick then chord order (optional; default 0)",
+                               muse::rcommand::Presence::Optional },
+    };
+
+    struct Output {
+        bool ok = false;
+        bool found = false;
+        int measure = 0;
+        int staff = 0;
+        int index = 0;
+        int noteCount = 0;
+        int gm = -1;
+        int tick = 0;
+        int step = -1;
+        int octave = 0;
+        int voice = 0;
+        std::string noteName;
+        bool hasBox = false;
+        bool isFallback = false;
+        int page = -1;
+        int x = 0;
+        int y = 0;
+        int w = 0;
+        int h = 0;
+        std::string error;
+    };
+
+    using O = ProofingDebugSelectNoteCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether a note was selected (a current score exists and the indices are in range)" },
+        muse::rcommand::Field{ "found", &O::found, "Whether a note was found at measure+staff+index" },
+        muse::rcommand::Field{ "measure", &O::measure, "The requested global measure index (echoed back)" },
+        muse::rcommand::Field{ "staff", &O::staff, "The requested staff index (echoed back; == the note's staffIdx)" },
+        muse::rcommand::Field{ "index", &O::index, "The requested in-measure note index (echoed back)" },
+        muse::rcommand::Field{ "noteCount", &O::noteCount, "Number of notes found in that measure+staff" },
+        muse::rcommand::Field{ "gm", &O::gm, "The selected note's global measure index (B1 key; -1 if none)" },
+        muse::rcommand::Field{ "tick", &O::tick, "The selected note's tickInMeasure (MuseScore 480/quarter; B1 key)" },
+        muse::rcommand::Field{ "step", &O::step, "The selected note's diatonic step 0..6=C..B (B1 key; -1 if none)" },
+        muse::rcommand::Field{ "octave", &O::octave, "The selected note's scientific octave (B1 key)" },
+        muse::rcommand::Field{ "voice", &O::voice, "The selected note's voice (advisory; not part of the box match)" },
+        muse::rcommand::Field{ "noteName", &O::noteName, "Short pitch label of the selected note, e.g. 'C4'" },
+        muse::rcommand::Field{ "hasBox", &O::hasBox, "Whether the proofing map holds a head box for the note's B1 key" },
+        muse::rcommand::Field{ "isFallback", &O::isFallback,
+                               "True when no head box was found (grace/untrusted) -> the magnifier shows a measure fallback" },
+        muse::rcommand::Field{ "page", &O::page, "0-based page the head box (or fallback measure rect) sits on (-1 if none)" },
+        muse::rcommand::Field{ "x", &O::x, "Head box x in sheet-image pixels (or measure-rect x on a fallback)" },
+        muse::rcommand::Field{ "y", &O::y, "Head box y in sheet-image pixels (or measure-rect y on a fallback)" },
+        muse::rcommand::Field{ "w", &O::w, "Head box width in sheet-image pixels (or measure-rect width on a fallback)" },
+        muse::rcommand::Field{ "h", &O::h, "Head box height in sheet-image pixels (or measure-rect height on a fallback)" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
+
 //! NOTE Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen IN-PROCESS, with no foreground
 //! activation and no synthetic mouse input (the Firefox-bridge model). The handler runs synchronously on the Qt GUI
 //! thread (the same dispatch path the capture tools use), calling interactive()->open(UriQuery(...)) for the resolved

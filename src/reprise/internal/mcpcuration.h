@@ -71,6 +71,8 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "reprise/navigate",
         // dev "drive" tool: select a measure by global index and report its proofing-map rect (A3 follow band)
         "reprise/proofing-debug-goto",
+        // dev "drive" tool: select a note by measure/staff/index and report its head box (B2 magnifier)
+        "reprise/proofing-debug-select-note",
         // OCR language-pack helpers (verify the Preferences pack manager headlessly)
         "reprise/list-languages",
         "reprise/add-language",

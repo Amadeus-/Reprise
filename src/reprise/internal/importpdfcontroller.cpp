@@ -52,10 +52,16 @@
 #include "notation/inotation.h"
 #include "notation/inotationinteraction.h"
 #include "notation/inotationelements.h"
+#include "notation/inotationselection.h"
 
 #include "engraving/dom/score.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/mscore.h"
+#include "engraving/dom/segment.h"
+#include "engraving/dom/chord.h"
+#include "engraving/dom/note.h"
+#include "engraving/dom/pitchspelling.h"
+#include "engraving/types/constants.h"
 
 #include "reprise/reprisecommands.h"
 
@@ -635,6 +641,11 @@ void ImportPdfController::init()
     //! Dev tool: drive the Two-Pane Proofing follow band -- select a measure by global index and report its map rect.
     commandDispatcher()->onRequest<ProofingDebugGotoCommand>(this, std::function<muse::RetVal<ProofingDebugGotoCommand::Output>(const ProofingDebugGotoCommand&)>(
                                                                  [this](const ProofingDebugGotoCommand& c) { return proofingDebugGoto(c); }));
+
+    //! Dev tool: drive the Two-Pane Proofing FULL DETAIL VIEW magnifier -- select a note by measure/staff/index and
+    //! report its B1 key + whether the map holds its head box.
+    commandDispatcher()->onRequest<ProofingDebugSelectNoteCommand>(this, std::function<muse::RetVal<ProofingDebugSelectNoteCommand::Output>(const ProofingDebugSelectNoteCommand&)>(
+                                                                       [this](const ProofingDebugSelectNoteCommand& c) { return proofingDebugSelectNote(c); }));
 
     //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
     //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
@@ -1772,6 +1783,149 @@ muse::RetVal<ProofingDebugGotoCommand::Output> ImportPdfController::proofingDebu
                 out.w = r.w;
                 out.h = r.h;
                 break;
+            }
+        }
+    }
+
+    return RV::make_ok(out);
+}
+
+muse::RetVal<ProofingDebugSelectNoteCommand::Output> ImportPdfController::proofingDebugSelectNote(const ProofingDebugSelectNoteCommand& cmd)
+{
+    using RV = muse::RetVal<ProofingDebugSelectNoteCommand::Output>;
+
+    ProofingDebugSelectNoteCommand::Output out;
+    out.measure = cmd.measure;
+    out.staff = cmd.staff;
+    out.index = cmd.index;
+
+    if (cmd.measure < 0 || cmd.staff < 0 || cmd.index < 0)
+    {
+        out.error = "measure, staff and index must be >= 0";
+        return RV::make_ok(out);
+    }
+
+    const notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    if (!notation)
+    {
+        out.error = "no current notation (open or import a score first)";
+        return RV::make_ok(out);
+    }
+
+    engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score)
+    {
+        out.error = "current notation has no score";
+        return RV::make_ok(out);
+    }
+
+    //! Walk to the Nth Measure positionally (pickup/anacrusis = index 0), matching ProofingMapBuilder's gm convention.
+    engraving::Measure* m = score->firstMeasure();
+    int32_t idx = 0;
+    while (m && idx < cmd.measure)
+    {
+        m = m->nextMeasure();
+        ++idx;
+    }
+
+    if (!m)
+    {
+        out.error = "measure index out of range (score has fewer measures)";
+        return RV::make_ok(out);
+    }
+
+    //! Collect every note on the requested staff in this measure, in tick (segment) order then within-chord order --
+    //! the same stable order a user would arrow through, so `index` is reproducible.
+    const int32_t firstTrack = cmd.staff * static_cast<int32_t>(engraving::VOICES);
+    const int32_t lastTrack = firstTrack + static_cast<int32_t>(engraving::VOICES) - 1;
+
+    std::vector<engraving::Note*> notes;
+    for (engraving::Segment* seg = m->first(engraving::SegmentType::ChordRest); seg;
+         seg = seg->next(engraving::SegmentType::ChordRest))
+    {
+        for (int32_t track = firstTrack; track <= lastTrack; ++track)
+        {
+            engraving::EngravingItem* el = seg->element(track);
+            if (el && el->isChord())
+            {
+                for (engraving::Note* n : engraving::toChord(el)->notes())
+                {
+                    notes.push_back(n);
+                }
+            }
+        }
+    }
+
+    out.noteCount = static_cast<int>(notes.size());
+
+    if (cmd.index >= static_cast<int32_t>(notes.size()))
+    {
+        out.error = "note index out of range for that measure+staff";
+        return RV::make_ok(out);
+    }
+
+    engraving::Note* note = notes[cmd.index];
+    if (!note || !note->chord() || !note->chord()->measure())
+    {
+        out.error = "selected note has no chord/measure";
+        return RV::make_ok(out);
+    }
+
+    //! Select the note. This fires the live selectionChanged the floating magnifier observes, so it zooms + highlights
+    //! the matching original head -- exactly what a headless capture then verifies.
+    notation->interaction()->select({ note }, engraving::SelectType::SINGLE);
+    out.ok = true;
+    out.found = true;
+
+    //! Derive the Phase B1 runtime key straight from the Note (the magnifier does the identical derivation). staffIdx is
+    //! read from the Note (so a cross-staff note reports its true staff, not the requested one).
+    const engraving::Measure* nm = note->chord()->measure();
+    const int32_t staffIdx = static_cast<int32_t>(note->staffIdx());
+    const int32_t tickInMeasure = (note->tick() - nm->tick()).ticks();
+    const int32_t step = engraving::tpc2step(note->tpc());
+    const int32_t octave = note->octave();
+
+    out.gm = nm->measureIndex();
+    out.staff = staffIdx;
+    out.tick = tickInMeasure;
+    out.step = step;
+    out.octave = octave;
+    out.voice = static_cast<int>(note->voice());
+
+    static const char* k_step[7] = { "C", "D", "E", "F", "G", "A", "B" };
+    out.noteName = ((step >= 0 && step < 7) ? std::string(k_step[step]) : std::string("?")) + std::to_string(octave);
+
+    //! Report whether the map holds a head box for this key (+ its geometry), or fall back to the measure rect -- the
+    //! same decision the magnifier makes, so the capture and this output agree on note vs measure-level.
+    if (proofingMapService()->hasMap())
+    {
+        const ProofingNoteBox* box = proofingMapService()->noteBox(out.gm, staffIdx, tickInMeasure, step, octave);
+        if (box)
+        {
+            out.hasBox = true;
+            out.isFallback = false;
+            out.page = box->pageIndex;
+            out.x = box->x;
+            out.y = box->y;
+            out.w = box->w;
+            out.h = box->h;
+        }
+        else
+        {
+            out.hasBox = false;
+            out.isFallback = true;
+            const ProofingMap& map = proofingMapService()->map();
+            for (const ProofingMeasureRect& r : map.measures)
+            {
+                if (r.globalMeasureIndex == out.gm)
+                {
+                    out.page = r.pageIndex;
+                    out.x = r.x;
+                    out.y = r.y;
+                    out.w = r.w;
+                    out.h = r.h;
+                    break;
+                }
             }
         }
     }

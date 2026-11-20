@@ -395,7 +395,38 @@ DockPage {
                 navigationOrderStart: undoHistoryPanel.contentNavigationPanelOrderStart
             }
         },
-        
+
+        //! NOTE: Reprise Two-Pane Proofing FULL DETAIL VIEW (Phase B2). The floating/dockable magnifier: a view-only,
+        //! note-level zoom of the ORIGINAL scan centred on the current selection, with the selected note highlighted
+        //! (the PhotoScore detail view that makes proofing fast). A normal floatable DockPanel (floatable defaults true),
+        //! so it floats out to its own window AND docks. Its content (ProofingMagnifier) renders only while a proofing
+        //! map is held -- right after an OMR import -- and otherwise shows a short placeholder; it is resizable (unlike
+        //! the fixed-width vertical panels) so the user can give the zoom more room.
+        DockPanel {
+            id: proofingMagnifierPanel
+
+            objectName: "proofingMagnifierPanel"
+            title: qsTrc("reprise", "Full detail view")
+
+            navigationSection: root.navigationPanelSec(proofingMagnifierPanel.location)
+
+            width: 360
+            minimumWidth: 220
+            maximumWidth: 900
+
+            minimumHeight: root.panelMinDimension
+            maximumHeight: root.panelMaxDimension
+
+            groupName: root.verticalPanelsGroup
+            location: Location.Right
+
+            dropDestinations: root.verticalPanelDropDestinations
+
+            ProofingMagnifier {
+                navigationSection: proofingMagnifierPanel.navigationSection
+            }
+        },
+
         // =============================================
         // Horizontal Panels
         // =============================================
