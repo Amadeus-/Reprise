@@ -8,6 +8,16 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-11-19
+
+### Fixed
+- **New-Scan picker never falls back to the process working directory.** `ImportPdfController::defaultImportPdfDir()`
+  now treats a stored `lastImportPdfDir` that is non-absolute (e.g. a stale `"."` left by a relative/MCP import) the
+  same as empty and falls through to the platform Documents folder. Previously such a value passed `exists()` and
+  resolved against the process CWD (`build.release`), so the picker could open there instead of the user's folder.
+  `QFileInfo::isAbsolute()` is used so both path separators are handled (muse `io::*` splits on `/` only). Hardens the
+  0.12.14 settings-identity pin.
+
 ## [0.13.0] — 2026-11-19
 
 ### Added

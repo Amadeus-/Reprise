@@ -1627,7 +1627,11 @@ muse::RetVal<NavigateCommand::Output> ImportPdfController::navigate(const Naviga
 muse::io::path_t ImportPdfController::defaultImportPdfDir() const
 {
     const io::path_t dir = repriseConfiguration()->lastImportPdfDir();
-    if (!dir.empty() && fileSystem()->exists(dir))
+    //! The stored value is only usable if it is a real ABSOLUTE directory. A non-absolute value (e.g. "." left by a
+    //! relative/MCP import) passes exists() but resolves against the process CWD (build.release) -- never the user's
+    //! folder -- so treat it as empty and fall through to Documents. QFileInfo handles BOTH separators (muse io::* splits
+    //! on '/' only). This hardens the 0.12.14 settings-identity pin against a stale non-absolute lastImportPdfDir.
+    if (!dir.empty() && QFileInfo(dir.toQString()).isAbsolute() && fileSystem()->exists(dir))
     {
         return dir;
     }
