@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-11-20
+
+### Added
+- **Two-pane proofing view: the magnified "Full detail view".** A floating, dockable panel shows a
+  magnified close-up of the original scan at the note you have selected, with the exact note head boxed,
+  so you can check each recognized note against the original at a readable size. View-only.
+  - Built on a per-note coordinate map (`IProofingMapService` now holds per-note pixel boxes derived from
+    the Audiveris `.omr`, matched by a diatonic step+octave / clef-aware / positional key): the matched
+    note head is boxed; a note with no reliable match (e.g. a user-added grace note, which Audiveris does
+    not recognize) falls back to a dashed measure-level marker instead of pointing at the wrong place.
+- **The original-scan band now scrolls smoothly to follow your position** — animated when the window is
+  visible, and instant when it is minimized (so it follows reliably in every window state).
+
 ## [0.14.0] — 2026-11-20
 
 ### Added
