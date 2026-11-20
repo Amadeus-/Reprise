@@ -578,8 +578,9 @@ DockPage {
 
         readonly property alias navigationSection: notationView.navigationSection
 
-        //! Expanded height of the original-scan strip, dragged via the divider (clamped in the handler).
-        property int stripHeight: 220
+        //! Expanded height of the original-scan band, dragged via the divider (clamped in the handler). Defaults tall
+        //! enough that a readable system of the original is visible (Phase A3 following band).
+        property int stripHeight: 320
 
         readonly property int stripCurrentHeight: !proofingStrip.hasContent ? 0
                                                  : (proofingStrip.expanded ? centralWrapper.stripHeight

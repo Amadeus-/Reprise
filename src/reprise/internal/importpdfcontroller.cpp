@@ -49,6 +49,14 @@
 
 #include "async/async.h"
 
+#include "notation/inotation.h"
+#include "notation/inotationinteraction.h"
+#include "notation/inotationelements.h"
+
+#include "engraving/dom/score.h"
+#include "engraving/dom/measure.h"
+#include "engraving/dom/mscore.h"
+
 #include "reprise/reprisecommands.h"
 
 #include "pdfresolutiondetector.h"
@@ -623,6 +631,10 @@ void ImportPdfController::init()
     //! Dev "drive" tool: navigate the app shell to a named screen in-process (no foreground, no synthetic input).
     commandDispatcher()->onRequest<NavigateCommand>(this, std::function<muse::RetVal<NavigateCommand::Output>(const NavigateCommand&)>(
                                                         [this](const NavigateCommand& c) { return navigate(c); }));
+
+    //! Dev tool: drive the Two-Pane Proofing follow band -- select a measure by global index and report its map rect.
+    commandDispatcher()->onRequest<ProofingDebugGotoCommand>(this, std::function<muse::RetVal<ProofingDebugGotoCommand::Output>(const ProofingDebugGotoCommand&)>(
+                                                                 [this](const ProofingDebugGotoCommand& c) { return proofingDebugGoto(c); }));
 
     //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
     //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
@@ -1670,6 +1682,79 @@ muse::RetVal<NavigateCommand::Output> ImportPdfController::navigate(const Naviga
 
     out.ok = true;
     out.page = uri;
+    return RV::make_ok(out);
+}
+
+muse::RetVal<ProofingDebugGotoCommand::Output> ImportPdfController::proofingDebugGoto(const ProofingDebugGotoCommand& cmd)
+{
+    using RV = muse::RetVal<ProofingDebugGotoCommand::Output>;
+
+    ProofingDebugGotoCommand::Output out;
+    out.measure = cmd.measure;
+
+    if (cmd.measure < 0)
+    {
+        out.error = "measure index must be >= 0";
+        return RV::make_ok(out);
+    }
+
+    const notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    if (!notation)
+    {
+        out.error = "no current notation (open or import a score first)";
+        return RV::make_ok(out);
+    }
+
+    engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score)
+    {
+        out.error = "current notation has no score";
+        return RV::make_ok(out);
+    }
+
+    //! Walk to the Nth Measure positionally (pickup/anacrusis = index 0) -- the exact convention ProofingMapBuilder uses
+    //! to assign globalMeasureIndex and MeasureBase::measureIndex() uses to read it back, so the three stay aligned.
+    engraving::Measure* m = score->firstMeasure();
+    int32_t idx = 0;
+    while (m && idx < cmd.measure)
+    {
+        m = m->nextMeasure();
+        ++idx;
+    }
+
+    if (!m)
+    {
+        out.error = "measure index out of range (score has fewer measures)";
+        return RV::make_ok(out);
+    }
+
+    //! Select the measure. This fires the live selectionChanged the follow band observes, so the band scrolls to +
+    //! highlights the matching original measure -- exactly the behaviour a headless capture then verifies.
+    notation->interaction()->select({ m }, engraving::SelectType::SINGLE);
+    out.ok = true;
+
+    //! Report the map rect for this global index, so the returned geometry can be checked against the band capture AND
+    //! against reprise.get-proofing-map (proving notation current-measure index == map globalMeasureIndex).
+    if (proofingMapService()->hasMap())
+    {
+        const ProofingMap& map = proofingMapService()->map();
+        out.measureCount = map.measureCount;
+        for (const ProofingMeasureRect& r : map.measures)
+        {
+            if (r.globalMeasureIndex == cmd.measure)
+            {
+                out.found = true;
+                out.gm = r.globalMeasureIndex;
+                out.page = r.pageIndex;
+                out.x = r.x;
+                out.y = r.y;
+                out.w = r.w;
+                out.h = r.h;
+                break;
+            }
+        }
+    }
+
     return RV::make_ok(out);
 }
 

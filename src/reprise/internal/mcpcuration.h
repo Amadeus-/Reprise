@@ -69,6 +69,8 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "reprise/capture-preferences",
         // dev "drive" tool: navigate the app shell to a named screen in-process
         "reprise/navigate",
+        // dev "drive" tool: select a measure by global index and report its proofing-map rect (A3 follow band)
+        "reprise/proofing-debug-goto",
         // OCR language-pack helpers (verify the Preferences pack manager headlessly)
         "reprise/list-languages",
         "reprise/add-language",

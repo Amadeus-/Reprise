@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
 #include <QObject>
 #include <QString>
@@ -32,30 +33,50 @@
 #include "modularity/ioc.h"
 #include "async/asyncable.h"
 
+#include "project/iprojectsession.h"
+
 #include "internal/iproofingmapservice.h"
 
 class QImage;
 
 namespace mu::reprise {
-//! View-model behind the Reprise Two-Pane Proofing TOP STRIP (Phase A2): the view-only band above the notation editor
-//! that renders the ORIGINAL scanned page(s) the current score was recognised from. Reads the latest import's
-//! ProofingMap (sourcePath + per-page dims) from IProofingMapService, renders each page once to a PNG in a per-instance
-//! temp dir (PDF via QPdfDocument, images via QImageReader), and exposes file:// URLs + aspect dims for the QML
-//! Repeater. Re-renders whenever the service's map changes (a fresh import). A2 is DISPLAY ONLY -- it does not consume
-//! the measure rects and wires no follow / highlight / score interaction (that is Phase A3).
-class ProofingStripModel : public QObject, public muse::async::Asyncable
+//! View-model behind the Reprise Two-Pane Proofing READABLE FOLLOWING BAND (Phase A3): the view-only band above the
+//! notation editor that renders the ORIGINAL scanned page(s) the current score was recognised from, at a READABLE size,
+//! and AUTO-FOLLOWS the score. It reads the latest import's ProofingMap (sourcePath + per-page dims + per-measure rects)
+//! from IProofingMapService and renders each page once to a PNG in a per-instance temp dir (PDF via QPdfDocument, images
+//! via QImageReader). It then observes the current notation's selection: on every selection change it derives the
+//! selected element's GLOBAL MEASURE INDEX (positional, pickup = 0 -- MeasureBase::measureIndex(), which matches the map's
+//! gm), looks up that measure's {pageIndex, rect} in the map, and exposes currentPageIndex + the rect (in sheet-image
+//! pixels) so the QML band can switch to that page, scroll the matching system into view, and draw a highlight box over
+//! the current measure. One-way: the band never moves the score cursor. Note-level highlight + the magnifier are Phase B.
+class ProofingStripModel : public QObject, public muse::Contextable, public muse::async::Asyncable
 {
     Q_OBJECT
 
     //! true once at least one source page rendered from the current map -> the strip should be shown.
     Q_PROPERTY(bool hasMap READ hasMap NOTIFY changed)
-    //! One entry per rendered page, left-to-right: { url: "file:///...png", width: <px>, height: <px> }. width/height
-    //! are the rendered pixel size, used by the delegate to size each page to the strip height preserving aspect.
+    //! One entry per rendered page, left-to-right: { url: "file:///...png", width, height, sheetWidth, sheetHeight }.
+    //! width/height are the rendered PNG pixel size; sheetWidth/sheetHeight are the Audiveris sheet-image pixel space the
+    //! measure rects live in (they share the page aspect, so the band scales a rect by bandWidth / sheetWidth).
     Q_PROPERTY(QVariantList pages READ pages NOTIFY changed)
+
+    //! 0-based index into pages of the page the current measure sits on (-1 when nothing is followed yet). The band binds
+    //! its Image source to pages[currentPageIndex].
+    Q_PROPERTY(int currentPageIndex READ currentPageIndex NOTIFY followChanged)
+    //! true when the current selection maps to a measure rect in the held map (the band draws its highlight + scrolls).
+    Q_PROPERTY(bool hasCurrent READ hasCurrent NOTIFY followChanged)
+    //! The followed measure's pixel rect in its page's SHEET-IMAGE space (valid only while hasCurrent).
+    Q_PROPERTY(int rectX READ rectX NOTIFY followChanged)
+    Q_PROPERTY(int rectY READ rectY NOTIFY followChanged)
+    Q_PROPERTY(int rectW READ rectW NOTIFY followChanged)
+    Q_PROPERTY(int rectH READ rectH NOTIFY followChanged)
+    //! The followed global measure index (0-based, pickup = 0), or -1 when nothing is selected. Shown in the header.
+    Q_PROPERTY(int currentMeasure READ currentMeasure NOTIFY followChanged)
 
     QML_ELEMENT
 
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
+    muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
 public:
     explicit ProofingStripModel(QObject* parent = nullptr);
@@ -64,14 +85,24 @@ public:
     bool hasMap() const { return m_hasMap; }
     QVariantList pages() const { return m_pages; }
 
-    //! Called from the strip's Component.onCompleted: subscribe to map changes (once) and render the current map.
+    int currentPageIndex() const { return m_currentPageIndex; }
+    bool hasCurrent() const { return m_hasCurrent; }
+    int rectX() const { return m_rectX; }
+    int rectY() const { return m_rectY; }
+    int rectW() const { return m_rectW; }
+    int rectH() const { return m_rectH; }
+    int currentMeasure() const { return m_currentMeasure; }
+
+    //! Called from the band's Component.onCompleted: subscribe to map + notation changes (once) and render + follow.
     Q_INVOKABLE void load();
 
 signals:
     void changed();
+    void followChanged();
 
 private:
-    //! Re-render the strip from whatever the service currently holds (clears the previous render first).
+    //! Re-render the band from whatever the service currently holds (clears the previous render first), then recompute
+    //! the follow against the fresh map.
     void rebuild();
 
     //! Render the recognised pages of a source PDF via QPdfDocument.
@@ -80,8 +111,9 @@ private:
     //! Render the recognised frames of a source image (single-frame, or multi-frame TIFF via the frame-walk idiom).
     void renderImagePages(const QString& sourcePath, const ProofingMap& map, const QString& dir);
 
-    //! Scale (if needed), write <dir>/sheetN_gen.png, and append its { url, width, height } entry to m_pages.
-    void appendPage(const QImage& image, const QString& dir, int32_t index);
+    //! Scale (if needed), write <dir>/sheetN_gen.png, and append its { url, width, height, sheetWidth, sheetHeight }
+    //! entry to m_pages. sheetW/sheetH are the Audiveris sheet-image dims for this page (0 -> fall back to the render dims).
+    void appendPage(const QImage& image, const QString& dir, int32_t index, int32_t sheetW, int32_t sheetH);
 
     //! Delete the PNGs written by the previous render (this instance's temp subdir only).
     void clearRendered();
@@ -89,9 +121,29 @@ private:
     //! Per-instance temp subdir holding this strip's rendered page PNGs.
     QString renderDir() const;
 
+    //! Drop + rebuild the per-notation selection subscription (called at load and whenever the current notation changes),
+    //! then recompute the follow once for the now-current selection.
+    void resubscribeSelection();
+
+    //! Recompute currentPageIndex + the highlight rect from the current notation's selection against the held map, and
+    //! emit followChanged. Safe to call with no selection / no map (clears hasCurrent).
+    void updateFollow();
+
     bool m_inited = false;
     bool m_hasMap = false;
     QVariantList m_pages;
     int32_t m_generation = 0;
+
+    int32_t m_currentPageIndex = -1;
+    bool m_hasCurrent = false;
+    int32_t m_rectX = 0;
+    int32_t m_rectY = 0;
+    int32_t m_rectW = 0;
+    int32_t m_rectH = 0;
+    int32_t m_currentMeasure = -1;
+
+    //! Receiver for the CURRENT notation's selectionChanged; reset (destroyed+recreated) on every notation switch so a
+    //! previous notation's subscription never lingers (the NotationSwitchListModel per-notation-receiver idiom).
+    std::unique_ptr<muse::async::Asyncable> m_selectionReceiver;
 };
 }

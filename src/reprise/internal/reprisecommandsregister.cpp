@@ -70,6 +70,9 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen in-process
     makeCommandInfo<NavigateCommand>(),
+
+    // Reprise dev MCP/API tool: select a measure by global index and report its proofing-map rect (drives the A3 band)
+    makeCommandInfo<ProofingDebugGotoCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

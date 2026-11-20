@@ -331,6 +331,60 @@ struct CapturePreferencesCommand {
     };
 };
 
+//! NOTE Reprise dev MCP/API "drive" tool for the Two-Pane Proofing follow band (Phase A3): select a measure by its
+//! GLOBAL measure index (0-based, pickup = 0) in the current score and report the proofing-map rect that index resolves
+//! to. Selecting the measure drives the live selectionChanged the follow band observes, so a headless agent can verify
+//! the band scrolls to + highlights the CORRECT original measure at a KNOWN position, and the returned {gm,page,x,y,w,h}
+//! proves the notation current-measure index == the map's globalMeasureIndex (both positional). Runs synchronously on the
+//! Qt GUI thread (the same dispatch path the other reprise queries use). found=false when the index has no map rect;
+//! ok=false + error when there is no current score / the index is out of range. Marked ReadOnly so it is allowlisted with
+//! the other dev tools -- it only changes the selection, not the document.
+struct ProofingDebugGotoCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/proofing-debug-goto");
+    static const inline auto title = muse::MnemonicString("reprise", "Proofing debug goto");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Select a measure by global index and report its proofing-map rect (drives the follow band)");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    int measure = 0;      // required: global measure index to select (0-based, pickup = 0)
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "measure", &ProofingDebugGotoCommand::measure,
+                               "Global measure index to select, 0-based (pickup/anacrusis = 0)",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        bool found = false;
+        int measure = 0;
+        int gm = -1;
+        int page = -1;
+        int x = 0;
+        int y = 0;
+        int w = 0;
+        int h = 0;
+        int measureCount = 0;
+        std::string error;
+    };
+
+    using O = ProofingDebugGotoCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the measure was selected (a current score exists and the index is in range)" },
+        muse::rcommand::Field{ "found", &O::found, "Whether that measure index has a rect in the proofing map" },
+        muse::rcommand::Field{ "measure", &O::measure, "The requested global measure index (echoed back)" },
+        muse::rcommand::Field{ "gm", &O::gm, "The matched map globalMeasureIndex (-1 if not found)" },
+        muse::rcommand::Field{ "page", &O::page, "0-based page the measure sits on (-1 if not found)" },
+        muse::rcommand::Field{ "x", &O::x, "Measure rect x in sheet-image pixels" },
+        muse::rcommand::Field{ "y", &O::y, "Measure rect y in sheet-image pixels" },
+        muse::rcommand::Field{ "w", &O::w, "Measure rect width in sheet-image pixels" },
+        muse::rcommand::Field{ "h", &O::h, "Measure rect height in sheet-image pixels" },
+        muse::rcommand::Field{ "measureCount", &O::measureCount, "Number of measures in the held map" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
+
 //! NOTE Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen IN-PROCESS, with no foreground
 //! activation and no synthetic mouse input (the Firefox-bridge model). The handler runs synchronously on the Qt GUI
 //! thread (the same dispatch path the capture tools use), calling interactive()->open(UriQuery(...)) for the resolved

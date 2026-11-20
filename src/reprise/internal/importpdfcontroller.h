@@ -35,6 +35,7 @@
 #include "global/io/path.h"
 
 #include "appshell/internal/isessionsmanager.h"
+#include "project/iprojectsession.h"
 
 #include "irepriseconfiguration.h"
 #include "ilanguagepackservice.h"
@@ -61,6 +62,7 @@ class ImportPdfController : public muse::Contextable, public muse::async::Asynca
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
     muse::ContextInject<mu::appshell::ISessionsManager> sessionsManager = { this };
+    muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
 public:
     explicit ImportPdfController(const muse::modularity::ContextPtr& iocCtx)
@@ -167,6 +169,12 @@ private:
     //! plugins / learn / home) or the notation page URI, then opens it on the Qt GUI thread. ok=false + error on an
     //! unknown target.
     muse::RetVal<NavigateCommand::Output> navigate(const NavigateCommand& cmd);
+
+    //! Dev MCP/API "drive" tool for the Two-Pane Proofing follow band (Phase A3): select the measure at the given GLOBAL
+    //! index (0-based, pickup = 0) in the current score -- which drives the live selectionChanged the band observes -- and
+    //! report the proofing-map rect that index resolves to. Proves the notation current-measure index == the map's
+    //! globalMeasureIndex. Runs on the Qt GUI thread (synchronous dispatch). ok=false + error on no score / out of range.
+    muse::RetVal<ProofingDebugGotoCommand::Output> proofingDebugGoto(const ProofingDebugGotoCommand& cmd);
 
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;
