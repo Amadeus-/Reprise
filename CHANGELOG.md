@@ -8,6 +8,24 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-19
+
+### Added
+- **Two agent-facing MCP "drive" tools let an agent navigate the Reprise UI and capture dialogs in-process — without
+  bringing the window to the foreground and without synthetic mouse input** (the Firefox-bridge model). Both run
+  synchronously on the Qt GUI thread via the same `commandDispatcher()->onRequest<Cmd>` dispatch path the existing capture
+  tools use, so neither needs focus.
+  - **`reprise/navigate`** (new) opens a named app-shell screen via `interactive()->open(UriQuery(...))`. Its required
+    `target` is one of `scans` (`musescore://home?section=scores`), `plugins` (`musescore://home?section=plugins`),
+    `learn` (`musescore://home?section=learn`), `home` (`musescore://home`, default section scores) or `notation`
+    (`musescore://notation`, the score page). It returns `ok`, `page` (the resolved URI) and `error`; an unknown target
+    returns `ok=false` with an error naming the valid targets. The handler lives on `ImportPdfController`.
+  - **`reprise/capture-screenshot`** gains a third `target`, **`dialog`**, alongside `window` and `score`. It grabs the
+    topmost open dialog/popup `QQuickWindow` (owned popups/dialogs/menus are NOT part of the main-window grab) to a PNG,
+    reusing the bounded exposed-window wait idiom from `captureImportDialog`. Unlike that tool it does NOT close the
+    dialog afterwards — it captures one the agent opened separately and may still want. If the top window is the main
+    window or null it returns `ok=false` with "no dialog or popup is open".
+
 ## [0.12.22] — 2026-11-19
 
 ### Fixed
