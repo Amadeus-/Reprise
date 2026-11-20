@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "modularity/imoduleinterface.h"
+#include "async/notification.h"
 
 namespace mu::reprise {
 //! One recognised page (sheet) of the original scan: its 0-based index, the Audiveris sheet-image pixel dimensions
@@ -87,5 +88,10 @@ public:
 
     //! Drop the current map (e.g. an import that produced no usable geometry).
     virtual void clear() = 0;
+
+    //! Fires whenever the held map is replaced (setMap) or dropped (clear). The Two-Pane Proofing top strip
+    //! (Phase A2) subscribes so it renders/refreshes/hides the moment a fresh import's map arrives, with no
+    //! dependency on notation-change timing.
+    virtual muse::async::Notification mapChanged() const = 0;
 };
 }

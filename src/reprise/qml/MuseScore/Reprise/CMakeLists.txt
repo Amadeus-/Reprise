@@ -26,9 +26,12 @@ qt_add_qml_module(reprise_qml
     SOURCES
         importprogressmodel.cpp
         importprogressmodel.h
+        proofingstripmodel.cpp
+        proofingstripmodel.h
     QML_FILES
         ImportPdfOptionsDialog.qml
         ImportProgressDialog.qml
+        ProofingStrip.qml
     RESOURCES
         resources/titlebar-mark.svg
     IMPORTS
@@ -46,3 +49,8 @@ target_link_libraries(reprise_qml PRIVATE
     notation
     engraving
 )
+
+#! NOTE: ProofingStripModel renders the original scan page(s) for the Two-Pane Proofing top strip -- PDFs via
+#! QPdfDocument (Qt::Pdf). The parent src/reprise/CMakeLists.txt already finds Qt::Pdf GLOBAL (promoted to global
+#! scope), so this link just resolves that imported target for the reprise_qml compilation unit.
+target_link_libraries(reprise_qml PRIVATE Qt::Pdf)

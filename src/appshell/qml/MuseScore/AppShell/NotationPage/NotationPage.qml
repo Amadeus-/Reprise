@@ -35,6 +35,7 @@ import MuseScore.Palette
 import MuseScore.PropertiesPanel
 import MuseScore.InstrumentsScene
 import MuseScore.Playback
+import MuseScore.Reprise
 
 DockPage {
     id: root
@@ -568,22 +569,89 @@ DockPage {
         }
     ]
 
-    central: NotationView {
-        id: notationView
-        name: "MainNotationView"
+    //! NOTE: Reprise Two-Pane Proofing (Phase A2). The central area is wrapped so the view-only ORIGINAL-SCAN strip can
+    //! sit full-width ABOVE the notation editor. The strip (and its resize divider) appear only while a proofing map is
+    //! held (right after an OMR import); otherwise the NotationView fills the whole central area exactly as before. The
+    //! wrapper re-exposes the NotationView's navigationSection so DockCentralView's keyboard navigation is unchanged.
+    central: Item {
+        id: centralWrapper
 
-        isNavigatorVisible: root.pageModel.isNavigatorVisible
-        isBraillePanelVisible: root.pageModel.isBraillePanelVisible
-        isMainView: true
+        readonly property alias navigationSection: notationView.navigationSection
 
-        Component.onCompleted: {
-            root.notationView = notationView.paintView
+        //! Expanded height of the original-scan strip, dragged via the divider (clamped in the handler).
+        property int stripHeight: 220
 
-            root.setDefaultNavigationControl(notationView.defaultNavigationControl)
+        readonly property int stripCurrentHeight: !proofingStrip.hasContent ? 0
+                                                 : (proofingStrip.expanded ? centralWrapper.stripHeight
+                                                                           : proofingStrip.headerHeight)
+
+        ProofingStrip {
+            id: proofingStrip
+
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: centralWrapper.stripCurrentHeight
+
+            visible: hasContent
         }
 
-        Component.onDestruction: {
-            root.setDefaultNavigationControl(null)
+        Rectangle {
+            id: stripDivider
+
+            anchors.top: proofingStrip.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 4
+
+            visible: proofingStrip.hasContent && proofingStrip.expanded
+            color: dividerMouse.containsMouse || dividerMouse.pressed ? ui.theme.accentColor : ui.theme.strokeColor
+
+            MouseArea {
+                id: dividerMouse
+
+                anchors.fill: parent
+                anchors.topMargin: -2
+                anchors.bottomMargin: -2
+
+                hoverEnabled: true
+                cursorShape: Qt.SizeVerCursor
+
+                onPositionChanged: function(mouse) {
+                    let pt = mapToItem(centralWrapper, mouse.x, mouse.y)
+                    let minH = proofingStrip.headerHeight + 40
+                    let maxH = centralWrapper.height - 160
+                    if (maxH < minH) {
+                        maxH = minH
+                    }
+
+                    centralWrapper.stripHeight = Math.max(minH, Math.min(maxH, pt.y))
+                }
+            }
+        }
+
+        NotationView {
+            id: notationView
+            name: "MainNotationView"
+
+            anchors.top: (proofingStrip.hasContent && proofingStrip.expanded) ? stripDivider.bottom : proofingStrip.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+
+            isNavigatorVisible: root.pageModel.isNavigatorVisible
+            isBraillePanelVisible: root.pageModel.isBraillePanelVisible
+            isMainView: true
+
+            Component.onCompleted: {
+                root.notationView = notationView.paintView
+
+                root.setDefaultNavigationControl(notationView.defaultNavigationControl)
+            }
+
+            Component.onDestruction: {
+                root.setDefaultNavigationControl(null)
+            }
         }
     }
 

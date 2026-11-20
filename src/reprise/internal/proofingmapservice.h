@@ -37,6 +37,7 @@ public:
     {
         m_map = map;
         m_map.valid = true;
+        m_mapChanged.notify();
     }
 
     bool hasMap() const override
@@ -52,9 +53,16 @@ public:
     void clear() override
     {
         m_map = ProofingMap();
+        m_mapChanged.notify();
+    }
+
+    muse::async::Notification mapChanged() const override
+    {
+        return m_mapChanged;
     }
 
 private:
     ProofingMap m_map;
+    muse::async::Notification m_mapChanged;
 };
 }
