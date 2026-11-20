@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.13.1) — work in progress.** Reprise is early software under
+> **Pre-release (0.14.0) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -59,6 +59,10 @@ compatibility.
 - **Manage your recent scans** — the Scans home lists your recent imports with clean
   names; clear the whole list or remove individual entries (your files are never deleted —
   only the shortcuts to them are forgotten).
+- **See the original alongside your score** — after importing, the original scanned page
+  appears in a band above the editable score and follows along as you move through it,
+  highlighting the measure you are on, so you can check the recognition against the original.
+  (A close-up detail view is coming next.)
 - **Easy setup** — Preferences auto-detects your Audiveris install on first run, with
   manual override. There is no separate Tesseract to install or configure — its OCR engine
   ships **inside Audiveris**.
@@ -78,8 +82,8 @@ compatibility.
   added to the import flow.
 
 **Planned**
-- A two-pane **scan ↔ score** correction view — the scanned page shown alongside
-  the editable score, kept position-synced.
+- The rest of the two-pane **scan ↔ score** view — a floating close-up detail view of
+  the exact note you are on, and keeping the original scan available in a saved project.
 - A **bad-timing navigator** and a correction-focused keypad for fast fixes.
 - Richer import/OMR options.
 

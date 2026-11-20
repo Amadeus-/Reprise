@@ -8,6 +8,22 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-11-20
+
+### Added
+- **Two-pane proofing view (first half): the original scan now shows alongside your score.** After an import, a readable,
+  view-only band appears above the editable score showing the original scanned page. As you move through the recognized
+  score the band auto-scrolls to the matching system and highlights the measure you are on, so you can compare the
+  recognition against the original -- the core PhotoScore-style proofing workflow. One-way: the band follows the score;
+  clicking the band does not move the cursor.
+  - Built on a new import-time coordinate map (`IProofingMapService`): each measure's pixel rectangle on the source page
+    is captured from the Audiveris `.omr` and kept with the open score, so the band lines up with the re-engraved MuseScore
+    measures. Measures are aligned positionally (pickup = measure 0); the source page renders via Qt::Pdf (PDF) or
+    `QImageReader` (images).
+  - The band is a dock panel in the notation page, hidden for scores with no proofing map, so normal scores are unaffected.
+  - The close-up magnifier ("Full detail view", a floating window) and persisting the proofing map with saved projects are
+    planned next.
+
 ## [0.13.1] — 2026-11-19
 
 ### Fixed
