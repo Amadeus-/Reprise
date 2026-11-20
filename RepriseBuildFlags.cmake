@@ -29,3 +29,25 @@ if (MSVC)
     add_link_options($<$<CONFIG:Release>:/OPT:REF>)
     add_link_options($<$<CONFIG:Release>:/OPT:ICF>)
 endif()
+
+# --- Reprise: README version-drift guard (enforces the version-bump checklist at build time) ---
+# A version bump in version.cmake MUST also refresh README.md's "Pre-release (X.Y.Z)" line (plus its
+# CHANGELOG entry + any affected feature bullets). This guard turns a README/version.cmake mismatch
+# into a hard configure FATAL_ERROR, so a bump can never go green with a stale README. It runs on every
+# real configure (this file is include()d from the top-level CMakeLists AFTER SetupConfigure has set
+# MUSE_APP_VERSION) and on all platforms. Deliberately NOT placed in version.cmake itself, so the CI
+# `cmake -P version.cmake` version-parse path (make_version_env.sh etc.) stays unaffected. Fork-owned +
+# merge-safe (this file never conflicts on an upstream merge). CMAKE_CURRENT_LIST_DIR here = repo root.
+if (DEFINED MUSE_APP_VERSION AND MUSE_APP_VERSION)
+    set(_reprise_readme "${CMAKE_CURRENT_LIST_DIR}/README.md")
+    if (EXISTS "${_reprise_readme}")
+        file(READ "${_reprise_readme}" _reprise_readme_text)
+        string(REGEX MATCH "Pre-release \\(([0-9]+\\.[0-9]+\\.[0-9]+)\\)" _reprise_readme_ver "${_reprise_readme_text}")
+        if (NOT _reprise_readme_ver)
+            message(FATAL_ERROR "Reprise: README.md has no 'Pre-release (X.Y.Z)' line to match against version.cmake (${MUSE_APP_VERSION}). Add/fix that line in README.md before building.")
+        elseif (NOT CMAKE_MATCH_1 STREQUAL MUSE_APP_VERSION)
+            message(FATAL_ERROR "Reprise: README.md version (${CMAKE_MATCH_1}) does not match version.cmake (${MUSE_APP_VERSION}). Refresh README.md's 'Pre-release (...)' line + CHANGELOG + any affected bullets to ${MUSE_APP_VERSION} before building.")
+        endif()
+        message(STATUS "Reprise README version guard: README (${CMAKE_MATCH_1}) == version.cmake (${MUSE_APP_VERSION}) -- OK")
+    endif()
+endif()
