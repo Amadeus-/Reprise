@@ -101,8 +101,10 @@ struct GetProofingMapCommand {
         std::string sourcePath;
         int measureCount = 0;
         int pageCount = 0;
+        int noteCount = 0;
         std::string pages;       // JSON array: [{index,w,h,dpi}]
         std::string measures;    // JSON array: [{gm,page,x,y,w,h}]
+        std::string notes;       // JSON array: [{gm,staff,tick,voice,step,octave,page,x,y,w,h}]
     };
 
     using O = GetProofingMapCommand::Output;
@@ -111,9 +113,13 @@ struct GetProofingMapCommand {
         muse::rcommand::Field{ "sourcePath", &O::sourcePath, "The original scanned PDF/image of the captured map" },
         muse::rcommand::Field{ "measureCount", &O::measureCount, "Number of measures in the map" },
         muse::rcommand::Field{ "pageCount", &O::pageCount, "Number of pages (sheets) in the map" },
+        muse::rcommand::Field{ "noteCount", &O::noteCount, "Number of per-note head boxes in the map (Phase B1)" },
         muse::rcommand::Field{ "pages", &O::pages, "JSON array of pages: [{index,w,h,dpi}] (sheet-image pixels)" },
         muse::rcommand::Field{ "measures", &O::measures,
                                "JSON array of measure rects in global order: [{gm,page,x,y,w,h}] (page pixel space)" },
+        muse::rcommand::Field{ "notes", &O::notes,
+                               "JSON array of per-note head boxes: [{gm,staff,tick,voice,step,octave,page,x,y,w,h}] "
+                               "(step 0..6=C..B, diatonic; page pixel space; empty for an unmatched/grace note)" },
     };
 };
 

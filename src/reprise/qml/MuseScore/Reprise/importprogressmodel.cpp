@@ -439,7 +439,10 @@ void ImportProgressModel::openImported(const QString& outputPath)
         const QString omrPath = m_runner->omrPath().toQString();
         if (!omrPath.isEmpty())
         {
-            const ProofingMap pmap = ProofingMapBuilder::buildFromOmr(omrPath, m_sourcePath, m_dpi);
+            //! Pass the pre-strip Audiveris MusicXML (outputPath) too, so the per-NOTE head boxes are captured
+            //! alongside the measure rects (Phase B1): its note order == the score about to open (the strip below
+            //! preserves every musical value), giving each note box a runtime-computable key for B2's magnifier.
+            const ProofingMap pmap = ProofingMapBuilder::buildFromOmr(omrPath, m_sourcePath, m_dpi, outputPath);
             if (pmap.valid)
             {
                 proofingMapService()->setMap(pmap);

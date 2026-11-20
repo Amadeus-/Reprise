@@ -1196,6 +1196,7 @@ muse::RetVal<GetProofingMapCommand::Output> ImportPdfController::getProofingMap(
         output.hasMap = false;
         output.pages = "[]";
         output.measures = "[]";
+        output.notes = "[]";
         return muse::RetVal<GetProofingMapCommand::Output>::make_ok(output);
     }
 
@@ -1204,6 +1205,7 @@ muse::RetVal<GetProofingMapCommand::Output> ImportPdfController::getProofingMap(
     output.sourcePath = map.sourcePath;
     output.measureCount = map.measureCount;
     output.pageCount = static_cast<int>(map.pages.size());
+    output.noteCount = static_cast<int>(map.notes.size());
 
     QJsonArray pages;
     for (const ProofingPageInfo& p : map.pages)
@@ -1230,6 +1232,25 @@ muse::RetVal<GetProofingMapCommand::Output> ImportPdfController::getProofingMap(
         measures.append(obj);
     }
     output.measures = QString::fromUtf8(QJsonDocument(measures).toJson(QJsonDocument::Compact)).toStdString();
+
+    QJsonArray notes;
+    for (const ProofingNoteBox& b : map.notes)
+    {
+        QJsonObject obj;
+        obj["gm"] = b.key.globalMeasureIndex;
+        obj["staff"] = b.key.staffIdx;
+        obj["tick"] = b.key.tickInMeasure;
+        obj["voice"] = b.key.voice;
+        obj["step"] = b.key.step;
+        obj["octave"] = b.key.octave;
+        obj["page"] = b.pageIndex;
+        obj["x"] = b.x;
+        obj["y"] = b.y;
+        obj["w"] = b.w;
+        obj["h"] = b.h;
+        notes.append(obj);
+    }
+    output.notes = QString::fromUtf8(QJsonDocument(notes).toJson(QJsonDocument::Compact)).toStdString();
 
     return muse::RetVal<GetProofingMapCommand::Output>::make_ok(output);
 }

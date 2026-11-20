@@ -53,9 +53,45 @@ struct ProofingMeasureRect
     int32_t h = 0;
 };
 
-//! The complete scan<->score coordinate map captured at OMR import time (Reprise Two-Pane Proofing, Phase A).
+//! A RUNTIME-COMPUTABLE identity for one recognised NOTE (Reprise Two-Pane Proofing, Phase B). B2's floating magnifier
+//! computes this key from the live SELECTED engraving Note and asks the service for its head box to zoom + highlight.
+//! Every field is derivable at runtime from a mu::engraving::Note:
+//!   globalMeasureIndex == note->chord()->measure()->measureIndex()         (positional, pickup = 0; same as the rects)
+//!   staffIdx           == note->staffIdx()                                  (global 0-based staff index)
+//!   tickInMeasure      == (note->tick() - measure->tick()).ticks()         (MuseScore 480-per-quarter ticks)
+//!   step / octave      == tpc2step(note->tpc()) / note->octave()           (WRITTEN diatonic pitch; accidental IGNORED)
+//!   voice              == note->voice()                                     (ADVISORY ONLY -- see noteBox())
+//! The match is on (globalMeasureIndex, staffIdx, tickInMeasure, step, octave); that tuple is unique per note (two
+//! distinct pitches at one tick differ in step/octave; an exact dup would be the same pixel head anyway).
+struct ProofingNoteKey
+{
+    int32_t globalMeasureIndex = 0;   //! 0-based positional global measure index (pickup/anacrusis = 0)
+    int32_t staffIdx = 0;             //! global 0-based staff index across the whole score
+    int32_t tickInMeasure = 0;        //! ticks from the measure start (MuseScore division = 480 per quarter)
+    int32_t step = 0;                 //! diatonic step 0..6 == C,D,E,F,G,A,B (letter only; alter/accidental ignored)
+    int32_t octave = 0;               //! scientific octave (middle C = C4 = octave 4)
+    int32_t voice = 0;                //! 0-based engraving voice -- carried for B2/diagnostics, NOT part of the match
+};
+
+//! The pixel head box of ONE recognised note on its scan page, keyed by a runtime-computable note identity. x/y/w/h are
+//! the Audiveris <head> <bounds> in the SAME sheet-image pixel space as ProofingMeasureRect (so a note box always lies
+//! within its measure's rect). A note with NO trusted head (grace note -- Audiveris drops graces; or a head Audiveris
+//! never recognised) gets NO entry here at all; B2 then falls back to the parent chord's / measure's box.
+struct ProofingNoteBox
+{
+    ProofingNoteKey key;
+    int32_t pageIndex = 0;            //! 0-based page this head sits on (ProofingPageInfo::index)
+    int32_t x = 0;
+    int32_t y = 0;
+    int32_t w = 0;
+    int32_t h = 0;
+};
+
+//! The complete scan<->score coordinate map captured at OMR import time (Reprise Two-Pane Proofing, Phase A + B).
 //! Built from the Audiveris .omr book and keyed by GLOBAL MEASURE INDEX (positional, 0-based) so the top strip and
-//! (later) the magnifier can line the original scan up with wherever the user is in the re-engraved score.
+//! (later) the magnifier can line the original scan up with wherever the user is in the re-engraved score. Phase B1
+//! adds `notes`: a per-NOTE head box keyed by a runtime-computable identity (ProofingNoteKey) matched from the same
+//! .omr plus the pre-strip Audiveris MusicXML (the authoritative note order).
 struct ProofingMap
 {
     bool valid = false;                          //! true once a map has been built and set
@@ -63,6 +99,7 @@ struct ProofingMap
     int32_t measureCount = 0;                    //! number of measures in the map (== measures.size())
     std::vector<ProofingPageInfo> pages;         //! per-page image dimensions + DPI, 0-based by index
     std::vector<ProofingMeasureRect> measures;   //! one rect per measure, in global measure order
+    std::vector<ProofingNoteBox> notes;          //! one head box per matched note (unmatched/grace notes omitted)
 };
 
 //! NOTE: Single app-lifetime holder of the LATEST import's proofing coordinate map, exported globally. The import
@@ -85,6 +122,13 @@ public:
 
     //! The current map (valid == false when none has been set).
     virtual const ProofingMap& map() const = 0;
+
+    //! The per-note head box for a runtime note identity, or nullptr when none is held (grace / untrusted / unmatched
+    //! note, or no map) -- B2 then falls back to the measure box. The match uses (gm, staffIdx, tickInMeasure, step,
+    //! octave); `voice` is deliberately NOT part of the lookup (it is advisory on the stored key). The returned pointer
+    //! is valid until the next setMap()/clear().
+    virtual const ProofingNoteBox* noteBox(int32_t gm, int32_t staffIdx, int32_t tickInMeasure, int32_t step,
+                                            int32_t octave) const = 0;
 
     //! Drop the current map (e.g. an import that produced no usable geometry).
     virtual void clear() = 0;

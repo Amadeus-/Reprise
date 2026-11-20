@@ -40,12 +40,27 @@ class ProofingMapBuilder
 {
 public:
     //! Parse the .omr at omrPath and return the coordinate map. sourcePath = the original scanned PDF/image (stored in
-    //! the map, not read here); dpi = the import/raster resolution stamped on every page. Returns a map with valid=false
-    //! on ANY failure (unreadable .omr, no sheets, parse error) -- capture is best-effort and never blocks the import.
-    static ProofingMap buildFromOmr(const QString& omrPath, const QString& sourcePath, int32_t dpi);
+    //! the map, not read here); dpi = the import/raster resolution stamped on every page. When rawMusicXmlPath is given
+    //! (the pre-strip Audiveris MusicXML, .mxl or .xml), the per-NOTE head boxes (ProofingMap::notes) are ALSO built, by
+    //! matching each pitched MusicXML note to its Audiveris <head> pixel box (Phase B1; see buildNoteBoxes). Returns a
+    //! map with valid=false on ANY failure of the measure-rect parse (unreadable .omr, no sheets); the note-box build is
+    //! independently best-effort (an empty notes vector on failure) and never affects valid. Capture never blocks import.
+    static ProofingMap buildFromOmr(const QString& omrPath, const QString& sourcePath, int32_t dpi,
+                                    const QString& rawMusicXmlPath = QString());
 
-    //! Dump the whole map to the log (header line + one line per page + one line per measure), for the Phase A1
-    //! verification gate. The per-measure line format is exactly: "proofing-map: gm=<i> page=<p> rect=<x>,<y>,<w>,<h>".
+    //! Build ProofingMap::notes: one head box per recognised note, keyed by a runtime-computable identity. The .omr
+    //! supplies per-<head> pixel bounds + the chord/voice/measure structure; the pre-strip Audiveris MusicXML supplies
+    //! the authoritative note order, pitch, voice, part/staff layout and in-measure tick (the ScanGeometryStripper
+    //! preserves every musical value byte-for-byte, so this order == the opened score's). Each note is joined to a head
+    //! DIATONICALLY (step+octave, accidental ignored) within its (global-measure, part, voice) cell, trying the part's
+    //! staff clefs for hand-crossing, consuming same-pitch duplicates in onset order. Grace notes and notes with no
+    //! trusted head get no box. Appends to map.notes; leaves it empty on any failure. See the validated matcher in
+    //! memory reference_reprise_omr_coordinate_map_sources.
+    static void buildNoteBoxes(const QString& omrPath, const QString& rawMusicXmlPath, ProofingMap& map);
+
+    //! Dump the whole map to the log (header line + one line per page + one line per measure + one line per note), for
+    //! the verification gate. The per-measure line is exactly: "proofing-map: gm=<i> page=<p> rect=<x>,<y>,<w>,<h>"; the
+    //! per-note line: "proofing-note: gm=<i> staff=<s> tick=<t> v=<v> pitch=<step><oct> page=<p> box=<x>,<y>,<w>,<h>".
     static void logMap(const ProofingMap& map);
 };
 }
