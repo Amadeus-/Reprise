@@ -84,6 +84,39 @@ struct GetImportErrorsCommand {
     };
 };
 
+//! NOTE Reprise read-only MCP/API query: the Two-Pane Proofing coordinate map captured at the last OMR import. Returns
+//! the source scan path, the measure count, the per-page sheet-image dimensions + DPI, and one rect per measure (in
+//! global measure order) in that page's pixel space. `pages` and `measures` are JSON arrays encoded as strings (the
+//! list-languages idiom), so a headless agent can verify the whole map. hasMap=false when no import has been captured.
+struct GetProofingMapCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/get-proofing-map");
+    static const inline auto title = muse::MnemonicString("reprise", "Get proofing map");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Get the scan-to-score coordinate map captured at the last OMR import");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    struct Output {
+        bool hasMap = false;
+        std::string sourcePath;
+        int measureCount = 0;
+        int pageCount = 0;
+        std::string pages;       // JSON array: [{index,w,h,dpi}]
+        std::string measures;    // JSON array: [{gm,page,x,y,w,h}]
+    };
+
+    using O = GetProofingMapCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "hasMap", &O::hasMap, "Whether a proofing map has been captured" },
+        muse::rcommand::Field{ "sourcePath", &O::sourcePath, "The original scanned PDF/image of the captured map" },
+        muse::rcommand::Field{ "measureCount", &O::measureCount, "Number of measures in the map" },
+        muse::rcommand::Field{ "pageCount", &O::pageCount, "Number of pages (sheets) in the map" },
+        muse::rcommand::Field{ "pages", &O::pages, "JSON array of pages: [{index,w,h,dpi}] (sheet-image pixels)" },
+        muse::rcommand::Field{ "measures", &O::measures,
+                               "JSON array of measure rects in global order: [{gm,page,x,y,w,h}] (page pixel space)" },
+    };
+};
+
 //! NOTE Reprise dev MCP/API tool: capture the running GUI to a PNG and return its absolute path. target="window"
 //! (the default) grabs the whole main application window; target="score" renders the current score's page (0-based,
 //! default page 0) through the registered "png" notation writer; target="dialog" grabs the topmost open dialog/popup

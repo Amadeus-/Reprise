@@ -37,6 +37,8 @@
 #include "internal/languagepackservice.h"
 #include "internal/iimportprogresstracker.h"
 #include "internal/importprogresstracker.h"
+#include "internal/iproofingmapservice.h"
+#include "internal/proofingmapservice.h"
 #include "internal/mcpcuration.h"
 
 using namespace mu::reprise;
@@ -66,6 +68,13 @@ void RepriseModule::registerExports()
     //! QML-instantiated ImportProgressModel can reach it via GlobalInject.
     m_importProgressTracker = std::make_shared<ImportProgressTracker>();
     globalIoc()->registerExport<IImportProgressTracker>(mname, m_importProgressTracker);
+
+    //! NOTE: Two-Pane Proofing (Phase A) coordinate map. The import flow builds the scan<->score measure-rect map from
+    //! Audiveris's .omr the instant recognition succeeds and stores it here; the reprise.get-proofing-map MCP query (and
+    //! later the top strip + follow loop) read it back. Exported globally so the QML-instantiated ImportProgressModel
+    //! and the ImportPdfController both reach it via GlobalInject.
+    m_proofingMapService = std::make_shared<ProofingMapService>();
+    globalIoc()->registerExport<IProofingMapService>(mname, m_proofingMapService);
 }
 
 void RepriseModule::resolveImports()

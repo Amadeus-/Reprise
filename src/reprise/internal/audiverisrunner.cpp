@@ -109,6 +109,19 @@ std::vector<std::pair<std::string, std::string> > AudiverisRunner::installedOcrL
     return result;
 }
 
+muse::io::path_t AudiverisRunner::omrPath() const
+{
+    if (m_outDir.isEmpty())
+    {
+        return io::path_t();
+    }
+
+    //! Prefer the .omr whose base matches the actual input fed to Audiveris (the padded copy for an image/PDF retry, else
+    //! the original); locateOutput falls back to any *.omr under the output dir when the exact name is not found.
+    const std::string base = QFileInfo(m_pdfPath.toQString()).completeBaseName().toStdString();
+    return locateOutput(io::path_t(m_outDir), base, "omr");
+}
+
 muse::io::path_t AudiverisRunner::locateOutput(const muse::io::path_t& dir, const std::string& base, const std::string& ext) const
 {
     const QString wanted = QString::fromStdString(base) + "." + QString::fromStdString(ext);

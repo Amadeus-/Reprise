@@ -39,6 +39,7 @@
 #include "irepriseconfiguration.h"
 #include "ilanguagepackservice.h"
 #include "iimportprogresstracker.h"
+#include "iproofingmapservice.h"
 #include "audiverisrunner.h"
 
 #include "reprise/reprisecommands.h"
@@ -58,6 +59,7 @@ class ImportPdfController : public muse::Contextable, public muse::async::Asynca
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
     muse::GlobalInject<mu::reprise::ILanguagePackService> languagePackService;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
+    muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
     muse::ContextInject<mu::appshell::ISessionsManager> sessionsManager = { this };
 
 public:
@@ -132,6 +134,10 @@ private:
     //! Read-only MCP/API queries backed by the shared progress tracker.
     muse::RetVal<GetImportProgressCommand::Output> getImportProgress() const;
     muse::RetVal<GetImportErrorsCommand::Output> getImportErrors() const;
+
+    //! Read-only MCP/API query: the Two-Pane Proofing coordinate map captured at the last OMR import, backed by the
+    //! shared IProofingMapService. Serializes the pages + measure rects to JSON arrays (the list-languages idiom).
+    muse::RetVal<GetProofingMapCommand::Output> getProofingMap() const;
 
     //! OCR language-pack MCP/API helpers (list / add / remove), all delegating to the shared ILanguagePackService so
     //! they drive the EXACT install/remove/enumerate code path the Preferences pack-manager buttons use (DRY).

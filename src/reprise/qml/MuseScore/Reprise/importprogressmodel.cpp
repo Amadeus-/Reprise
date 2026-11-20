@@ -54,6 +54,7 @@
 
 #include "internal/audiverisrunner.h"
 #include "internal/scangeometrystripper.h"
+#include "internal/proofingmapbuilder.h"
 
 using namespace mu;
 using namespace mu::reprise;
@@ -167,6 +168,7 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     initContext();
 
     m_title = QFileInfo(pdfPath).fileName();
+    m_sourcePath = pdfPath;
     m_pages = pages;
     m_dpi = dpi;
     m_pagesLabel = formatPagesLabel(pages);
@@ -426,6 +428,34 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
 
 void ImportProgressModel::openImported(const QString& outputPath)
 {
+    //! Reprise Two-Pane Proofing (Phase A1): capture the scan<->score coordinate map from Audiveris's .omr book NOW,
+    //! while the recognition temp dir still exists and before the score opens. Keyed by global measure index (positional,
+    //! 0-based, pickup included) -> its pixel rect on the scan page; the read-only reprise.get-proofing-map MCP query and
+    //! (later, A2/A3) the top strip + follow loop consume it. BEST-EFFORT: any failure leaves no map (the proofing view
+    //! simply stays unavailable) and never blocks the import. It uses the Audiveris .omr geometry, independent of the
+    //! scan-geometry strip below (which only affects the MuseScore score's own re-engraved layout).
+    if (m_runner)
+    {
+        const QString omrPath = m_runner->omrPath().toQString();
+        if (!omrPath.isEmpty())
+        {
+            const ProofingMap pmap = ProofingMapBuilder::buildFromOmr(omrPath, m_sourcePath, m_dpi);
+            if (pmap.valid)
+            {
+                proofingMapService()->setMap(pmap);
+                ProofingMapBuilder::logMap(pmap);
+            }
+            else
+            {
+                LOGW() << "Reprise: proofing-map capture produced no measures from " << omrPath;
+            }
+        }
+        else
+        {
+            LOGW() << "Reprise: proofing-map capture skipped; no .omr book found for this import";
+        }
+    }
+
     //! Reprise scan-geometry strip: Audiveris bakes the SCAN's layout into its MusicXML (per-measure widths,
     //! system/page breaks, absolute positions, page/system/staff layout, slur beziers) and emits the title as
     //! scan-positioned <credit>s that overprint the metadata-built title frame -- so MuseScore mirrors the scan

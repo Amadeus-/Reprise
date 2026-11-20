@@ -48,6 +48,10 @@ target_sources(reprise PRIVATE
     internal/ilanguagepackservice.h
     internal/languagepackservice.cpp
     internal/languagepackservice.h
+    internal/iproofingmapservice.h
+    internal/proofingmapservice.h
+    internal/proofingmapbuilder.cpp
+    internal/proofingmapbuilder.h
 )
 
 #! NOTE: Reprise's Import-PDF flow reaches into project (IProjectSession, PROJECT_OPEN_COMMAND) and into

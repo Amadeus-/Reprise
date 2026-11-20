@@ -93,6 +93,11 @@ public:
     //! (parsed from Audiveris' output) when every page was processed. Valid once the run has reported a total.
     int pageCount() const { return m_requestedSheetCount > 0 ? m_requestedSheetCount : m_totalSheets; }
 
+    //! The Audiveris .omr book produced by the last run (under the run's output dir), or empty if none is found. Audiveris
+    //! writes it via '-save'; it holds the per-sheet pixel geometry the Two-Pane Proofing coordinate map is built from.
+    //! Valid after a successful finished(ok=true); the temp output dir persists (autoRemove off) so it is readable then.
+    muse::io::path_t omrPath() const;
+
 signals:
     //! percent: 0-100 determinate, or -1 while the sheet total is still unknown (indeterminate/animated bar).
     //! sheet/total: 1-based current sheet and the total (both -1 until known). stageHuman: a friendly, already

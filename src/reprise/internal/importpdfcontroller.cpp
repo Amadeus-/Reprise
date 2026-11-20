@@ -601,6 +601,8 @@ void ImportPdfController::init()
                                                                  [this](const GetImportProgressCommand&) { return getImportProgress(); }));
     commandDispatcher()->onRequest<GetImportErrorsCommand>(this, std::function<muse::RetVal<GetImportErrorsCommand::Output>(const GetImportErrorsCommand&)>(
                                                                [this](const GetImportErrorsCommand&) { return getImportErrors(); }));
+    commandDispatcher()->onRequest<GetProofingMapCommand>(this, std::function<muse::RetVal<GetProofingMapCommand::Output>(const GetProofingMapCommand&)>(
+                                                              [this](const GetProofingMapCommand&) { return getProofingMap(); }));
 
     //! Dev tool: open + capture the intake dialog to a PNG (headless verification of the modal dialog).
     commandDispatcher()->onRequest<CaptureImportDialogCommand>(this, std::function<muse::RetVal<CaptureImportDialogCommand::Output>(const CaptureImportDialogCommand&)>(
@@ -1171,6 +1173,53 @@ muse::RetVal<GetImportErrorsCommand::Output> ImportPdfController::getImportError
     output.details = snap.details;
 
     return muse::RetVal<GetImportErrorsCommand::Output>::make_ok(output);
+}
+
+muse::RetVal<GetProofingMapCommand::Output> ImportPdfController::getProofingMap() const
+{
+    GetProofingMapCommand::Output output;
+
+    if (!proofingMapService()->hasMap())
+    {
+        output.hasMap = false;
+        output.pages = "[]";
+        output.measures = "[]";
+        return muse::RetVal<GetProofingMapCommand::Output>::make_ok(output);
+    }
+
+    const ProofingMap& map = proofingMapService()->map();
+    output.hasMap = true;
+    output.sourcePath = map.sourcePath;
+    output.measureCount = map.measureCount;
+    output.pageCount = static_cast<int>(map.pages.size());
+
+    QJsonArray pages;
+    for (const ProofingPageInfo& p : map.pages)
+    {
+        QJsonObject obj;
+        obj["index"] = p.index;
+        obj["w"] = p.imageWidth;
+        obj["h"] = p.imageHeight;
+        obj["dpi"] = p.dpi;
+        pages.append(obj);
+    }
+    output.pages = QString::fromUtf8(QJsonDocument(pages).toJson(QJsonDocument::Compact)).toStdString();
+
+    QJsonArray measures;
+    for (const ProofingMeasureRect& m : map.measures)
+    {
+        QJsonObject obj;
+        obj["gm"] = m.globalMeasureIndex;
+        obj["page"] = m.pageIndex;
+        obj["x"] = m.x;
+        obj["y"] = m.y;
+        obj["w"] = m.w;
+        obj["h"] = m.h;
+        measures.append(obj);
+    }
+    output.measures = QString::fromUtf8(QJsonDocument(measures).toJson(QJsonDocument::Compact)).toStdString();
+
+    return muse::RetVal<GetProofingMapCommand::Output>::make_ok(output);
 }
 
 std::string ImportPdfController::installedPacksJson() const

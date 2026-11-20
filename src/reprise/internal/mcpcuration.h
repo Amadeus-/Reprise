@@ -58,6 +58,7 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "notation/get-editstate",
         "reprise/get-import-progress",
         "reprise/get-import-errors",
+        "reprise/get-proofing-map",
         // the OMR entry point (drivable headlessly with a "path" arg)
         "reprise/import-pdf",
         // dev screenshot tool (captures the GUI window or current score to a PNG)

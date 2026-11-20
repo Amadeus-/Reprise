@@ -37,6 +37,7 @@
 
 #include "internal/irepriseconfiguration.h"
 #include "internal/iimportprogresstracker.h"
+#include "internal/iproofingmapservice.h"
 
 namespace mu::reprise {
 class AudiverisRunner;
@@ -72,6 +73,7 @@ class ImportProgressModel : public QObject, public muse::Contextable, public mus
     muse::GlobalInject<mu::notation::IInstrumentsRepository> instrumentsRepository;
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
+    muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
 
 public:
     explicit ImportProgressModel(QObject* parent = nullptr);
@@ -171,6 +173,9 @@ private:
     std::shared_ptr<AudiverisRunner> m_runner;
 
     QString m_title;
+    //! Full path of the original scanned PDF/image being imported (m_title is only its basename). Kept so the proofing
+    //! coordinate-map capture in openImported() can record the true source path alongside the Audiveris .omr geometry.
+    QString m_sourcePath;
     QString m_pages;
     QString m_pagesLabel;
     int m_dpi = 300;
