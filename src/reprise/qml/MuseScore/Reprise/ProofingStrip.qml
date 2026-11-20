@@ -152,15 +152,26 @@ Rectangle {
         readonly property real imgScale: sheetW > 0 ? width / sheetW : 1
         readonly property real pageDispH: sheetH * imgScale
 
-        //! Centre the followed measure's system in the viewport, clamped to the page bounds.
+        //! Vertical scroll position (px, >= 0) of the page within the viewport: the page's top is drawn at
+        //! y = -scrollOffset, so a larger offset reveals lower systems. Set DIRECTLY by scrollToCurrent (not animated).
+        property real scrollOffset: 0
+
+        //! Centre the followed measure's system in the viewport, clamped to the page bounds. The band is a plain
+        //! clipping Item scrolled by offsetting its page Image, and the offset is assigned DIRECTLY -- deliberately
+        //! NOT via a scroll animation (a `Behavior on` the offset, nor a NumberAnimation, nor a Flickable with an
+        //! animated contentY). A QML animation only advances while the host window is being rendered; when the window
+        //! is minimized (or otherwise not exposed) Qt pauses the animation driver, so an animated scroll stays frozen
+        //! at its start value and the band is left stuck at the top of the page (the symptom behind the original "band
+        //! shows the title block for a mid-page measure" report, which was observed via a minimized-window capture).
+        //! A direct assignment is window-state-independent and lands -- and stays -- on the correct system every time.
         function scrollToCurrent() {
             if (!bandModel.hasCurrent || imgScale <= 0) {
                 return
             }
 
-            let target = (bandModel.rectY + bandModel.rectH / 2) * imgScale - flick.height / 2
-            let maxY = Math.max(0, flick.contentHeight - flick.height)
-            flick.contentY = Math.max(0, Math.min(maxY, target))
+            let target = (bandModel.rectY + bandModel.rectH / 2) * imgScale - viewport.height / 2
+            let maxY = Math.max(0, pageDispH - viewport.height)
+            scrollOffset = Math.max(0, Math.min(maxY, target))
         }
 
         Rectangle {
@@ -170,32 +181,19 @@ Rectangle {
             border.width: 1
         }
 
-        Flickable {
-            id: flick
+        Item {
+            id: viewport
 
             anchors.fill: parent
             anchors.margins: 1
-
-            //! View-only: auto-follow drives contentY; the user does not pan the original (matches PhotoScore).
-            interactive: false
             clip: true
-            boundsBehavior: Flickable.StopAtBounds
-
-            contentWidth: width
-            contentHeight: bandArea.pageDispH
-
-            Behavior on contentY {
-                NumberAnimation {
-                    duration: 260
-                    easing.type: Easing.OutCubic
-                }
-            }
 
             Image {
                 id: pageImage
 
-                width: flick.width
+                width: viewport.width
                 height: bandArea.pageDispH
+                y: -bandArea.scrollOffset
 
                 //! The box is already the exact sheet aspect, so Stretch fills it with no distortion and keeps the
                 //! top-left origin at (0,0) -- which the highlight's sheet-pixel -> band-pixel scaling relies on.
@@ -213,7 +211,7 @@ Rectangle {
                 visible: bandModel.hasCurrent && bandArea.imgScale > 0
 
                 x: bandModel.rectX * bandArea.imgScale
-                y: bandModel.rectY * bandArea.imgScale
+                y: bandModel.rectY * bandArea.imgScale - bandArea.scrollOffset
                 width: bandModel.rectW * bandArea.imgScale
                 height: bandModel.rectH * bandArea.imgScale
 

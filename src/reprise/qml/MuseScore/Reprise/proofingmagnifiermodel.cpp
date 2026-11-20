@@ -57,13 +57,6 @@ namespace {
 //! memory. The scan itself is the detail ceiling (a 300-450 dpi scan), so beyond this the magnifier simply upscales the
 //! native scan pixels -- exactly as PhotoScore does; you cannot invent detail the scan never captured.
 constexpr int32_t MAGNIFIER_PAGE_MAX_SIDE = 4000;
-
-//! Map a diatonic step 0..6 (C..B) to its letter, for the header pitch label (e.g. "C4").
-const char* stepLetter(int32_t step)
-{
-    static const char* k[7] = { "C", "D", "E", "F", "G", "A", "B" };
-    return (step >= 0 && step < 7) ? k[step] : "?";
-}
 }
 
 ProofingMagnifierModel::ProofingMagnifierModel(QObject* parent)
@@ -347,7 +340,11 @@ void ProofingMagnifierModel::updateFollow()
         const int32_t step = mu::engraving::tpc2step(note->tpc());
         const int32_t octave = note->octave();
 
-        noteName = QString("%1%2").arg(stepLetter(step)).arg(octave);
+        //! Header label shows the note's REAL pitch INCLUDING accidental (e.g. "E♭4"), taken straight from the live
+        //! Note's tpc+pitch -- tpcUserName renders Unicode ♭/♯ with the sounding octave. The box MATCH stays diatonic
+        //! (step+octave below are what noteBox() keys on); only the displayed label carries the accidental, so a
+        //! flat/sharp head reads correctly in the header instead of collapsing to its diatonic letter.
+        noteName = mu::engraving::tpcUserName(note->tpc(), note->pitch()).toQString();
 
         const ProofingNoteBox* box = proofingMapService()->noteBox(gm, staffIdx, tickInMeasure, step, octave);
         if (box)
