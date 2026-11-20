@@ -22,8 +22,11 @@
 
 #include "screenshotcontroller.h"
 
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QImage>
 #include <QQuickWindow>
+#include <QTimer>
 #include <QWindow>
 
 #include "global/log.h"
@@ -148,7 +151,84 @@ muse::RetVal<CaptureScreenshotCommand::Output> ScreenshotController::capture(con
         return RV::make_ok(out);
     }
 
-    out.error = "unknown target '" + target + "' (expected 'window' or 'score')";
+    if (target == "dialog")
+    {
+        const io::path_t absPath = cmd.path.empty() ? (dir + "/mcp-dialog.png") : io::path_t(cmd.path);
+
+        //! The topmost window on the interactive stack. Owned popups/dialogs/menus live in their OWN QQuickWindow and are
+        //! NOT part of the main-window grab, so this is the only way to capture a dialog the agent opened separately.
+        QWindow* tw = interactive() ? interactive()->topWindow() : nullptr;
+        QQuickWindow* dlg = qobject_cast<QQuickWindow*>(tw);
+        if (!dlg)
+        {
+            out.error = "no dialog or popup is open";
+            return RV::make_ok(out);
+        }
+
+        //! Reject the main window itself: its top window IS the main window when nothing is layered above it.
+        QWindow* mw = mainWindow() ? mainWindow()->qWindow() : nullptr;
+        if (dlg == mw)
+        {
+            out.error = "no dialog or popup is open";
+            return RV::make_ok(out);
+        }
+
+        //! Bounded nested event-loop pump so the dialog window is exposed before the grab (same idiom as
+        //! ImportPdfController::captureImportDialog). We do NOT force-close the dialog afterwards -- the agent opened it
+        //! separately and may still want it; this tool only grabs and returns.
+        auto spin = [](int ms)
+        {
+            QEventLoop loop;
+            QTimer timer;
+            timer.setSingleShot(true);
+            QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            timer.start(ms);
+            loop.exec();
+        };
+
+        QElapsedTimer timer;
+        timer.start();
+        const int timeoutMs = 5000;
+        bool exposed = false;
+        while (timer.elapsed() < timeoutMs)
+        {
+            if (dlg->isVisible() && dlg->isExposed())
+            {
+                exposed = true;
+                break;
+            }
+
+            spin(60);
+        }
+
+        if (!exposed)
+        {
+            out.error = "dialog window did not become visible in time";
+            return RV::make_ok(out);
+        }
+
+        //! A couple more pumps so the first frame is fully rendered before the grab.
+        spin(120);
+
+        QImage img = dlg->grabWindow();
+        if (img.isNull())
+        {
+            out.error = "grab failed (dialog window not renderable?)";
+            return RV::make_ok(out);
+        }
+
+        if (!img.save(absPath.toQString(), "PNG"))
+        {
+            out.error = "failed to save PNG to " + absPath.toStdString();
+            return RV::make_ok(out);
+        }
+
+        out.ok = true;
+        out.path = absPath.toStdString();
+        return RV::make_ok(out);
+    }
+
+    out.error = "unknown target '" + target + "' (expected 'window', 'score' or 'dialog')";
 
     return RV::make_ok(out);
 }

@@ -156,6 +156,12 @@ private:
     //! captureImportDialog). ok=false + error on failure.
     muse::RetVal<CapturePreferencesCommand::Output> capturePreferences(const CapturePreferencesCommand& cmd);
 
+    //! Dev MCP/API "drive" tool: navigate the app shell to a named screen in-process via interactive()->open(UriQuery),
+    //! with no foreground activation and no synthetic input. Maps the "target" arg to a Home-page section URI (scans /
+    //! plugins / learn / home) or the notation page URI, then opens it on the Qt GUI thread. ok=false + error on an
+    //! unknown target.
+    muse::RetVal<NavigateCommand::Output> navigate(const NavigateCommand& cmd);
+
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;
     //! Persist the folder of the picked PDF (Reprise-private, independent of File > Open). Non-empty picks only.

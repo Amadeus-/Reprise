@@ -66,6 +66,9 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API tool: open the Preferences dialog at the Reprise page and capture it to a PNG
     makeCommandInfo<CapturePreferencesCommand>(),
+
+    // Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen in-process
+    makeCommandInfo<NavigateCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

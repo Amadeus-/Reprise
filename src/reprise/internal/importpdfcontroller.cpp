@@ -618,6 +618,10 @@ void ImportPdfController::init()
     commandDispatcher()->onRequest<CapturePreferencesCommand>(this, std::function<muse::RetVal<CapturePreferencesCommand::Output>(const CapturePreferencesCommand&)>(
                                                                   [this](const CapturePreferencesCommand& c) { return capturePreferences(c); }));
 
+    //! Dev "drive" tool: navigate the app shell to a named screen in-process (no foreground, no synthetic input).
+    commandDispatcher()->onRequest<NavigateCommand>(this, std::function<muse::RetVal<NavigateCommand::Output>(const NavigateCommand&)>(
+                                                        [this](const NavigateCommand& c) { return navigate(c); }));
+
     //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
     //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
     //! the transient popup. Deferred to a fresh event-loop turn so the popup's own call stack (the asking QTimer lambda)
@@ -1572,6 +1576,51 @@ muse::RetVal<CapturePreferencesCommand::Output> ImportPdfController::capturePref
 
     out.ok = true;
     out.path = absPath.toStdString();
+    return RV::make_ok(out);
+}
+
+muse::RetVal<NavigateCommand::Output> ImportPdfController::navigate(const NavigateCommand& cmd)
+{
+    using RV = muse::RetVal<NavigateCommand::Output>;
+
+    NavigateCommand::Output out;
+
+    //! Resolve the named screen to its app-shell URI. Home-page sections mirror AppshellCommandsController::openExtensions
+    //! ("musescore://home?section=plugins"); the section names ("scores"/"plugins"/"learn") are defined in HomePage.qml.
+    //! The notation page URI is registered in appshellmodule.cpp (also appshelltypes.h NOTATION_URI).
+    std::string uri;
+    if (cmd.target == "scans")
+    {
+        uri = "musescore://home?section=scores";
+    }
+    else if (cmd.target == "plugins")
+    {
+        uri = "musescore://home?section=plugins";
+    }
+    else if (cmd.target == "learn")
+    {
+        uri = "musescore://home?section=learn";
+    }
+    else if (cmd.target == "home")
+    {
+        uri = "musescore://home";
+    }
+    else if (cmd.target == "notation")
+    {
+        uri = "musescore://notation";
+    }
+    else
+    {
+        out.error = "unknown target '" + cmd.target + "' (expected 'scans', 'plugins', 'learn', 'home' or 'notation')";
+        return RV::make_ok(out);
+    }
+
+    //! In-process navigation on the Qt GUI thread -- no foreground activation, no synthetic input. Fire-and-forget async
+    //! open (the returned promise is intentionally discarded): the app-shell page swap needs no result here.
+    interactive()->open(UriQuery(uri));
+
+    out.ok = true;
+    out.page = uri;
     return RV::make_ok(out);
 }
 

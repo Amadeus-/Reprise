@@ -86,7 +86,8 @@ struct GetImportErrorsCommand {
 
 //! NOTE Reprise dev MCP/API tool: capture the running GUI to a PNG and return its absolute path. target="window"
 //! (the default) grabs the whole main application window; target="score" renders the current score's page (0-based,
-//! default page 0) through the registered "png" notation writer. The handler runs synchronously on the Qt GUI thread
+//! default page 0) through the registered "png" notation writer; target="dialog" grabs the topmost open dialog/popup
+//! QQuickWindow (owned popups/dialogs/menus are NOT part of the main-window grab). The handler runs synchronously on the Qt GUI thread
 //! (the same dispatch path score.get-counts uses), so QQuickWindow::grabWindow() + the PNG writer are called directly
 //! -- no cross-thread marshalling. An optional "path" overrides the per-target fixed overwrite filename; "page"
 //! applies only to the score target. Failures carry ok=false + an error string (the call itself still succeeds) so a
@@ -99,13 +100,14 @@ struct CaptureScreenshotCommand {
     static const inline auto availabilities = muse::rcommand::Availability::API;
     static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
 
-    std::string target;    // "window" (default when empty) | "score"
+    std::string target;    // "window" (default when empty) | "score" | "dialog"
     std::string path;      // optional absolute output path override
     int page = 0;          // score target only: 0-based page to render
 
     static const inline auto input = std::tuple {
         muse::rcommand::Field{ "target", &CaptureScreenshotCommand::target,
-                               "What to capture: 'window' (default) or 'score'", muse::rcommand::Presence::Optional },
+                               "What to capture: 'window' (default), 'score' or 'dialog' (the topmost open dialog/popup)",
+                               muse::rcommand::Presence::Optional },
         muse::rcommand::Field{ "path", &CaptureScreenshotCommand::path,
                                "Absolute output PNG path (optional; default is a per-target overwrite file)",
                                muse::rcommand::Presence::Optional },
@@ -292,6 +294,41 @@ struct CapturePreferencesCommand {
     static const inline auto output = std::tuple {
         muse::rcommand::Field{ "ok", &O::ok, "Whether the capture succeeded" },
         muse::rcommand::Field{ "path", &O::path, "Absolute path of the written PNG (empty on failure)" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
+
+//! NOTE Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen IN-PROCESS, with no foreground
+//! activation and no synthetic mouse input (the Firefox-bridge model). The handler runs synchronously on the Qt GUI
+//! thread (the same dispatch path the capture tools use), calling interactive()->open(UriQuery(...)) for the resolved
+//! target: "scans"/"plugins"/"learn" open the Home page at that section, "home" opens the Home page (default section
+//! scores), "notation" opens the notation/score page. An unknown target carries ok=false + an error naming the valid
+//! targets, so a headless agent always receives structured ok/page/error output.
+struct NavigateCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/navigate");
+    static const inline auto title = muse::MnemonicString("reprise", "Navigate");
+    static const inline auto description = muse::TranslatableString("reprise", "Navigate the app shell to a named screen in-process");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    std::string target;    // required: "scans" | "plugins" | "learn" | "home" | "notation"
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "target", &NavigateCommand::target,
+                               "Screen to open: 'scans', 'plugins', 'learn', 'home' or 'notation'",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        std::string page;
+        std::string error;
+    };
+
+    using O = NavigateCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether navigation succeeded" },
+        muse::rcommand::Field{ "page", &O::page, "The resolved target/URI that was opened (empty on failure)" },
         muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
     };
 };

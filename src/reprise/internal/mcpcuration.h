@@ -66,6 +66,8 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "reprise/capture-import-dialog",
         // dev tool: open the Preferences dialog at the Reprise page and capture it to a PNG
         "reprise/capture-preferences",
+        // dev "drive" tool: navigate the app shell to a named screen in-process
+        "reprise/navigate",
         // OCR language-pack helpers (verify the Preferences pack manager headlessly)
         "reprise/list-languages",
         "reprise/add-language",

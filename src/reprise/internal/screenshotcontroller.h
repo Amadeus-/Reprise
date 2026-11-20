@@ -24,6 +24,7 @@
 
 #include "modularity/ioc.h"
 #include "async/asyncable.h"
+#include "interactive/iinteractive.h"
 #include "rcommand/icommanddispatcher.h"
 #include "rcommand/commandable.h"
 #include "global/types/retval.h"
@@ -46,6 +47,7 @@ namespace mu::reprise {
 class ScreenshotController : public muse::Contextable, public muse::async::Asyncable, public muse::rcommand::Commandable
 {
     muse::ContextInject<muse::ui::IMainWindow> mainWindow = { this };
+    muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
     muse::GlobalInject<mu::project::INotationWritersRegister> notationWritersRegister;
