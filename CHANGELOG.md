@@ -8,6 +8,18 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-11-20
+
+### Changed
+- **Only one recognition runs at a time.** Starting an import while another is still being recognized is now
+  blocked -- the New Scan button and the File menu item grey out during recognition, and a second request is
+  refused with "A recognition is already in progress" -- so you no longer end up with two progress windows at once.
+
+### Fixed
+- **Recognition failures now open a dedicated "Recognition failed" window** instead of the progress window turning
+  into the error display. The new window has its own title, the selectable Audiveris log, and a Copy button; the
+  progress window closes first.
+
 ## [0.15.0] — 2026-11-20
 
 ### Added
