@@ -26,6 +26,8 @@ qt_add_qml_module(reprise_qml
     SOURCES
         importprogressmodel.cpp
         importprogressmodel.h
+        importerrormodel.cpp
+        importerrormodel.h
         proofingstripmodel.cpp
         proofingstripmodel.h
         proofingmagnifiermodel.cpp
@@ -33,6 +35,7 @@ qt_add_qml_module(reprise_qml
     QML_FILES
         ImportPdfOptionsDialog.qml
         ImportProgressDialog.qml
+        ImportErrorDialog.qml
         ProofingStrip.qml
         ProofingMagnifier.qml
     RESOURCES

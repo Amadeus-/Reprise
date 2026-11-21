@@ -24,10 +24,8 @@
 
 #include <vector>
 
-#include <QClipboard>
 #include <QFile>
 #include <QFileInfo>
-#include <QGuiApplication>
 #include <QTimer>
 #include <QUrl>
 
@@ -177,7 +175,6 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     //! Reset ALL per-import state so every run starts independent of any earlier one (idempotent).
     m_currentPage = -1;
     m_totalPages = -1;
-    m_errorDetails.clear();
     m_logText.clear();
     emit logTextChanged();
     m_pendingGrandPianoReset = false;
@@ -199,11 +196,10 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     const bool started = m_runner->start(io::path_t(pdfPath), pages, dpi, options);
     if (!started)
     {
-        m_errorDetails.clear();
-        setStatus("error");
-        m_stageText = muse::qtrc("reprise", "Audiveris was not found.");
-        emit progressChanged();
-        importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+        //! FIX 2: route to the dedicated error window (deferred, so the popup finishes constructing first).
+        const QString message = muse::qtrc("reprise", "Audiveris was not found.");
+        importProgressTracker()->reportFinished(false, message.toStdString(), std::string());
+        importProgressTracker()->requestErrorWindow();
     }
 }
 
@@ -217,34 +213,13 @@ void ImportProgressModel::cancel()
     m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
     m_awaitingOpen = false;
+
+    //! FIX 1: clear the single-import guard. Cancel does NOT go through reportFinished (it is not an error) nor the
+    //! success popup-close path, so without this the tracker's active flag -- and thus the greyed New-Scan command --
+    //! would stick set after a cancel. reportAborted clears active without recording an error.
+    importProgressTracker()->reportAborted();
+
     emit closeRequested();
-}
-
-void ImportProgressModel::copyErrorToClipboard() const
-{
-    //! Build the whole copyable blob: the red headline error message, then the recognition log beneath it. Prefer the
-    //! full streamed Audiveris log when it is present; otherwise fall back to the retained error tail (errorDetails).
-    //! Same clipboard idiom as AboutModel::copyRevisionToClipboard (QGuiApplication::clipboard()->setText()).
-    QString text = m_stageText;
-
-    const QString log = !m_logText.isEmpty() ? m_logText : m_errorDetails;
-    if (!log.isEmpty())
-    {
-        if (!text.isEmpty())
-        {
-            text += "\n\n";
-        }
-
-        text += log;
-    }
-
-    QClipboard* clipboard = QGuiApplication::clipboard();
-    if (clipboard)
-    {
-        clipboard->setText(text);
-    }
-
-    return;
 }
 
 void ImportProgressModel::registerPopupWindow(QObject* window)
@@ -381,12 +356,12 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
 {
     if (!ok)
     {
-        //! Surface the message plus a tail of Audiveris output so the user has something actionable.
-        m_errorDetails = tail;
-        m_stageText = error.isEmpty() ? muse::qtrc("reprise", "Audiveris could not recognise this scan.") : error;
-        emit progressChanged();
-        setStatus("error");
-        importProgressTracker()->reportFinished(false, m_stageText.toStdString(), tail.toStdString());
+        //! FIX 2: route failure to the dedicated "Recognition failed" window instead of showing it in-place. Record the
+        //! message + a tail of Audiveris output in the snapshot, then ask the app-lifetime controller to close this popup
+        //! and open the error window (it reads the snapshot back). The popup never doubles as the error view.
+        const QString message = error.isEmpty() ? muse::qtrc("reprise", "Audiveris could not recognise this scan.") : error;
+        importProgressTracker()->reportFinished(false, message.toStdString(), tail.toStdString());
+        importProgressTracker()->requestErrorWindow();
         return;
     }
 
@@ -398,11 +373,10 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
     const int partCount = recognizedPartCount(outputPath);
     if (partCount == 0)
     {
-        m_errorDetails.clear();
-        m_stageText = muse::qtrc("reprise", "No music could be recognised in this scan. Try a clearer or higher-resolution scan.");
-        emit progressChanged();
-        setStatus("error");
-        importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+        //! FIX 2: degenerate scan (no recognised parts) -> the dedicated error window, not an in-place error state.
+        const QString message = muse::qtrc("reprise", "No music could be recognised in this scan. Try a clearer or higher-resolution scan.");
+        importProgressTracker()->reportFinished(false, message.toStdString(), std::string());
+        importProgressTracker()->requestErrorWindow();
         return;
     }
 
@@ -550,12 +524,12 @@ void ImportProgressModel::reportOpenFailed()
     m_awaitingOpen = false;
     m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
-    m_errorDetails.clear();
-    m_stageText = muse::qtrc("reprise", "Reprise could not produce a usable score from this scan - it may be too "
-                                        "incomplete or damaged to open.");
-    emit progressChanged();
-    setStatus("error");
-    importProgressTracker()->reportFinished(false, m_stageText.toStdString(), std::string());
+
+    //! FIX 2: the produced score never opened -> the dedicated error window, not a silent "Done" and not an in-place error.
+    const QString message = muse::qtrc("reprise", "Reprise could not produce a usable score from this scan - it may be too "
+                                                  "incomplete or damaged to open.");
+    importProgressTracker()->reportFinished(false, message.toStdString(), std::string());
+    importProgressTracker()->requestErrorWindow();
 
     return;
 }

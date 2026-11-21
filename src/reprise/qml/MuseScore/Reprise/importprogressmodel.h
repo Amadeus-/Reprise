@@ -59,9 +59,8 @@ class ImportProgressModel : public QObject, public muse::Contextable, public mus
     Q_PROPERTY(bool indeterminate READ indeterminate NOTIFY progressChanged)
     //! "Page X of N" caption shown beneath the progress bar (empty until the page count is known).
     Q_PROPERTY(QString progressCaption READ progressCaption NOTIFY progressChanged)
-    //! One of "running" | "done" | "error".
+    //! One of "running" | "done". (Failure no longer shows in-place: it is routed to the dedicated error window.)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
-    Q_PROPERTY(QString errorDetails READ errorDetails NOTIFY statusChanged)
     //! The streamed Audiveris stdout/stderr, surfaced in the popup's "Details" recognition-log expander.
     Q_PROPERTY(QString logText READ logText NOTIFY logTextChanged)
     Q_PROPERTY(bool closePopupOnComplete READ closePopupOnComplete WRITE setClosePopupOnComplete NOTIFY closePopupOnCompleteChanged)
@@ -87,7 +86,6 @@ public:
     bool indeterminate() const { return m_indeterminate; }
     QString progressCaption() const;
     QString status() const { return m_status; }
-    QString errorDetails() const { return m_errorDetails; }
     QString logText() const { return m_logText; }
 
     bool closePopupOnComplete() const;
@@ -101,10 +99,6 @@ public:
 
     //! Cancel button / the header X during a run: kill Audiveris, abort the import, request the popup to close.
     Q_INVOKABLE void cancel();
-
-    //! Error state's "Copy" button: copy the whole error (the red headline message + the recognition log) to the system
-    //! clipboard, so the user can paste it when asking for help. Mirrors the About dialog's copyRevisionToClipboard idiom.
-    Q_INVOKABLE void copyErrorToClipboard() const;
 
     //! Register this popup's own QQuickWindow (passed from QML as root.window) with the app-lifetime progress tracker,
     //! so ImportPdfController can close it DIRECTLY and settled on the success auto-close path -- see onRunnerFinished /
@@ -185,7 +179,6 @@ private:
     int m_currentPage = -1;
     int m_totalPages = -1;
     QString m_status = "running";
-    QString m_errorDetails;
     QString m_logText;
 
     //! Set just before the imported score is opened; consumed on the next master-notation change.

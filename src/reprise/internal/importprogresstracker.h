@@ -41,6 +41,7 @@ public:
         m_snapshot.active = true;
         m_snapshot.status = "running";
         m_snapshot.pdfPath = pdfPath;
+        m_activeChanged.notify();
     }
 
     void reportProgress(int percent, int page, int totalPages, const std::string& phase) override
@@ -63,11 +64,29 @@ public:
         if (ok) {
             m_snapshot.percent = 100;
         }
+        m_activeChanged.notify();
+    }
+
+    void reportAborted() override
+    {
+        //! User cancelled: the run is over but it is NOT an error. Clear the active flag (so the single-import guard can
+        //! never stick) and leave status idle without recording an error for reprise.get-import-errors.
+        m_snapshot.active = false;
+        m_snapshot.status = "idle";
+        m_snapshot.hasError = false;
+        m_snapshot.error.clear();
+        m_snapshot.details.clear();
+        m_activeChanged.notify();
     }
 
     ImportProgressSnapshot snapshot() const override
     {
         return m_snapshot;
+    }
+
+    muse::async::Notification activeChanged() const override
+    {
+        return m_activeChanged;
     }
 
     void setProgressWindow(QObject* window) override
@@ -90,6 +109,16 @@ public:
         return m_popupCloseRequested;
     }
 
+    void requestErrorWindow() override
+    {
+        m_errorWindowRequested.notify();
+    }
+
+    muse::async::Notification errorWindowRequested() const override
+    {
+        return m_errorWindowRequested;
+    }
+
 private:
     ImportProgressSnapshot m_snapshot;
 
@@ -98,5 +127,7 @@ private:
     QPointer<QObject> m_progressWindow;
 
     muse::async::Notification m_popupCloseRequested;
+    muse::async::Notification m_activeChanged;
+    muse::async::Notification m_errorWindowRequested;
 };
 }

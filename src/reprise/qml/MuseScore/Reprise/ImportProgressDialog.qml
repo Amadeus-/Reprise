@@ -322,22 +322,22 @@ StyledDialogView {
                     Item { Layout.fillWidth: true }
                 }
 
-                //! Step line (large, dark): running stage / Done-with-counts; red headline in the error state.
+                //! Step line (large, dark): running stage / Done-with-counts. Failure is no longer shown here -- it is
+                //! routed to the dedicated "Recognition failed" window (ImportErrorDialog), so this popup is never an
+                //! error view.
                 StyledTextLabel {
                     Layout.fillWidth: true
                     text: progressModel.stageText
-                    color: progressModel.status === "error" ? "#D64C3C" : root.inkStep
+                    color: root.inkStep
                     font: ui.theme.largeBodyBoldFont
                     horizontalAlignment: Text.AlignLeft
                     wrapMode: Text.Wrap
                 }
 
-                // ===== Gold progress bar + caption (hidden in the error state) =====
+                // ===== Gold progress bar + caption =====
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 6
-
-                    visible: progressModel.status !== "error"
 
                     Rectangle {
                         id: track
@@ -409,15 +409,13 @@ StyledDialogView {
                     }
                 }
 
-                // ===== "Details" expander -> the streamed recognition log (hidden in the error state) =====
+                // ===== "Details" expander -> the streamed recognition log =====
                 ColumnLayout {
                     id: detailsBlock
 
                     Layout.fillWidth: true
                     Layout.topMargin: 2
                     spacing: 8
-
-                    visible: progressModel.status !== "error"
 
                     property bool expanded: false
 
@@ -495,43 +493,6 @@ StyledDialogView {
                     }
                 }
 
-                // ===== Error output tail (retained error state) =====
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 120
-                    Layout.topMargin: 2
-
-                    visible: progressModel.status === "error" && progressModel.errorDetails.length > 0
-
-                    radius: 4
-                    color: "#FFFFFF"
-                    border.width: 1
-                    border.color: root.cardStroke
-
-                    Flickable {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        clip: true
-                        contentWidth: width
-                        contentHeight: tailLabel.implicitHeight
-
-                        //! Read-only but SELECTABLE so the user can drag-select the recognition error/log text (the Copy
-                        //! button beside Close copies the whole error in one click).
-                        TextEdit {
-                            id: tailLabel
-                            width: parent.width
-                            text: progressModel.errorDetails
-                            color: root.inkStep
-                            font: ui.theme.bodyFont
-                            horizontalAlignment: Text.AlignLeft
-                            wrapMode: TextEdit.Wrap
-                            readOnly: true
-                            selectByMouse: true
-                            selectionColor: root.brandGold
-                            opacity: 0.85
-                        }
-                    }
-                }
             }
 
             // ===== Footer (cream) =====
@@ -607,25 +568,6 @@ StyledDialogView {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: progressModel.closePopupOnComplete = !progressModel.closePopupOnComplete
                         }
-                    }
-
-                    //! Copy = GOLD (error state only): copies the whole error message + recognition log to the clipboard.
-                    FlatButton {
-                        text: qsTrc("global", "Copy")
-                        visible: progressModel.status === "error"
-
-                        normalColor: root.brandGold
-                        hoverHitColor: root.brandGoldLight
-
-                        contentItem: Component {
-                            StyledTextLabel {
-                                text: qsTrc("global", "Copy")
-                                color: root.brandNavyDeep
-                                font: ui.theme.bodyFont
-                            }
-                        }
-
-                        onClicked: progressModel.copyErrorToClipboard()
                     }
 
                     //! Cancel = GOLD (while running).

@@ -63,8 +63,18 @@ public:
     //! The run finished: ok -> status "done"; else status "error" with the message + details tail.
     virtual void reportFinished(bool ok, const std::string& error, const std::string& details) = 0;
 
+    //! The run was aborted (user Cancel / header-X while running): clears the active flag WITHOUT recording an error, so
+    //! the single-import guard (bound to snapshot().active via activeChanged) can never stick set after a cancel. Distinct
+    //! from reportFinished(false, ...) which records an error for reprise.get-import-errors; a cancel is not an error.
+    virtual void reportAborted() = 0;
+
     //! The current snapshot (thread-confined to the UI thread; reads happen on the same thread as writes).
     virtual ImportProgressSnapshot snapshot() const = 0;
+
+    //! Fired on every transition of the active flag (reportStarted -> true, reportFinished / reportAborted -> false).
+    //! Observed by RepriseCommandsState to grey out / re-enable the New-Scan command (REPRISE_IMPORT_PDF_COMMAND) so a
+    //! second import cannot be launched while one is active. UI-thread only (all tracker access is on the UI thread).
+    virtual muse::async::Notification activeChanged() const = 0;
 
     //! The progress popup registers its own QQuickWindow here when it opens (passed as a QObject* from QML). This lets
     //! the app-lifetime ImportPdfController -- which outlives the transient popup -- close the popup's window DIRECTLY
@@ -78,5 +88,13 @@ public:
     //! (so the popup's own call stack has fully unwound before its window + view-model are destroyed).
     virtual void requestPopupClose() = 0;
     virtual muse::async::Notification popupCloseRequested() const = 0;
+
+    //! A recognition FAILED (any of the ImportProgressModel failure paths): ask the app-lifetime ImportPdfController to
+    //! close the progress popup and open the dedicated "Recognition failed" window. Fired by ImportProgressModel right
+    //! after reportFinished(false, ...) records the message + details in the snapshot; the controller reads them back to
+    //! populate the error dialog. Separate from popupCloseRequested (the success auto-close), so a run resolves to exactly
+    //! one of: Done auto-close, or a failure handed to the dedicated error window.
+    virtual void requestErrorWindow() = 0;
+    virtual muse::async::Notification errorWindowRequested() const = 0;
 };
 }

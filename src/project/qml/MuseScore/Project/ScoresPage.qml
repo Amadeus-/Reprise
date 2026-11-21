@@ -66,6 +66,7 @@ FocusScope {
     }
 
     Component.onCompleted: {
+        scoresPageModel.init()
         applySubSection()
     }
 
@@ -280,6 +281,9 @@ FocusScope {
 
                 text: qsTrc("project", "New Scan")
                 accentButton: true
+
+                //! FIX 1: greyed while a recognition is already active, so a second import cannot be launched.
+                enabled: scoresPageModel.importEnabled
 
                 onClicked: {
                     scoresPageModel.createNewScore()

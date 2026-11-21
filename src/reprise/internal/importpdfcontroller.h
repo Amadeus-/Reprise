@@ -133,6 +133,12 @@ private:
     //! so the popup's own call stack has fully unwound before its window + view-model are destroyed.
     void closeProgressPopup();
 
+    //! FIX 2: a recognition failed. Driven by the tracker's errorWindowRequested notification (observed in init(), on a
+    //! fresh event-loop turn). Closes + settles the progress popup (reusing forceCloseAndSettle, like the success
+    //! auto-close) and opens the dedicated "musescore://reprise/importpdf/error" window, populated from the snapshot's
+    //! error message + details -- so the progress popup never doubles as the error view.
+    void showRecognitionError();
+
     //! Read-only MCP/API queries backed by the shared progress tracker.
     muse::RetVal<GetImportProgressCommand::Output> getImportProgress() const;
     muse::RetVal<GetImportErrorsCommand::Output> getImportErrors() const;

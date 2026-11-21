@@ -22,6 +22,8 @@
 
 #include "reprisecommandsstate.h"
 
+#include "reprise/reprisecommands.h"
+
 using namespace muse;
 using namespace muse::rcommand;
 using namespace mu::reprise;
@@ -44,6 +46,13 @@ void RepriseCommandsState::init()
         m_commandStateChanged.send(command, commandState(command));
     }
 
+    //! When a recognition starts / finishes / is cancelled the active flag flips; re-send the New-Scan command's state
+    //! so its menu item + tile grey out while one import runs and re-enable the instant it is over. All on the UI thread.
+    importProgressTracker()->activeChanged().onNotify(this, [this]()
+    {
+        m_commandStateChanged.send(REPRISE_IMPORT_PDF_COMMAND, commandState(REPRISE_IMPORT_PDF_COMMAND));
+    });
+
     return;
 }
 
@@ -54,9 +63,16 @@ void RepriseCommandsState::deinit()
 
 CommandState RepriseCommandsState::commandState(const Command& command) const
 {
-    //! NOTE: Reprise commands (e.g. "Import PDF") are always available - they create a score, so they must be
-    //! clickable even when no score/notation is open. Equivalent to the project module's PCondition::Any.
-    (void)command;
+    //! NOTE: The New-Scan / Import command is DISABLED while a recognition is already active -- this greys the New-Scan
+    //! tile + File->New entry so a second import cannot be launched concurrently (the single-import guard). It re-enables
+    //! the moment the active run ends (activeChanged re-sends this state). Every OTHER reprise command is always available
+    //! -- "Import" creates a score, so with no active run it must be clickable even when no score/notation is open
+    //! (equivalent to the project module's PCondition::Any).
+    if (command == REPRISE_IMPORT_PDF_COMMAND)
+    {
+        const bool active = importProgressTracker()->snapshot().active;
+        return CommandState(!active, false);
+    }
 
     return CommandState(true, false);
 }

@@ -655,10 +655,40 @@ void ImportPdfController::init()
     {
         muse::async::Async::call(this, [this]() { closeProgressPopup(); });
     });
+
+    //! FIX 2: a recognition FAILED. Close the progress popup (settled) and open the dedicated "Recognition failed"
+    //! window. Deferred to a fresh event-loop turn (Async::call) so the failing call stack in ImportProgressModel has
+    //! unwound before the popup's window + view-model are destroyed by the settled close -- same discipline as the
+    //! success auto-close above. The error message + details were just recorded in the tracker snapshot by the model's
+    //! reportFinished(false, ...) and are read back here to populate the error dialog.
+    importProgressTracker()->errorWindowRequested().onNotify(this, [this]()
+    {
+        muse::async::Async::call(this, [this]() { showRecognitionError(); });
+    });
 }
 
 muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
 {
+    //! FIX 1 (single-import guard, belt-and-suspenders): refuse a SECOND import while one recognition is already active.
+    //! The New-Scan command is also greyed out while active (RepriseCommandsState), but this covers any edge path that
+    //! still reaches importPdf -- a direct command dispatch, or an MCP reprise.import-pdf call (which bypasses the GUI
+    //! action state entirely). snapshot().active is set by launchImport's reportStarted and cleared on finish / error /
+    //! cancel, so it is true for exactly the duration of a live run. MCP/headless caller (a "path" was given) -> a clean
+    //! busy error; interactive caller -> a warning, then cancel. Either way NO second popup / Audiveris run is launched.
+    if (importProgressTracker()->snapshot().active)
+    {
+        if (!params.at("path").toString().empty())
+        {
+            return make_ret(Ret::Code::NotSupported, "A recognition is already in progress");
+        }
+
+        interactive()->warning(muse::trc("reprise", "Import already in progress"),
+                               muse::trc("reprise", "A recognition is already in progress."),
+                               { interactive()->buttonData(IInteractive::Button::Ok) });
+
+        return make_ret(Ret::Code::Cancel);
+    }
+
     //! Reprise has exactly one OMR path: local Audiveris. Verify it is present before asking for a file.
     if (m_audiverisRunner->findAudiveris().empty())
     {
@@ -1420,6 +1450,26 @@ void ImportPdfController::closeProgressPopup()
 
     //! Clear the stale handle (the window is destroyed now); the next import registers a fresh one.
     importProgressTracker()->setProgressWindow(nullptr);
+}
+
+void ImportPdfController::showRecognitionError()
+{
+    //! FIX 2: a recognition failed. First close + settle the progress popup (it is still open showing its last running
+    //! state), reusing the SAME proven forceCloseAndSettle path as the success auto-close so there is no SIGSEGV on the
+    //! handoff. closeProgressPopup is a no-op if the popup is already gone (QPointer auto-nulled). Then open the dedicated
+    //! "Recognition failed" window with the message + details captured in the snapshot by the model's reportFinished.
+    const ImportProgressSnapshot snap = importProgressTracker()->snapshot();
+
+    closeProgressPopup();
+
+    UriQuery query("musescore://reprise/importpdf/error");
+    query.addParam("message", Val(snap.error));
+    query.addParam("details", Val(snap.details));
+
+    //! Harden against an edge re-entry: force any prior error window of this URI closed + settled before opening again.
+    forceCloseAndSettle(query, nullptr);
+
+    interactive()->open(query);
 }
 
 muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImportDialog(const CaptureImportDialogCommand& cmd)

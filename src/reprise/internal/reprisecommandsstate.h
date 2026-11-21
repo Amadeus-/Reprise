@@ -28,14 +28,20 @@
 #include "global/modularity/ioc.h"
 #include "global/async/asyncable.h"
 
+#include "iimportprogresstracker.h"
+
 namespace mu::reprise {
-//! NOTE: Reprise command enable-states. Every reprise command (currently only "Import PDF") is ALWAYS enabled -
-//! "Import PDF" creates a score, so it must be clickable with no score/notation open. Mirrors the project module's
-//! PCondition::Any. Without a registered IModuleCommandsState, muse::rcommand::CommandsState falls back to the default
-//! CommandState() whose enabled==false, so the menu item is grayed out.
+//! NOTE: Reprise command enable-states. Every reprise command is ALWAYS enabled EXCEPT the New-Scan / Import command
+//! (REPRISE_IMPORT_PDF_COMMAND), which is DISABLED while a recognition is already active (snapshot().active) -- this is
+//! the single-import guard's primary prevention: the New-Scan tile + File->New entry grey out so a second import cannot
+//! be launched. It re-enables the instant the active run finishes / errors / is cancelled (driven by the tracker's
+//! activeChanged notification). "Import" otherwise creates a score, so it must be clickable with no score/notation open
+//! (mirrors the project module's PCondition::Any). Without a registered IModuleCommandsState, muse::rcommand::CommandsState
+//! falls back to the default CommandState() whose enabled==false, so every menu item would be grayed out.
 class RepriseCommandsState : public muse::rcommand::IModuleCommandsState, public muse::async::Asyncable
 {
     muse::GlobalInject<muse::rcommand::ICommandsRegister> commandsRegister;
+    muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
 
 public:
     RepriseCommandsState() = default;

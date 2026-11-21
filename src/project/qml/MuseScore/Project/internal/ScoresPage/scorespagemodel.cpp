@@ -36,6 +36,28 @@ ScoresPageModel::ScoresPageModel(QObject* parent)
 {
 }
 
+void ScoresPageModel::init()
+{
+    if (m_subscribed) {
+        return;
+    }
+    m_subscribed = true;
+
+    //! Re-notify importEnabled whenever the reprise import command's state flips (RepriseCommandsState disables it while a
+    //! recognition is active), so the "New Scan" entries grey out / re-enable live.
+    commandsState()->commandStateChanged().onReceive(this,
+                                                      [this](const muse::rcommand::Command& command, const muse::rcommand::CommandState&) {
+        if (command == reprise::REPRISE_IMPORT_PDF_COMMAND) {
+            emit importEnabledChanged();
+        }
+    });
+}
+
+bool ScoresPageModel::importEnabled() const
+{
+    return commandsState()->commandState(reprise::REPRISE_IMPORT_PDF_COMMAND).enabled;
+}
+
 void ScoresPageModel::createNewScore()
 {
     commandDispatcher()->dispatch(reprise::REPRISE_IMPORT_PDF_COMMAND);

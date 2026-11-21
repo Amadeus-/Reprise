@@ -29,6 +29,7 @@
 #include "modularity/ioc.h"
 #include "iprojectconfiguration.h"
 #include "rcommand/icommanddispatcher.h"
+#include "rcommand/icommandsstate.h"
 #include "interactive/iplatforminteractive.h"
 #include "interactive/iinteractive.h"
 #include "cloud/musescorecom/imusescorecomservice.h"
@@ -41,6 +42,10 @@ class ScoresPageModel : public QObject, public muse::Contextable, public muse::a
     Q_OBJECT
 
     Q_PROPERTY(ViewType viewType READ viewType WRITE setViewType NOTIFY viewTypeChanged)
+    //! FIX 1: false while a scan recognition is already active, so the "New Scan" entries grey out and a second import
+    //! cannot be launched. Bound to the shared reprise command state (REPRISE_IMPORT_PDF_COMMAND), which RepriseCommandsState
+    //! flips off while a run is active -- the SAME state that greys the File->New menu item.
+    Q_PROPERTY(bool importEnabled READ importEnabled NOTIFY importEnabledChanged)
 
     QML_ELEMENT
 
@@ -49,6 +54,7 @@ class ScoresPageModel : public QObject, public muse::Contextable, public muse::a
     muse::GlobalInject<muse::IPlatformInteractive> platformInteractive;
     muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
+    muse::ContextInject<muse::rcommand::ICommandsState> commandsState = { this };
 
 public:
     explicit ScoresPageModel(QObject* parent = nullptr);
@@ -62,6 +68,12 @@ public:
     ViewType viewType() const;
     void setViewType(ViewType type);
 
+    bool importEnabled() const;
+
+    //! Deferred subscribe to the reprise import command's state changes (NOT the ctor -- qmlContext is null there for a
+    //! QML-instantiated model). Driven from ScoresPage.qml's Component.onCompleted. Idempotent.
+    Q_INVOKABLE void init();
+
     Q_INVOKABLE void createNewScore();
     Q_INVOKABLE void openScore(const QString& scorePath, const QString& displayNameOverride);
     Q_INVOKABLE void revealInFileBrowser(const QString& scorePath);
@@ -70,5 +82,9 @@ public:
 
 signals:
     void viewTypeChanged();
+    void importEnabledChanged();
+
+private:
+    bool m_subscribed = false;
 };
 }

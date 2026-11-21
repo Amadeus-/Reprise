@@ -93,6 +93,10 @@ void RepriseModule::resolveImports()
 
         //! NOTE: Register the recognition progress popup, shown while Audiveris runs asynchronously.
         ir->registerQmlUri(Uri("musescore://reprise/importpdf/progress"), "MuseScore.Reprise", "ImportProgressDialog");
+
+        //! NOTE: Register the dedicated "Recognition failed" window (FIX 2), opened by the controller on a failed run
+        //! after the progress popup is closed -- so the progress popup never doubles as the error view.
+        ir->registerQmlUri(Uri("musescore://reprise/importpdf/error"), "MuseScore.Reprise", "ImportErrorDialog");
     }
 }
 
