@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-11-20
+
+### Added
+- **Custom `.repr` project format — scans now save and reopen with the full proofing view intact.** Importing a
+  scan auto-saves a Reprise project (`.repr`) to your Scores folder; reopening it (from the Scans list or
+  File ▸ Open) restores the original-scan band and the magnifier as they were, so you can pick proofing back up
+  where you left off. A `.repr` bundles the editable score, the original scan, and the proofing coordinate-map;
+  re-importing the same scan creates a numbered copy rather than overwriting. Open/Save/Save-As use `.repr`;
+  Export produces MusicXML and MuseScore `.mscz`. Scores saved before this version still open (score only,
+  without the proofing view).
+
 ## [0.15.1] — 2026-11-20
 
 ### Changed
