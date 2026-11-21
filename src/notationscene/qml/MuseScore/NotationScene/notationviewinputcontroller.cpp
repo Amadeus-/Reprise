@@ -38,6 +38,7 @@
 #include "engraving/dom/drumset.h"
 #include "engraving/dom/fret.h"
 #include "engraving/dom/harmony.h"
+#include "engraving/dom/measure.h"
 #include "engraving/dom/mscore.h"
 #include "engraving/dom/shadownote.h"
 #include "engraving/dom/staff.h"
@@ -1400,6 +1401,11 @@ void NotationViewInputController::mouseDoubleClickEvent(QMouseEvent* event)
 
 void NotationViewInputController::hoverMoveEvent(QHoverEvent* event)
 {
+    // Reprise: ungated hover-follow for the two-pane proofing band -- resolve the measure under the mouse and push it to
+    // the interaction in EVERY mode. The shadow-note preview below stays note-input-gated, so normal-mode editing is
+    // unchanged and only note-input mode shows the shadow note.
+    updateHoveredMeasure(event);
+
     if (!m_view->isNoteEnterMode()) {
         return;
     }
@@ -1427,6 +1433,33 @@ void NotationViewInputController::hoverMoveEvent(QHoverEvent* event)
 void NotationViewInputController::hoverLeaveEvent(QHoverEvent*)
 {
     viewInteraction()->hideShadowNote();
+
+    // Reprise: the mouse left the view -- clear the hover-follow so the proofing band stops tracking a stale measure.
+    if (INotationInteractionPtr interaction = viewInteraction()) {
+        interaction->setHoveredMeasure(-1);
+    }
+}
+
+void NotationViewInputController::updateHoveredMeasure(QHoverEvent* event)
+{
+    // Reprise: hit-test the hovered point to an element, resolve its enclosing measure, and push that measure's POSITIONAL
+    // global index (pickup = 0, matching the proofing map's globalMeasureIndex) to the interaction. -1 when the cursor is
+    // over empty canvas or a non-measure element. One-way: this never moves the score cursor or selection.
+    INotationInteractionPtr interaction = viewInteraction();
+    if (!interaction) {
+        return;
+    }
+
+    const PointF logicPos = m_view->toLogical(event->position());
+
+    int measureIndex = -1;
+    if (EngravingItem* item = interaction->hitElement(logicPos, hitWidth())) {
+        if (const Measure* measure = item->findMeasure()) {
+            measureIndex = measure->measureIndex();
+        }
+    }
+
+    interaction->setHoveredMeasure(measureIndex);
 }
 
 bool NotationViewInputController::isAnchorEditingEvent(QKeyEvent* event) const

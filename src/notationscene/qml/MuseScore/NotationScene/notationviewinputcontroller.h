@@ -207,6 +207,9 @@ private:
 
     void updateShadowNotePopupVisibility(bool forceHide = false);
 
+    // Reprise: resolve the measure under the hovered point and push it to the interaction for the proofing band to follow.
+    void updateHoveredMeasure(QHoverEvent* event);
+
     float hitWidth() const;
 
     struct ClickContext {

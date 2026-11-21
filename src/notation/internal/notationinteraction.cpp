@@ -891,6 +891,21 @@ void NotationInteraction::setHitElementContext(const HitElementContext& context)
     m_hitElementContext = context;
 }
 
+void NotationInteraction::setHoveredMeasure(int measureIndex)
+{
+    if (m_hoveredMeasure == measureIndex) {
+        return;
+    }
+
+    m_hoveredMeasure = measureIndex;
+    m_hoveredMeasureChanged.send(measureIndex);
+}
+
+muse::async::Channel<int> NotationInteraction::hoveredMeasureChanged() const
+{
+    return m_hoveredMeasureChanged;
+}
+
 EngravingItem* NotationInteraction::contextItem() const
 {
     EngravingItem* item = selection()->element();

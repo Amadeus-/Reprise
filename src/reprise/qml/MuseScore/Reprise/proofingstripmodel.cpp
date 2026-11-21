@@ -31,6 +31,7 @@
 #include <QSize>
 #include <QSizeF>
 #include <QString>
+#include <QTimer>
 #include <QUrl>
 #include <QVariantMap>
 #include <QtPdf/QPdfDocument>
@@ -72,6 +73,19 @@ void ProofingStripModel::load()
     if (!m_inited)
     {
         m_inited = true;
+
+        //! Debounce hover-follow: apply only the latest hovered measure once the mouse settles (~100ms), so a fast sweep
+        //! across measures doesn't thrash the band's page switch + scroll. Single-shot; owned by this (QObject parent).
+        m_hoverDebounce = new QTimer(this);
+        m_hoverDebounce->setSingleShot(true);
+        m_hoverDebounce->setInterval(100);
+        connect(m_hoverDebounce, &QTimer::timeout, this, [this]()
+        {
+            if (m_pendingHoverMeasure >= 0)
+            {
+                followMeasure(m_pendingHoverMeasure);
+            }
+        });
 
         //! Re-render whenever a fresh import replaces (or clears) the held map, independent of notation-change timing.
         proofingMapService()->mapChanged().onNotify(this, [this]()
@@ -268,12 +282,26 @@ void ProofingStripModel::resubscribeSelection()
     //! the new one (prevents a stale score's selection from driving this band after a switch).
     m_selectionReceiver = std::make_unique<muse::async::Asyncable>();
 
+    //! Any pending hover apply belonged to the previous notation -- drop it so a switch never follows a stale measure.
+    m_pendingHoverMeasure = -1;
+    if (m_hoverDebounce)
+    {
+        m_hoverDebounce->stop();
+    }
+
     const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
     if (notation && notation->interaction())
     {
         notation->interaction()->selectionChanged().onNotify(m_selectionReceiver.get(), [this]()
         {
             updateFollow();
+        });
+
+        //! Hover-follow ALONGSIDE selection: the ungated hover path on the input controller emits the measure under the
+        //! mouse; we debounce + apply it to the same band follow. Click/selection follow above is unchanged.
+        notation->interaction()->hoveredMeasureChanged().onReceive(m_selectionReceiver.get(), [this](int measure)
+        {
+            scheduleHoverFollow(static_cast<int32_t>(measure));
         });
     }
 
@@ -303,6 +331,39 @@ void ProofingStripModel::updateFollow()
         }
     }
 
+    //! Selection drives the follow directly (measure < 0 when nothing is selected -> clears hasCurrent).
+    followMeasure(measure);
+
+    return;
+}
+
+void ProofingStripModel::scheduleHoverFollow(int32_t measure)
+{
+    //! Ignore a hover that resolves to no measure (empty canvas / non-measure, or the mouse left the view) and anything
+    //! while no map is held -- the band keeps showing the last followed measure rather than clearing on every stray move.
+    if (measure < 0 || !m_hasMap)
+    {
+        return;
+    }
+
+    //! Latch the latest hovered measure and (re)arm the debounce: a fast sweep coalesces to one apply once the mouse
+    //! settles. Already showing this measure -> nothing to do (don't re-arm the timer for a no-op).
+    if (measure == m_currentMeasure && m_hasCurrent)
+    {
+        return;
+    }
+
+    m_pendingHoverMeasure = measure;
+    if (m_hoverDebounce)
+    {
+        m_hoverDebounce->start();
+    }
+
+    return;
+}
+
+void ProofingStripModel::followMeasure(int32_t measure)
+{
     bool found = false;
     int32_t page = m_currentPageIndex;
     int32_t rx = 0;

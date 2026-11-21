@@ -38,6 +38,7 @@
 #include "internal/iproofingmapservice.h"
 
 class QImage;
+class QTimer;
 
 namespace mu::reprise {
 //! View-model behind the Reprise Two-Pane Proofing READABLE FOLLOWING BAND (Phase A3): the view-only band above the
@@ -48,7 +49,10 @@ namespace mu::reprise {
 //! selected element's GLOBAL MEASURE INDEX (positional, pickup = 0 -- MeasureBase::measureIndex(), which matches the map's
 //! gm), looks up that measure's {pageIndex, rect} in the map, and exposes currentPageIndex + the rect (in sheet-image
 //! pixels) so the QML band can switch to that page, scroll the matching system into view, and draw a highlight box over
-//! the current measure. One-way: the band never moves the score cursor. Note-level highlight + the magnifier are Phase B.
+//! the current measure. In ADDITION to selection follow, the band also HOVER-FOLLOWS: it subscribes to the notation's
+//! hoveredMeasureChanged (ungated hover from NotationViewInputController) and, debounced ~100ms, drives the same follow
+//! from the measure under the mouse (only when a map exists; a hover that resolves to no measure is ignored). One-way: the
+//! band never moves the score cursor. Note-level highlight + the magnifier (selection-driven, not hover) are Phase B.
 class ProofingStripModel : public QObject, public muse::Contextable, public muse::async::Asyncable
 {
     Q_OBJECT
@@ -129,6 +133,15 @@ private:
     //! emit followChanged. Safe to call with no selection / no map (clears hasCurrent).
     void updateFollow();
 
+    //! Drive the band follow from a single POSITIONAL global measure index (pickup = 0): look it up in the held map and,
+    //! if changed, update currentPageIndex + the highlight rect and emit followChanged. Shared tail of the selection path
+    //! (updateFollow) and the hover path (the debounce timer). measure < 0 clears hasCurrent (selection cleared).
+    void followMeasure(int32_t measure);
+
+    //! Hover-follow entry (subscribed ALONGSIDE selectionChanged): latch the hovered measure and (re)arm the debounce so a
+    //! fast mouse sweep applies only once the mouse settles. Ignores measure < 0 (empty canvas / non-measure) and no-map.
+    void scheduleHoverFollow(int32_t measure);
+
     bool m_inited = false;
     bool m_hasMap = false;
     QVariantList m_pages;
@@ -142,8 +155,14 @@ private:
     int32_t m_rectH = 0;
     int32_t m_currentMeasure = -1;
 
-    //! Receiver for the CURRENT notation's selectionChanged; reset (destroyed+recreated) on every notation switch so a
-    //! previous notation's subscription never lingers (the NotationSwitchListModel per-notation-receiver idiom).
+    //! Receiver for the CURRENT notation's selectionChanged + hoveredMeasureChanged; reset (destroyed+recreated) on every
+    //! notation switch so a previous notation's subscriptions never linger (the NotationSwitchListModel per-notation idiom).
     std::unique_ptr<muse::async::Asyncable> m_selectionReceiver;
+
+    //! Debounce for hover-follow: a fast mouse sweep across measures fires many hoveredMeasureChanged notifications, so the
+    //! band only applies the latest ~100ms after the mouse settles (prevents page/scroll thrash). Owned by this; one-shot.
+    QTimer* m_hoverDebounce = nullptr;
+    //! The most recent measure the mouse hovered (>= 0), latched for the debounce timer to apply; -1 = nothing pending.
+    int32_t m_pendingHoverMeasure = -1;
 };
 }

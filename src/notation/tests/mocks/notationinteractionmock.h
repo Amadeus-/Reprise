@@ -49,6 +49,9 @@ public:
     MOCK_METHOD(const HitElementContext&, hitElementContext, (), (const, override));
     MOCK_METHOD(void, setHitElementContext, (const HitElementContext&), (override));
 
+    MOCK_METHOD(void, setHoveredMeasure, (int), (override));
+    MOCK_METHOD(muse::async::Channel<int>, hoveredMeasureChanged, (), (const, override));
+
     MOCK_METHOD(muse::Ret, select, (const std::vector<EngravingItem*>&, SelectType, engraving::staff_idx_t), (override));
     MOCK_METHOD(muse::Ret, select, (SelectionTarget), (override));
     MOCK_METHOD(muse::Ret, addToSelection, (SelectionTarget), (override));

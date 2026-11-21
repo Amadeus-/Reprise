@@ -612,7 +612,9 @@ void AbstractNotationPaintView::onNoteInputStateChanged()
 {
     TRACEFUNC;
 
-    setAcceptHoverEvents(isNoteEnterMode());
+    // Reprise: accept hover events in EVERY mode (not just note-input) so the two-pane proofing band can hover-follow the
+    // measure under the mouse in normal mode. The shadow-note preview driven from the hover path stays note-input-gated.
+    setAcceptHoverEvents(true);
     updateLoopMarkers();
     updateShadowNoteVisibility();
     scheduleRedraw();

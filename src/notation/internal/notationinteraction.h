@@ -99,6 +99,10 @@ public:
     const HitElementContext& hitElementContext() const override;
     void setHitElementContext(const HitElementContext& context) override;
 
+    // Reprise: ungated hover-follow (see INotationInteraction).
+    void setHoveredMeasure(int measureIndex) override;
+    muse::async::Channel<int> hoveredMeasureChanged() const override;
+
     // Select
     INotationSelectionPtr selection() const override;
     muse::async::Notification selectionChanged() const override;
@@ -595,6 +599,9 @@ private:
 
     bool m_notifyAboutDropChanged = false;
     HitElementContext m_hitElementContext;
+
+    int m_hoveredMeasure = -1;
+    muse::async::Channel<int> m_hoveredMeasureChanged;
 
     muse::async::Channel<ShowItemRequest> m_showItemRequested;
 

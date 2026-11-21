@@ -83,6 +83,11 @@ public:
     virtual const HitElementContext& hitElementContext() const = 0;
     virtual void setHitElementContext(const HitElementContext& context) = 0;
 
+    // Reprise: ungated hover-follow. setHoveredMeasure() pushes the global measure index (positional, pickup = 0) under the
+    // mouse, or -1 for none; hoveredMeasureChanged() notifies subscribers (the two-pane proofing band follows it).
+    virtual void setHoveredMeasure(int measureIndex) = 0;
+    virtual muse::async::Channel<int> hoveredMeasureChanged() const = 0;
+
     // Select
     virtual INotationSelectionPtr selection() const = 0;
     virtual muse::async::Notification selectionChanged() const = 0;
