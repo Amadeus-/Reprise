@@ -31,6 +31,7 @@
 #include <QSize>
 #include <QSizeF>
 #include <QString>
+#include <QTimer>
 #include <QUrl>
 #include <QVariantMap>
 #include <QtPdf/QPdfDocument>
@@ -77,6 +78,16 @@ void ProofingMagnifierModel::load()
     if (!m_inited)
     {
         m_inited = true;
+
+        //! Debounce hover-follow: apply only the latest hovered note/measure once the mouse settles (~100ms), so a fast
+        //! sweep doesn't thrash the magnifier's page switch + crop. Single-shot; owned by this (QObject parent).
+        m_hoverDebounce = new QTimer(this);
+        m_hoverDebounce->setSingleShot(true);
+        m_hoverDebounce->setInterval(100);
+        connect(m_hoverDebounce, &QTimer::timeout, this, [this]()
+        {
+            applyHover();
+        });
 
         //! Re-render whenever a fresh import replaces (or clears) the held map, independent of notation-change timing.
         proofingMapService()->mapChanged().onNotify(this, [this]()
@@ -266,9 +277,17 @@ void ProofingMagnifierModel::appendPage(const QImage& image, const QString& dir,
 
 void ProofingMagnifierModel::resubscribeSelection()
 {
-    //! Destroy + recreate the receiver so the previous notation's selectionChanged subscription is dropped before we bind
-    //! the new one (prevents a stale score's selection from driving this magnifier after a switch).
+    //! Destroy + recreate the receiver so the previous notation's selectionChanged + hover subscriptions are dropped before
+    //! we bind the new ones (prevents a stale score's selection/hover from driving this magnifier after a switch).
     m_selectionReceiver = std::make_unique<muse::async::Asyncable>();
+
+    //! Any pending hover apply belonged to the previous notation -- drop it so a switch never follows a stale note/measure.
+    m_pendingHoverNote = mu::notation::HoveredNoteInfo();
+    m_pendingHoverMeasure = -1;
+    if (m_hoverDebounce)
+    {
+        m_hoverDebounce->stop();
+    }
 
     const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
     if (notation && notation->interaction())
@@ -276,6 +295,18 @@ void ProofingMagnifierModel::resubscribeSelection()
         notation->interaction()->selectionChanged().onNotify(m_selectionReceiver.get(), [this]()
         {
             updateFollow();
+        });
+
+        //! Hover-follow ALONGSIDE selection: the ungated hover path on the input controller emits the note AND the measure
+        //! under the mouse; we debounce + apply (note-level preferred, measure-level fallback). Click/selection unchanged.
+        notation->interaction()->hoveredNoteChanged().onReceive(m_selectionReceiver.get(), [this](const mu::notation::HoveredNoteInfo& note)
+        {
+            scheduleHoverNote(note);
+        });
+
+        notation->interaction()->hoveredMeasureChanged().onReceive(m_selectionReceiver.get(), [this](int measure)
+        {
+            scheduleHoverMeasure(static_cast<int32_t>(measure));
         });
     }
 
@@ -317,16 +348,6 @@ void ProofingMagnifierModel::updateFollow()
         }
     }
 
-    bool found = false;
-    bool fallback = false;
-    int32_t page = m_currentPageIndex;
-    int32_t gm = -1;
-    int32_t bx = 0;
-    int32_t by = 0;
-    int32_t bw = 0;
-    int32_t bh = 0;
-    QString noteName;
-
     const bool hasMap = proofingMapService() && proofingMapService()->hasMap();
 
     if (hasMap && note && note->chord() && note->chord()->measure())
@@ -334,7 +355,7 @@ void ProofingMagnifierModel::updateFollow()
         //! Derive the Phase B1 runtime key straight from the live Note (NO translation). The service matches on
         //! (gm, staffIdx, tickInMeasure, step, octave); voice is advisory and excluded.
         const mu::engraving::Measure* measure = note->chord()->measure();
-        gm = measure->measureIndex();
+        const int32_t gm = measure->measureIndex();
         const int32_t staffIdx = static_cast<int32_t>(note->staffIdx());
         const int32_t tickInMeasure = (note->tick() - measure->tick()).ticks();
         const int32_t step = mu::engraving::tpc2step(note->tpc());
@@ -342,73 +363,41 @@ void ProofingMagnifierModel::updateFollow()
 
         //! Header label shows the note's REAL pitch INCLUDING accidental (e.g. "E♭4"), taken straight from the live
         //! Note's tpc+pitch -- tpcUserName renders Unicode ♭/♯ with the sounding octave. The box MATCH stays diatonic
-        //! (step+octave below are what noteBox() keys on); only the displayed label carries the accidental, so a
-        //! flat/sharp head reads correctly in the header instead of collapsing to its diatonic letter.
-        noteName = mu::engraving::tpcUserName(note->tpc(), note->pitch()).toQString();
+        //! (step+octave are what noteBox() keys on); only the displayed label carries the accidental, so a flat/sharp
+        //! head reads correctly in the header instead of collapsing to its diatonic letter.
+        const QString noteName = mu::engraving::tpcUserName(note->tpc(), note->pitch()).toQString();
 
-        const ProofingNoteBox* box = proofingMapService()->noteBox(gm, staffIdx, tickInMeasure, step, octave);
-        if (box)
-        {
-            found = true;
-            page = box->pageIndex;
-            bx = box->x;
-            by = box->y;
-            bw = box->w;
-            bh = box->h;
-        }
-        else
-        {
-            //! SELF-CHECK (Phase B1 worker flagged): a lookup miss where we expected a hit is the one thing to watch.
-            //! key.staffIdx == note->staffIdx() by construction here, so log the key + the engraving tick so a miss is
-            //! diagnosable against the stored boxes (reprise.get-proofing-map). Then fall back to the measure rect.
-            LOGD() << "Reprise: magnifier note box MISS -> measure fallback: gm=" << gm << " staff=" << staffIdx
-                   << " tickInMeasure=" << tickInMeasure << " step=" << step << " octave=" << octave;
-        }
+        followNoteKey(gm, staffIdx, tickInMeasure, step, octave, noteName);
+
+        return;
     }
 
-    //! Fallback marker: the selected note had no head box (grace/untrusted), OR the selection is a plain measure/range
-    //! with no single note. Show the enclosing MEASURE rect as a dashed, measure-level marker -- never a false note box.
-    if (!found && hasMap)
+    //! A measure/range selection with no single note (or a grace/untrusted note that has no chord-measure) -> dashed
+    //! measure-level fallback. Nothing selected / no map -> clear hasCurrent (keeps the current page).
+    if (hasMap && measureBase)
     {
-        int32_t fgm = -1;
-        if (note && note->chord() && note->chord()->measure())
-        {
-            fgm = note->chord()->measure()->measureIndex();
-        }
-        else if (measureBase)
-        {
-            fgm = measureBase->measureIndex();
-        }
+        followMeasureOnly(measureBase->measureIndex());
 
-        if (fgm >= 0)
-        {
-            const ProofingMap& map = proofingMapService()->map();
-            for (const ProofingMeasureRect& r : map.measures)
-            {
-                if (r.globalMeasureIndex == fgm)
-                {
-                    found = true;
-                    fallback = true;
-                    gm = fgm;
-                    page = r.pageIndex;
-                    bx = r.x;
-                    by = r.y;
-                    bw = r.w;
-                    bh = r.h;
-                    break;
-                }
-            }
-        }
+        return;
     }
 
+    applyFollow(false, false, m_currentPageIndex, -1, 0, 0, 0, 0, QString());
+
+    return;
+}
+
+void ProofingMagnifierModel::applyFollow(bool found, bool fallback, int32_t page, int32_t gm,
+                                         int32_t bx, int32_t by, int32_t bw, int32_t bh, const QString& noteName)
+{
     const int32_t newPage = found ? page
                           : (m_currentPageIndex >= 0 ? m_currentPageIndex
                                                      : (m_pages.isEmpty() ? -1 : 0));
 
     const int32_t newMeasure = found ? gm : -1;
+    const QString newName = fallback ? QString() : noteName;
 
     const bool unchanged = (found == m_hasCurrent) && (fallback == m_isFallback) && (newPage == m_currentPageIndex)
-                           && (newMeasure == m_currentMeasure) && (noteName == m_currentNoteName)
+                           && (newMeasure == m_currentMeasure) && (newName == m_currentNoteName)
                            && (!found || (bx == m_boxX && by == m_boxY && bw == m_boxW && bh == m_boxH));
     if (unchanged)
     {
@@ -419,7 +408,7 @@ void ProofingMagnifierModel::updateFollow()
     m_isFallback = fallback;
     m_currentPageIndex = newPage;
     m_currentMeasure = newMeasure;
-    m_currentNoteName = fallback ? QString() : noteName;
+    m_currentNoteName = newName;
     if (found)
     {
         m_boxX = bx;
@@ -429,6 +418,121 @@ void ProofingMagnifierModel::updateFollow()
     }
 
     emit followChanged();
+
+    return;
+}
+
+void ProofingMagnifierModel::followNoteKey(int32_t gm, int32_t staffIdx, int32_t tickInMeasure, int32_t step, int32_t octave,
+                                           const QString& noteName)
+{
+    if (!proofingMapService() || !proofingMapService()->hasMap())
+    {
+        applyFollow(false, false, m_currentPageIndex, -1, 0, 0, 0, 0, QString());
+
+        return;
+    }
+
+    const ProofingNoteBox* box = proofingMapService()->noteBox(gm, staffIdx, tickInMeasure, step, octave);
+    if (box)
+    {
+        applyFollow(true, false, box->pageIndex, gm, box->x, box->y, box->w, box->h, noteName);
+
+        return;
+    }
+
+    //! SELF-CHECK (Phase B1 worker flagged): a lookup miss where we expected a hit is the one thing to watch. Log the key +
+    //! the engraving tick so a miss is diagnosable against the stored boxes (reprise.get-proofing-map), then fall back to
+    //! the enclosing measure rect -- never a false note box.
+    LOGD() << "Reprise: magnifier note box MISS -> measure fallback: gm=" << gm << " staff=" << staffIdx
+           << " tickInMeasure=" << tickInMeasure << " step=" << step << " octave=" << octave;
+
+    followMeasureOnly(gm);
+
+    return;
+}
+
+void ProofingMagnifierModel::followMeasureOnly(int32_t gm)
+{
+    if (gm < 0 || !proofingMapService() || !proofingMapService()->hasMap())
+    {
+        applyFollow(false, false, m_currentPageIndex, -1, 0, 0, 0, 0, QString());
+
+        return;
+    }
+
+    const ProofingMap& map = proofingMapService()->map();
+    for (const ProofingMeasureRect& r : map.measures)
+    {
+        if (r.globalMeasureIndex == gm)
+        {
+            applyFollow(true, true, r.pageIndex, gm, r.x, r.y, r.w, r.h, QString());
+
+            return;
+        }
+    }
+
+    //! Map held but no rect for this measure index -> clear hasCurrent (keeps the current page).
+    applyFollow(false, false, m_currentPageIndex, -1, 0, 0, 0, 0, QString());
+
+    return;
+}
+
+void ProofingMagnifierModel::scheduleHoverNote(const mu::notation::HoveredNoteInfo& note)
+{
+    //! Ignore all hover while no map is held (nothing to magnify). Otherwise latch the latest hovered note and (re)arm the
+    //! debounce; applyHover() decides note-vs-measure once the mouse settles.
+    if (!m_hasMap)
+    {
+        return;
+    }
+
+    m_pendingHoverNote = note;
+    if (m_hoverDebounce)
+    {
+        m_hoverDebounce->start();
+    }
+
+    return;
+}
+
+void ProofingMagnifierModel::scheduleHoverMeasure(int32_t measure)
+{
+    //! Latch the latest hovered measure (INCLUDING -1 on leave, so applyHover() can tell a leave from a rest-hover) and
+    //! (re)arm the debounce. Ignored while no map is held.
+    if (!m_hasMap)
+    {
+        return;
+    }
+
+    m_pendingHoverMeasure = measure;
+    if (m_hoverDebounce)
+    {
+        m_hoverDebounce->start();
+    }
+
+    return;
+}
+
+void ProofingMagnifierModel::applyHover()
+{
+    //! Note-level wins when the cursor is over a head; else the hovered measure drives the dashed measure-level fallback
+    //! (rest / between notes / empty). A leave (no note AND measure < 0) holds the last view rather than blanking it --
+    //! matching the following band, so moving the mouse off the score to read the magnifier itself doesn't clear it.
+    if (m_pendingHoverNote.isValid())
+    {
+        const QString noteName = mu::engraving::tpcUserName(m_pendingHoverNote.tpc, m_pendingHoverNote.pitch).toQString();
+        followNoteKey(m_pendingHoverNote.globalMeasureIndex, m_pendingHoverNote.staffIdx, m_pendingHoverNote.tickInMeasure,
+                      m_pendingHoverNote.step, m_pendingHoverNote.octave, noteName);
+
+        return;
+    }
+
+    if (m_pendingHoverMeasure >= 0)
+    {
+        followMeasureOnly(m_pendingHoverMeasure);
+
+        return;
+    }
 
     return;
 }

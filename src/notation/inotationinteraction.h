@@ -43,6 +43,33 @@ enum class Voicing : signed char;
 }
 
 namespace mu::notation {
+//! Reprise: identity of the NOTE under the mouse during ungated hover-follow (see setHoveredNote below). Carries the
+//! positional key the proofing map / magnifier matches on (globalMeasureIndex / staffIdx / tickInMeasure / step /
+//! octave), plus tpc + pitch so the magnifier can render the same accidental-aware header label as the selection path.
+//! An invalid instance (globalMeasureIndex < 0) means the hovered element is not a note.
+struct HoveredNoteInfo
+{
+    int globalMeasureIndex = -1;
+    int staffIdx = -1;
+    int tickInMeasure = 0;
+    int step = -1;
+    int octave = 0;
+    int tpc = 0;
+    int pitch = 0;
+
+    bool isValid() const
+    {
+        return globalMeasureIndex >= 0 && staffIdx >= 0 && step >= 0;
+    }
+
+    bool operator ==(const HoveredNoteInfo& other) const
+    {
+        return globalMeasureIndex == other.globalMeasureIndex && staffIdx == other.staffIdx
+               && tickInMeasure == other.tickInMeasure && step == other.step && octave == other.octave
+               && tpc == other.tpc && pitch == other.pitch;
+    }
+};
+
 class INotationInteraction
 {
 public:
@@ -87,6 +114,13 @@ public:
     // mouse, or -1 for none; hoveredMeasureChanged() notifies subscribers (the two-pane proofing band follows it).
     virtual void setHoveredMeasure(int measureIndex) = 0;
     virtual muse::async::Channel<int> hoveredMeasureChanged() const = 0;
+
+    // Reprise: ungated NOTE-level hover-follow (EXTENDS the band-level hover above). setHoveredNote() pushes the identity
+    // of the NOTE under the mouse (an invalid HoveredNoteInfo -- globalMeasureIndex < 0 -- means the cursor is not over a
+    // note); hoveredNoteChanged() notifies subscribers (the proofing magnifier follows it at note level, falling back to
+    // the band-level hovered measure for a non-note element).
+    virtual void setHoveredNote(const HoveredNoteInfo& note) = 0;
+    virtual muse::async::Channel<HoveredNoteInfo> hoveredNoteChanged() const = 0;
 
     // Select
     virtual INotationSelectionPtr selection() const = 0;

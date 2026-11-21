@@ -34,10 +34,12 @@
 #include "async/asyncable.h"
 
 #include "project/iprojectsession.h"
+#include "notation/inotationinteraction.h"
 
 #include "internal/iproofingmapservice.h"
 
 class QImage;
+class QTimer;
 
 namespace mu::reprise {
 //! View-model behind the Reprise Two-Pane Proofing FULL DETAIL VIEW -- the floating "Full detail view" MAGNIFIER (Phase
@@ -132,12 +134,34 @@ private:
     //! Per-instance temp subdir holding this magnifier's rendered page PNGs.
     QString renderDir() const;
 
-    //! Drop + rebuild the per-notation selection subscription (at load and on every notation switch), then follow once.
+    //! Drop + rebuild the per-notation selection + hover subscriptions (at load and on every notation switch), then follow.
     void resubscribeSelection();
 
-    //! Recompute currentPageIndex + the box to magnify from the current notation's selection against the held map, and
-    //! emit followChanged. Safe to call with no selection / no map (clears hasCurrent).
+    //! Recompute currentPageIndex + the box to magnify from the current notation's SELECTION against the held map, and emit
+    //! followChanged. Safe to call with no selection / no map (clears hasCurrent). Click/selection path (unchanged).
     void updateFollow();
+
+    //! Shared tail of the selection + hover paths: diff the resolved target against the current state and, if anything
+    //! changed, store it + emit followChanged. found == false clears hasCurrent (keeps the current page). When found, a
+    //! fallback == true target is the dashed MEASURE rect (noteName is blanked); otherwise a solid note head box.
+    void applyFollow(bool found, bool fallback, int32_t page, int32_t gm,
+                     int32_t bx, int32_t by, int32_t bw, int32_t bh, const QString& noteName);
+
+    //! Drive the magnifier from a NOTE key (the B1 positional key): look up its head box and, if found, magnify it (solid);
+    //! on a box MISS fall back to the note's MEASURE rect (dashed). Shared by the selection path and the hover path.
+    void followNoteKey(int32_t gm, int32_t staffIdx, int32_t tickInMeasure, int32_t step, int32_t octave,
+                       const QString& noteName);
+
+    //! Drive the magnifier from a global measure index alone: show that measure's rect as a dashed, measure-level marker
+    //! (the "rest / between notes / measure selection" fallback). gm < 0 or no matching rect clears hasCurrent.
+    void followMeasureOnly(int32_t gm);
+
+    //! Hover-follow entries (subscribed ALONGSIDE selectionChanged). Latch the latest hovered note / measure and (re)arm the
+    //! debounce so a fast sweep applies only once the mouse settles. applyHover() picks note-level when a note is hovered,
+    //! else the measure-level fallback; a leave (no note AND measure < 0) holds the last view rather than blanking it.
+    void scheduleHoverNote(const mu::notation::HoveredNoteInfo& note);
+    void scheduleHoverMeasure(int32_t measure);
+    void applyHover();
 
     bool m_inited = false;
     bool m_hasMap = false;
@@ -154,8 +178,16 @@ private:
     int32_t m_currentMeasure = -1;
     QString m_currentNoteName;
 
-    //! Receiver for the CURRENT notation's selectionChanged; reset (destroyed+recreated) on every notation switch so a
-    //! previous notation's subscription never lingers (the NotationSwitchListModel per-notation-receiver idiom).
+    //! Receiver for the CURRENT notation's selectionChanged + hovered note/measure channels; reset (destroyed+recreated) on
+    //! every notation switch so a previous notation's subscriptions never linger (the NotationSwitchListModel idiom).
     std::unique_ptr<muse::async::Asyncable> m_selectionReceiver;
+
+    //! Debounce for hover-follow: a fast mouse sweep fires many hovered-note/measure notifications, so the magnifier applies
+    //! only the latest ~100ms after the mouse settles (mirrors the following band's debounce). Owned by this; one-shot.
+    QTimer* m_hoverDebounce = nullptr;
+    //! Latest hovered note (invalid = cursor not over a note) and latest hovered measure (-1 = none / mouse left), latched
+    //! for the debounce timer. applyHover() prefers the note when valid, else the measure fallback, else holds the last.
+    mu::notation::HoveredNoteInfo m_pendingHoverNote;
+    int32_t m_pendingHoverMeasure = -1;
 };
 }

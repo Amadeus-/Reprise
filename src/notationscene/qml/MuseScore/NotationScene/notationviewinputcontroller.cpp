@@ -35,11 +35,14 @@
 
 #include "abstractelementpopupmodel.h"
 
+#include "engraving/dom/chord.h"
 #include "engraving/dom/drumset.h"
 #include "engraving/dom/fret.h"
 #include "engraving/dom/harmony.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/mscore.h"
+#include "engraving/dom/note.h"
+#include "engraving/dom/pitchspelling.h"
 #include "engraving/dom/shadownote.h"
 #include "engraving/dom/staff.h"
 
@@ -1437,6 +1440,7 @@ void NotationViewInputController::hoverLeaveEvent(QHoverEvent*)
     // Reprise: the mouse left the view -- clear the hover-follow so the proofing band stops tracking a stale measure.
     if (INotationInteractionPtr interaction = viewInteraction()) {
         interaction->setHoveredMeasure(-1);
+        interaction->setHoveredNote(HoveredNoteInfo());
     }
 }
 
@@ -1453,13 +1457,34 @@ void NotationViewInputController::updateHoveredMeasure(QHoverEvent* event)
     const PointF logicPos = m_view->toLogical(event->position());
 
     int measureIndex = -1;
+    HoveredNoteInfo noteInfo;
     if (EngravingItem* item = interaction->hitElement(logicPos, hitWidth())) {
         if (const Measure* measure = item->findMeasure()) {
             measureIndex = measure->measureIndex();
         }
+
+        // Reprise: hitElement() sorts a note head ABOVE its stem/hook (elementIsLess), so over a head it returns the Note
+        // itself -- the same element a click would select. Surface that note's identity so the proofing magnifier can
+        // follow it at note level. A non-note hit (rest/stem/accidental/empty) leaves noteInfo invalid, and the magnifier
+        // falls back to the band-level hovered measure above. Mirror the magnifier's selection key EXACTLY so a hovered
+        // head and a clicked head resolve to the same map lookup.
+        if (item->isNote()) {
+            const Note* note = toNote(item);
+            if (note->chord() && note->chord()->measure()) {
+                const Measure* measure = note->chord()->measure();
+                noteInfo.globalMeasureIndex = measure->measureIndex();
+                noteInfo.staffIdx = static_cast<int>(note->staffIdx());
+                noteInfo.tickInMeasure = (note->tick() - measure->tick()).ticks();
+                noteInfo.step = tpc2step(note->tpc());
+                noteInfo.octave = note->octave();
+                noteInfo.tpc = note->tpc();
+                noteInfo.pitch = note->pitch();
+            }
+        }
     }
 
     interaction->setHoveredMeasure(measureIndex);
+    interaction->setHoveredNote(noteInfo);
 }
 
 bool NotationViewInputController::isAnchorEditingEvent(QKeyEvent* event) const

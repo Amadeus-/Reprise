@@ -102,6 +102,8 @@ public:
     // Reprise: ungated hover-follow (see INotationInteraction).
     void setHoveredMeasure(int measureIndex) override;
     muse::async::Channel<int> hoveredMeasureChanged() const override;
+    void setHoveredNote(const HoveredNoteInfo& note) override;
+    muse::async::Channel<HoveredNoteInfo> hoveredNoteChanged() const override;
 
     // Select
     INotationSelectionPtr selection() const override;
@@ -602,6 +604,9 @@ private:
 
     int m_hoveredMeasure = -1;
     muse::async::Channel<int> m_hoveredMeasureChanged;
+
+    HoveredNoteInfo m_hoveredNote;
+    muse::async::Channel<HoveredNoteInfo> m_hoveredNoteChanged;
 
     muse::async::Channel<ShowItemRequest> m_showItemRequested;
 

@@ -906,6 +906,21 @@ muse::async::Channel<int> NotationInteraction::hoveredMeasureChanged() const
     return m_hoveredMeasureChanged;
 }
 
+void NotationInteraction::setHoveredNote(const HoveredNoteInfo& note)
+{
+    if (m_hoveredNote == note) {
+        return;
+    }
+
+    m_hoveredNote = note;
+    m_hoveredNoteChanged.send(note);
+}
+
+muse::async::Channel<HoveredNoteInfo> NotationInteraction::hoveredNoteChanged() const
+{
+    return m_hoveredNoteChanged;
+}
+
 EngravingItem* NotationInteraction::contextItem() const
 {
     EngravingItem* item = selection()->element();
