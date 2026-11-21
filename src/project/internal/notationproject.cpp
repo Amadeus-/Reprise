@@ -25,6 +25,7 @@
 #include <memory>
 
 #include <QBuffer>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 
@@ -53,6 +54,7 @@
 #include "engraving/rw/write/writecontext.h"
 
 #include "iprojectautosaver.h"
+#include "reprfile.h"
 #include "notation/iexcerptnotation.h" // IWYU pragma: keep
 #include "notation/inotationundostack.h" // IWYU pragma: keep
 #include "notation/inotationviewstate.h"
@@ -129,6 +131,24 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
     setupProject();
     setPath(path);
 
+    // Reprise .repr: a bundle restores the full project (score + original scan + proofing map), so it is neither a
+    // plain MuseScore file nor an "import" -- it has its own load branch and opens as a saved, non-imported project.
+    if (format == REPRISE_PROJECT_SUFFIX) {
+        Ret ret = doLoadRepr(path, openParams);
+        if (!ret) {
+            LOGE() << "failed load .repr, err: " << ret.toString();
+            return ret;
+        }
+
+        listenIfNeedSaveChanges();
+        setNeedSave(false);
+
+        m_isNewlyCreated = false;
+        m_isImported = false;
+
+        return ret;
+    }
+
     if (!isMuseScoreFile(format)) {
         Ret ret = doImport(path, openParams);
         if (ret) {
@@ -172,12 +192,19 @@ Ret NotationProject::doLoad(const muse::io::path_t& path, const OpenParams& open
         return ret;
     }
 
+    return doLoadByReader(reader, path, openParams);
+}
+
+Ret NotationProject::doLoadByReader(MscReader& reader, const muse::io::path_t& path, const OpenParams& openParams)
+{
+    TRACEFUNC;
+
     // Load engraving project
     m_engravingProject->setFileInfoProvider(std::make_shared<ProjectFileInfoProvider>(this));
 
     rw::ReadInOutData inOutData;
     inOutData.forcePageMode = openParams.forcePageMode;
-    ret = m_engravingProject->loadMscz(reader, &inOutData, openParams.forceMode);
+    Ret ret = m_engravingProject->loadMscz(reader, &inOutData, openParams.forceMode);
     if (!ret) {
         return ret;
     }
@@ -282,6 +309,180 @@ Ret NotationProject::doLoad(const muse::io::path_t& path, const OpenParams& open
     }
 
     return make_ret(Ret::Code::Ok);
+}
+
+Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& openParams)
+{
+    TRACEFUNC;
+
+    // Read the whole bundle (manifest + score.mscz + original + proofingmap.json) off disk.
+    ReprBundle bundle;
+    Ret ret = readRepr(path, bundle);
+    if (!ret) {
+        LOGE() << "failed read .repr bundle: " << ret.toString();
+        return ret;
+    }
+
+    // Open the embedded score.mscz straight from memory -- no temp .mscz on disk is needed for the score itself. The
+    // bytes must outlive the reader, so scoreBytes stays in scope through doLoadByReader.
+    ByteArray scoreBytes = bundle.scoreMscz;
+    Buffer scoreBuf = Buffer::opened(IODevice::OpenMode::ReadOnly, &scoreBytes);
+
+    MscReader::Params rparams;
+    rparams.device = &scoreBuf;
+    rparams.mode = MscIoMode::Zip;
+
+    MscReader reader(rparams);
+    ret = reader.open();
+    if (!ret) {
+        LOGE() << "failed open embedded score.mscz from .repr";
+        return ret;
+    }
+
+    ret = doLoadByReader(reader, path, openParams);
+    reader.close();
+    if (!ret) {
+        return ret;
+    }
+
+    // Retain the manifest provenance + original scan info so a later Save/Save-As can re-assemble the bundle.
+    m_reprOriginalFileName = bundle.originalFileName;
+    m_reprOriginalSuffix = bundle.originalSuffix;
+    m_reprManifestImport = bundle.importJson;
+
+    // Extract the original scan to a REAL temp path -- the proofing band + magnifier render it by filesystem path
+    // (QPdfDocument::load / QImageReader), so a path inside the ZIP would never render. Retain that path so Save can
+    // re-bundle the scan. Best-effort: a missing/failed original just opens the score with no proofing view.
+    if (!bundle.original.empty()) {
+        const QString baseName = bundle.originalFileName.empty()
+                                 ? (QStringLiteral("original.")
+                                    + QString::fromStdString(bundle.originalSuffix.empty() ? std::string("dat") : bundle.originalSuffix))
+                                 : QString::fromStdString(bundle.originalFileName);
+
+        const QString tempRoot = QDir::tempPath() + "/reprise-repr";
+        QDir().mkpath(tempRoot);
+        const QString extractedQ = tempRoot + "/" + QString::number(QDateTime::currentMSecsSinceEpoch()) + "-" + baseName;
+        const muse::io::path_t extracted(extractedQ);
+
+        Ret wret = fileSystem()->writeFile(extracted, bundle.original);
+        if (wret) {
+            m_reprOriginalPath = extracted;
+
+            if (bundle.hasMap) {
+                bundle.map.sourcePath = extracted.toStdString();
+                if (auto svc = proofingMapService()) {
+                    // mapChanged() fires -> the strip + magnifier rehydrate exactly as they do for a fresh import's map.
+                    svc->setMap(bundle.map);
+                }
+            }
+        } else {
+            LOGW() << "Reprise .repr: failed to extract original scan to temp: " << extractedQ;
+        }
+    }
+
+    return make_ret(Ret::Code::Ok);
+}
+
+Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
+{
+    TRACEFUNC;
+
+    // v1: .repr opts OUT of periodic autosave (a bundle with the full scan can be large). Crash-recovery autosave stays
+    // MSCZ-shaped and is not wired for .repr; skip quietly so the autosaver never fails on a .repr project.
+    if (isAutosave) {
+        return make_ret(Ret::Code::Ok);
+    }
+
+    // Build score.mscz into a memory buffer (same idiom as writeToDevice): a complete standalone .mscz, no temp on disk.
+    ByteArray scoreBytes;
+    {
+        auto buf = Buffer::opened(IODevice::WriteOnly);
+
+        MscWriter::Params params;
+        params.device = &buf;
+        params.filePath = QString::fromStdString(REPR_ENTRY_SCORE);   // internal rootfile -> "score.mscx"
+        params.mode = MscIoMode::Zip;
+
+        MscWriter msczWriter(params);
+        Ret ret = writeProject(msczWriter, true /*createThumbnail*/);
+        msczWriter.close();
+        if (!ret) {
+            LOGE() << "failed to build score.mscz for .repr: " << ret.toString();
+            return ret;
+        }
+        if (msczWriter.hasError()) {
+            LOGE() << "MscWriter error building score.mscz for .repr";
+            return make_ret(Ret::Code::UnknownError);
+        }
+
+        buf.open(IODevice::OpenMode::ReadOnly);
+        scoreBytes = buf.readAll();
+    }
+
+    // The proofing coordinate map: the live service map (its sourcePath is machine-local and dropped on serialize).
+    reprise::ProofingMap map;
+    if (auto svc = proofingMapService()) {
+        if (svc->hasMap()) {
+            map = svc->map();
+        }
+    }
+
+    // The original scan bytes, from the retained source path (the real scan at import time, or the extracted scan after
+    // opening a .repr). A missing original is non-fatal -- the score still round-trips, only the proofing view is lost.
+    ByteArray originalBytes;
+    if (!m_reprOriginalPath.empty() && fileSystem()->exists(m_reprOriginalPath)) {
+        RetVal<ByteArray> rv = fileSystem()->readFile(m_reprOriginalPath);
+        if (rv.ret) {
+            originalBytes = rv.val;
+        } else {
+            LOGW() << "Reprise .repr save: cannot read original scan: " << m_reprOriginalPath;
+        }
+    } else {
+        LOGW() << "Reprise .repr save: no readable original scan path retained; bundle will omit the scan";
+    }
+
+    const std::string originalName = m_reprOriginalFileName.empty()
+                                     ? io::filename(m_reprOriginalPath).toStdString()
+                                     : m_reprOriginalFileName;
+
+    const ByteArray bundle = assembleRepr(scoreBytes, originalBytes, originalName, m_reprOriginalSuffix,
+                                          m_reprManifestImport, map);
+
+    // Atomic-ish write: write a "_saving" sibling, copy over the target, remove the temp (mirrors doSave's dance).
+    const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(path);
+    const muse::io::path_t savePath = normalizedPath.toQString() + "_saving";
+
+    Ret ret = fileSystem()->writeFile(savePath, bundle);
+    if (!ret) {
+        LOGE() << "failed to write .repr _saving file: " << savePath;
+        return ret;
+    }
+
+    ret = fileSystem()->copy(savePath, normalizedPath, true /*replace*/);
+    if (!ret) {
+        LOGE() << "failed to move .repr into place: " << normalizedPath;
+        fileSystem()->remove(savePath);
+        return ret;
+    }
+
+    fileSystem()->remove(savePath);
+
+    QFile::setPermissions(normalizedPath.toQString(),
+                          QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::ReadGroup | QFile::ReadOther);
+
+    LOGI() << "Reprise: saved .repr bundle: " << normalizedPath;
+    return make_ret(Ret::Code::Ok);
+}
+
+void NotationProject::setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
+                                        const std::string& importProvenanceJson)
+{
+    m_reprOriginalPath = originalScanPath;
+    m_reprOriginalSuffix = originalSuffix;
+    // Normalize separators first: upstream io::filename splits on '/' only, so a Windows '\' scan path would otherwise
+    // leave the directory portion in the recorded manifest file name.
+    m_reprOriginalFileName = io::filename(muse::io::Dir::fromNativeSeparators(originalScanPath)).toStdString();
+    m_reprManifestImport = importProvenanceJson;
 }
 
 Ret NotationProject::doImport(const muse::io::path_t& path, const OpenParams& openParams)
@@ -657,6 +858,12 @@ Ret NotationProject::saveScore(const muse::io::path_t& path, const std::string& 
                                bool generateBackup, bool createThumbnail, bool isAutosave,
                                const write::WriteContext* ctx)
 {
+    // Reprise .repr: our custom project container -- route to doSaveRepr BEFORE the writers-register export fallthrough
+    // (which would otherwise treat an unknown suffix as an export format).
+    if (fileSuffix == REPRISE_PROJECT_SUFFIX) {
+        return doSaveRepr(path, isAutosave);
+    }
+
     if (!isMuseScoreFile(fileSuffix) && !fileSuffix.empty()) {
         return exportProject(path, fileSuffix);
     }

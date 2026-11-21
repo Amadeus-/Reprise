@@ -33,6 +33,8 @@
 #include "rcommand/commandtypes.h"
 #include "project/iprojectsession.h"
 #include "project/iopenprojectscenario.h"
+#include "project/iprojectconfiguration.h"
+#include "project/irecentfilescontroller.h"
 #include "notation/iinstrumentsrepository.h"
 
 #include "internal/irepriseconfiguration.h"
@@ -69,6 +71,8 @@ class ImportProgressModel : public QObject, public muse::Contextable, public mus
 
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
     muse::ContextInject<mu::project::IOpenProjectScenario> openProjectScenario = { this };
+    muse::ContextInject<mu::project::IRecentFilesController> recentFilesController = { this };
+    muse::GlobalInject<mu::project::IProjectConfiguration> projectConfiguration;
     muse::GlobalInject<mu::notation::IInstrumentsRepository> instrumentsRepository;
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
@@ -139,6 +143,12 @@ private:
     //! Open the recognised MusicXML through MuseScore's native import, armed to default every part to Grand Piano.
     void openImported(const QString& outputPath);
 
+    //! Reprise Phase C: once the imported score is open in THIS window, auto-save it as a .repr bundle in the Scores
+    //! folder (de-duped name), make that the project's save file, and point the recent entry at it (replacing the
+    //! throwaway stripped-MusicXML temp the open added). Only valid for the in-window open -- a new-window import lives in
+    //! a separate instance whose project is not current here. Best-effort: a failure leaves the score open, just unsaved.
+    void autoSaveImportedAsRepr();
+
     //! Declare the import a graceful failure because the recognised score never opened -- the open-scenario promise
     //! resolved with an error Ret, or the generous backstop elapsed with no master ever becoming current. Guarded by
     //! m_awaitingOpen (fires at most once, never after a successful open) and re-checks masterNotation() so a
@@ -173,6 +183,16 @@ private:
     QString m_pages;
     QString m_pagesLabel;
     int m_dpi = 300;
+
+    //! Recognition options from the intake dialog, retained for the .repr manifest's import-provenance block.
+    bool m_recognizeText = true;
+    QString m_language;
+    bool m_chordSymbols = false;
+    bool m_lyricsAboveStaff = false;
+
+    //! The scan-geometry-stripped MusicXML temp actually handed to the open scenario -- the recent entry the open adds
+    //! references this path; the .repr auto-save removes it and prepends the .repr instead.
+    QString m_strippedOpenPath;
     QString m_stageText;
     int m_percent = -1;
     bool m_indeterminate = true;

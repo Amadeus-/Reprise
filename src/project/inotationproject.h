@@ -86,6 +86,10 @@ public:
 
     virtual notation::IMasterNotationPtr masterNotation() const = 0;
     virtual IProjectAudioSettingsPtr audioSettings() const = 0;
+
+    // Reprise .repr: record the source scan + manifest provenance so Save/Save-As can (re)assemble the bundle.
+    virtual void setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
+                                   const std::string& importProvenanceJson) = 0;
 };
 
 using INotationProjectPtr = std::shared_ptr<INotationProject>;

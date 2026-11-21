@@ -65,6 +65,8 @@ target_sources(project PRIVATE
     internal/iprojectmigrator.h
     internal/notationproject.cpp
     internal/notationproject.h
+    internal/reprfile.cpp
+    internal/reprfile.h
     internal/projectcreator.cpp
     internal/projectcreator.h
     internal/projectaudiosettings.cpp

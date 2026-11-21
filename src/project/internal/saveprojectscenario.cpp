@@ -41,6 +41,7 @@
 #include "notation/inotationinteraction.h"
 
 #include "inotationproject.h"
+#include "reprfile.h"
 #include "projecterrors.h"
 #include "types/projecturis.h"
 
@@ -1508,6 +1509,9 @@ Promise<RetVal<muse::io::path_t> > SaveProjectScenario::askLocalPath(INotationPr
     muse::io::path_t defaultPath = configuration()->defaultSavingFilePath(project, filenameAddition);
 
     std::vector<std::string> filter {
+        // Reprise: the working project format that preserves the proofing view is .repr, so it is the default Save filter;
+        // plain .mscz stays available (File > Export, and here) for sharing / other tools.
+        muse::trc("project", "Reprise project") + " (*.repr)",
         muse::trc("project", "MuseScore file") + " (*.mscz)",
         muse::trc("project", "Uncompressed MuseScore folder [experimental]")
 #ifdef Q_OS_MAC
@@ -1525,7 +1529,8 @@ Promise<RetVal<muse::io::path_t> > SaveProjectScenario::askLocalPath(INotationPr
             return resolve(RetVal<muse::io::path_t>(make_ret(Ret::Code::Cancel)));
         }
 
-        if (!engraving::isMuseScoreFile(io::suffix(selectedPath))) {
+        // Reprise: a .repr is a single-file ZIP container, NOT an uncompressed MSCX folder -- leave its path as-is.
+        if (!engraving::isMuseScoreFile(io::suffix(selectedPath)) && io::suffix(selectedPath) != REPRISE_PROJECT_SUFFIX) {
             // Then it must be that the user is trying to save a mscx file.
             // At the selected path, a folder will be created,
             // and inside the folder, a mscx file will be created.

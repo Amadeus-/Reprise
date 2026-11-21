@@ -40,6 +40,7 @@
 #include "notation/inotation.h"
 
 #include "inotationproject.h"
+#include "reprfile.h"
 #include "projecterrors.h"
 #include "types/projectmeta.h"
 #include "types/projecturis.h"
@@ -224,6 +225,12 @@ bool OpenProjectScenario::isFileSupported(const muse::io::path_t& path) const
 {
     std::string suffix = io::suffix(path);
     if (engraving::isMuseScoreFile(suffix)) {
+        return true;
+    }
+
+    // Reprise: the custom .repr project container is not a MuseScore file and has no INotationReader; accept it here so
+    // File > Open / the recent list route it to NotationProject::load's .repr branch.
+    if (suffix == REPRISE_PROJECT_SUFFIX) {
         return true;
     }
 
@@ -972,10 +979,11 @@ void OpenProjectScenario::warnProjectCannotBeOpened(const Ret& ret, const muse::
 
 async::Promise<io::path_t> OpenProjectScenario::selectScoreOpeningFile() const
 {
-    std::string allExt = "*.mscz *.mxl *.musicxml *.xml *.mid *.midi *.kar *.md *.mgu *.sgu *.cap *.capx "
+    std::string allExt = "*.repr *.mscz *.mxl *.musicxml *.xml *.mid *.midi *.kar *.md *.mgu *.sgu *.cap *.capx "
                          "*.ove *.scw *.bmw *.bww *.gtp *.gp3 *.gp4 *.gp5 *.gpx *.gp *.ptb *.mei *.mnx *.json *.tef *.mscx *.mscs *.mscz~";
 
     std::vector<std::string> filter { muse::trc("project", "All supported files") + " (" + allExt + ")",
+                                      muse::trc("project", "Reprise projects") + " (*.repr)",
                                       muse::trc("project", "MuseScore files") + " (*.mscz)",
                                       muse::trc("project", "MusicXML files") + " (*.mxl *.musicxml *.xml)",
                                       muse::trc("project", "MIDI files") + " (*.mid *.midi *.kar)",

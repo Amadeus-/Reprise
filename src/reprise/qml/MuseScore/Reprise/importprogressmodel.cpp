@@ -24,6 +24,7 @@
 
 #include <vector>
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QTimer>
@@ -36,6 +37,7 @@
 #include "global/io/path.h"
 #include "global/serialization/zipreader.h"
 #include "global/serialization/xmlstreamreader.h"
+#include "global/serialization/json.h"
 
 #include "async/notifylist.h"
 
@@ -49,6 +51,9 @@
 
 #include "reprise/reprisecommands.h"
 #include "project/iopenprojectscenario.h"
+#include "project/inotationproject.h"
+#include "project/types/projecttypes.h"
+#include "project/types/recentfile.h"
 
 #include "internal/audiverisrunner.h"
 #include "internal/scangeometrystripper.h"
@@ -122,6 +127,11 @@ void ImportProgressModel::initContext()
         if (m_awaitingOpen)
         {
             m_awaitingOpen = false;
+
+            //! Reprise Phase C: the imported score is now open + current in THIS window (Grand-Piano override already
+            //! applied above) -- persist the whole session as a .repr bundle before flipping to Done.
+            autoSaveImportedAsRepr();
+
             setStatus("done");
             importProgressTracker()->reportFinished(true, std::string(), std::string());
 
@@ -170,6 +180,11 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_pages = pages;
     m_dpi = dpi;
     m_pagesLabel = formatPagesLabel(pages);
+    //! Retain the recognition options for the .repr manifest's import-provenance block (auto-save-on-import).
+    m_recognizeText = recognizeText;
+    m_language = language.trimmed().isEmpty() ? QString("eng") : language.trimmed();
+    m_chordSymbols = chordSymbols;
+    m_lyricsAboveStaff = lyricsAboveStaff;
     emit titleChanged();
 
     //! Reset ALL per-import state so every run starts independent of any earlier one (idempotent).
@@ -447,10 +462,15 @@ void ImportProgressModel::openImported(const QString& outputPath)
         pathToOpen = strippedPath;
         LOGI() << "Reprise: opening scan-geometry-stripped MusicXML: " << strippedPath;
     }
+
     else
     {
         LOGW() << "Reprise: scan-geometry strip failed; opening original unmodified file: " << outputPath;
     }
+
+    //! Remember the temp file actually opened: the open adds it to the recent list, and the .repr auto-save removes it
+    //! again in favour of the saved .repr.
+    m_strippedOpenPath = pathToOpen;
 
     //! Hand the produced MusicXML to MuseScore's native open path; a .mxl/.xml routes through MusicXmlReader.
     //! Arm the Grand-Piano override and the Done-line measure count for the score about to open, mark the open as
@@ -503,6 +523,68 @@ void ImportProgressModel::openImported(const QString& outputPath)
     //! master ever becomes current, so the popup can never hang on the interim "Opening score..." forever. Deliberately
     //! far longer than any real open, so it can never race a legitimately slow import.
     QTimer::singleShot(OPEN_BACKSTOP_TIMEOUT_MS, this, [this]() { reportOpenFailed(); });
+
+    return;
+}
+
+void ImportProgressModel::autoSaveImportedAsRepr()
+{
+    const project::INotationProjectPtr project = projectSession()->project();
+    if (!project || m_sourcePath.isEmpty())
+    {
+        return;
+    }
+
+    //! Target folder = the user's Scores folder; fall back to the scan's own folder if it is not configured.
+    QString dir = projectConfiguration() ? projectConfiguration()->userProjectsPath().toQString() : QString();
+    if (dir.isEmpty())
+    {
+        dir = QFileInfo(m_sourcePath).absolutePath();
+    }
+    QDir().mkpath(dir);
+
+    //! De-dupe the name so repeated imports of the SAME scan never clobber an existing bundle: "<scan>.repr", then
+    //! "<scan> (2).repr", "<scan> (3).repr", ... . The .repr suffix is defined canonically in project/internal/reprfile.h.
+    const QString base = QFileInfo(m_sourcePath).completeBaseName();
+    QString candidate = dir + "/" + base + ".repr";
+    for (int n = 2; QFileInfo::exists(candidate); ++n)
+    {
+        candidate = dir + "/" + base + " (" + QString::number(n) + ").repr";
+    }
+
+    //! Build the manifest "import" provenance object (feeds the backlogged recent-list page-range display).
+    muse::JsonObject import;
+    import.set("pages", (m_pages.trimmed().isEmpty() ? QString("all") : m_pages).toStdString());
+    import.set("dpi", m_dpi);
+    import.set("recognizeText", m_recognizeText);
+    import.set("language", m_language.toStdString());
+    import.set("chordSymbols", m_chordSymbols);
+    import.set("lyricsAboveStaff", m_lyricsAboveStaff);
+    const muse::ByteArray importBytes = muse::JsonDocument(import).toJson(muse::JsonDocument::Format::Compact);
+    const std::string importJson(importBytes.constChar(), importBytes.size());
+
+    const QString suffix = QFileInfo(m_sourcePath).suffix().toLower();
+    project->setReprBundleInfo(io::path_t(m_sourcePath), suffix.toStdString(), importJson);
+
+    const io::path_t reprPath(candidate);
+    const muse::Ret ret = project->save(reprPath, project::SaveMode::SaveAs);
+    if (!ret)
+    {
+        LOGW() << "Reprise: auto-save as .repr failed: " << ret.toString();
+        return;
+    }
+
+    //! Point the recent list at the saved .repr (replace the throwaway stripped-MusicXML temp the open added).
+    if (recentFilesController())
+    {
+        if (!m_strippedOpenPath.isEmpty())
+        {
+            recentFilesController()->removeRecentFile(io::path_t(m_strippedOpenPath));
+        }
+        recentFilesController()->prependRecentFile(project::RecentFile(reprPath));
+    }
+
+    LOGI() << "Reprise: imported scan auto-saved as .repr: " << candidate;
 
     return;
 }

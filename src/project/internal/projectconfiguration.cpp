@@ -31,6 +31,7 @@
 #include "engraving/infrastructure/mscio.h"
 
 #include "internal/notationproject.h"
+#include "internal/reprfile.h"
 #include "types/projectmeta.h"
 
 #include "log.h"
@@ -339,6 +340,12 @@ muse::io::path_t ProjectConfiguration::defaultSavingFilePath(INotationProjectPtr
                     repriseName.chop(repriseStrippedMarker.size());
                     filename = repriseName;
                     folderPath = userProjectsPath();
+
+                    //! Reprise: default an imported scan's Save/Save As to the .repr working format (keeps the proofing
+                    //! view on reopen) rather than plain .mscz. Only when the caller did not force a specific suffix.
+                    if (theSuffix.empty()) {
+                        theSuffix = REPRISE_PROJECT_SUFFIX;
+                    }
                 }
             } else {
                 filename = io::filename(projectPath, true);

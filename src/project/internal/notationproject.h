@@ -42,6 +42,8 @@
 #include "global/iglobalconfiguration.h"
 #include "project/iprojectsession.h"
 
+#include "reprise/internal/iproofingmapservice.h"
+
 namespace mu::engraving {
 class MscReader;
 class MscWriter;
@@ -63,6 +65,9 @@ class NotationProject : public INotationProject, public muse::Contextable, publi
     muse::GlobalInject<engraving::rendering::IScoreRenderer> renderer;
     muse::ContextInject<project::IProjectSession> projectSession = { this };
     muse::ContextInject<IProjectMigrator> migrator = { this };
+    // Reprise: the scan<->score proofing coordinate map, resolved only when loading/saving a .repr bundle (null in
+    // non-GUI/converter runs where the reprise module is not loaded -- guarded at every use).
+    muse::GlobalInject<reprise::IProofingMapService> proofingMapService;
 
 public:
     NotationProject(const muse::modularity::ContextPtr& iocCtx)
@@ -115,6 +120,11 @@ public:
     notation::IMasterNotationPtr masterNotation() const override;
     IProjectAudioSettingsPtr audioSettings() const override;
 
+    // Reprise: record the source scan + manifest provenance so Save/Save-As can (re)assemble the .repr bundle. Set once
+    // on import (the auto-save-as-.repr) and again when opening an existing .repr (originalScanPath = the extracted scan).
+    void setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
+                           const std::string& importProvenanceJson) override;
+
 private:
     void setupProject();
 
@@ -122,6 +132,14 @@ private:
 
     muse::Ret doLoad(const muse::io::path_t& path, const OpenParams& params, const std::string& format);
     muse::Ret doImport(const muse::io::path_t& path, const OpenParams& params);
+
+    // Reprise .repr: shared post-read engraving/audio/view setup, factored out of doLoad so both the file reader (doLoad)
+    // and the in-memory score.mscz reader (doLoadRepr) run the identical body.
+    muse::Ret doLoadByReader(engraving::MscReader& reader, const muse::io::path_t& path, const OpenParams& params);
+    // Reprise .repr: open a bundle -> score.mscz (in-memory MscReader) + extract original to a real temp path + restore map.
+    muse::Ret doLoadRepr(const muse::io::path_t& path, const OpenParams& params);
+    // Reprise .repr: assemble the bundle (score.mscz + original + proofingmap.json + manifest.json) and atomically write it.
+    muse::Ret doSaveRepr(const muse::io::path_t& path, bool isAutosave);
 
     muse::Ret saveScore(const muse::io::path_t& path, const std::string& fileSuffix, bool generateBackup = true,
                         bool createThumbnail = true, bool isAutosave = false, const engraving::write::WriteContext* ctx = nullptr);
@@ -152,6 +170,12 @@ private:
     muse::async::Notification m_needSaveChanged;
 
     muse::async::Channel<muse::io::path_t, SaveMode> m_saved;
+
+    // Reprise .repr: source scan + manifest provenance retained for Save/Save-As re-assembly (see setReprBundleInfo).
+    muse::io::path_t m_reprOriginalPath;   // on-disk path to read the original scan bytes from when saving the bundle
+    std::string m_reprOriginalSuffix;      // e.g. "pdf"
+    std::string m_reprOriginalFileName;    // e.g. "waltz.pdf" (recorded in the manifest)
+    std::string m_reprManifestImport;      // manifest "import" provenance JSON object (compact), re-emitted on save
 
     bool m_isNewlyCreated = false; /// true if the file has never been saved yet
     bool m_isImported = false;

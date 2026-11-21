@@ -68,5 +68,9 @@ public:
 
     MOCK_METHOD(notation::IMasterNotationPtr, masterNotation, (), (const, override));
     MOCK_METHOD(IProjectAudioSettingsPtr, audioSettings, (), (const, override));
+
+    MOCK_METHOD(void, setReprBundleInfo,
+                (const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
+                 const std::string& importProvenanceJson), (override));
 };
 }
