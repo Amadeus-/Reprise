@@ -1987,18 +1987,23 @@ muse::io::path_t ImportPdfController::defaultImportPdfDir() const
 {
     const io::path_t dir = repriseConfiguration()->lastImportPdfDir();
     //! The stored value is only usable if it is a real ABSOLUTE directory. A non-absolute value (e.g. "." left by a
-    //! relative/MCP import) passes exists() but resolves against the process CWD (build.release) -- never the user's
-    //! folder -- so treat it as empty and fall through to Documents. QFileInfo handles BOTH separators (muse io::* splits
-    //! on '/' only). This hardens the 0.12.14 settings-identity pin against a stale non-absolute lastImportPdfDir.
-    if (!dir.empty() && QFileInfo(dir.toQString()).isAbsolute() && fileSystem()->exists(dir))
+    //! relative/MCP import) resolves against the process CWD (build.release) -- never the user's folder -- so treat it as
+    //! empty and fall through to Documents. QFileInfo handles BOTH separators (muse io::* splits on '/' only).
+    //! We deliberately DO NOT gate on fileSystem()->exists() here: QFileInfo::exists() returns false for a OneDrive
+    //! Files-On-Demand DEHYDRATED placeholder directory (reparse-point target not synchronously resolvable) even while the
+    //! folder is present and navigable, which wrongly reset the picker to Documents every launch. Pass any absolute
+    //! remembered dir straight to the native dialog -- it opens there when reachable and falls back on its own for a
+    //! genuinely-deleted path. (Supersedes the 0.13.1 exists() hard-gate; keeps the 0.12.14 absolute-path pin.)
+    if (!dir.empty() && QFileInfo(dir.toQString()).isAbsolute())
     {
         return dir;
     }
 
-    //! Empty/first-run fallback: the platform's top-level Documents folder. documentsPath() wraps
-    //! QStandardPaths::DocumentsLocation, which resolves per-OS (Windows C:\Users\<u>\Documents, macOS ~/Documents,
-    //! Linux ~/Documents) -- cross-platform-correct for the future macOS build, and never the process CWD.
-    return globalConfiguration()->documentsPath();
+    //! Empty/first-run fallback: the user's Scores folder -- IProjectConfiguration::userProjectsPath(), the SAME location
+    //! imported scores auto-save to as .repr (importprogressmodel.cpp) and the same default File->Open uses. So "New Scan"
+    //! opens where the user's projects live, not Documents. userProjectsPath() resolves per-OS (Documents/<appName>/Scores)
+    //! and is never the process CWD; it returns its registered default when unset, so it is effectively never empty.
+    return projectConfiguration()->userProjectsPath();
 }
 
 void ImportPdfController::rememberImportPdfDir(const muse::io::path_t& pdfPath)

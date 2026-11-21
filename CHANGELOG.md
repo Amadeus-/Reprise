@@ -8,6 +8,18 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-11-21
+
+### Fixed
+- **The New Scan / import folder no longer resets to Documents.** Reprise remembers your last import folder and
+  opens the picker there. Previously it fell back to Documents if that folder didn't pass an existence check — which
+  could fail for a OneDrive / cloud folder even when it's available. It now trusts a remembered absolute folder and
+  lets the file dialog open it.
+
+### Changed
+- **New Scan and File ▸ Open default to your Scores folder** (where Reprise projects are saved) when there's no
+  remembered folder yet, instead of top-level Documents.
+
 ## [0.16.0] — 2026-11-20
 
 ### Added

@@ -36,6 +36,7 @@
 
 #include "appshell/internal/isessionsmanager.h"
 #include "project/iprojectsession.h"
+#include "project/iprojectconfiguration.h"
 
 #include "irepriseconfiguration.h"
 #include "ilanguagepackservice.h"
@@ -61,6 +62,7 @@ class ImportPdfController : public muse::Contextable, public muse::async::Asynca
     muse::GlobalInject<mu::reprise::ILanguagePackService> languagePackService;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
+    muse::GlobalInject<mu::project::IProjectConfiguration> projectConfiguration;
     muse::ContextInject<mu::appshell::ISessionsManager> sessionsManager = { this };
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
