@@ -134,6 +134,12 @@ signals:
     //! One line of Audiveris output (stdout or stderr) as it streams, for the popup's recognition-log expander.
     void outputLine(const QString& line);
 
+    //! FIX 1: emitted when the #711 edge-probe crash was hit and a SECOND recognition pass is about to begin on a
+    //! white-margin-padded copy of the PDF. Lets the progress UI surface WHY recognition restarts, so the full double
+    //! pass is explained rather than looking like a silent duplicate run. Fires at most once per import (guarded by the
+    //! same m_retriedWithPad latch that gates the pad retry).
+    void retryingAfterError();
+
 private:
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
     muse::GlobalInject<mu::reprise::ILanguagePackService> languagePackService;

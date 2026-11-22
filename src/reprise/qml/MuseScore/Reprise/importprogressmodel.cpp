@@ -100,6 +100,7 @@ void ImportProgressModel::initContext()
     QObject::connect(m_runner.get(), &AudiverisRunner::progressChanged, this, &ImportProgressModel::onRunnerProgress);
     QObject::connect(m_runner.get(), &AudiverisRunner::finished, this, &ImportProgressModel::onRunnerFinished);
     QObject::connect(m_runner.get(), &AudiverisRunner::outputLine, this, &ImportProgressModel::appendLog);
+    QObject::connect(m_runner.get(), &AudiverisRunner::retryingAfterError, this, &ImportProgressModel::onRunnerRetrying);
 
     //! Once the imported score becomes the current master (the open is async): apply the Grand-Piano override and
     //! fill the Done line with the real measure count.
@@ -207,6 +208,10 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_awaitingOpen = false;
     m_skippedPages.clear();
     m_multiMovement = false;
+
+    //! FIX 1: clear any recovery banner left from a prior run so each fresh import starts without it.
+    m_retryNotice.clear();
+    emit retryNoticeChanged();
 
     setStatus("running");
     m_indeterminate = true;
@@ -330,6 +335,16 @@ void ImportProgressModel::appendLog(const QString& line)
     }
 
     emit logTextChanged();
+}
+
+void ImportProgressModel::onRunnerRetrying()
+{
+    //! FIX 1: the #711 edge-probe crash was hit and the runner is re-running on a white-margin-padded copy -- a full
+    //! SECOND recognition pass. Surface a persistent banner so the restart reads as a recovery step, not a silent
+    //! duplicate run. The em-dash is injected via QChar(0x2014) to keep this source ASCII (matching this file's idiom).
+    const QString dash = QString(QChar(0x2014));
+    m_retryNotice = muse::qtrc("reprise", "A page had trouble %1 retrying to recover your music...").arg(dash);
+    emit retryNoticeChanged();
 }
 
 QString ImportProgressModel::formatPagesLabel(const QString& pages) const

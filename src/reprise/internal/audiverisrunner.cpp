@@ -1179,6 +1179,10 @@ void AudiverisRunner::onFinished(int exitCode)
             const io::path_t paddedPdf = buildPaddedPdf(m_pdfPath, m_dpi);
             if (!paddedPdf.empty())
             {
+                //! FIX 1: surface the recovery pass BEFORE re-entering start(). The #711 pad-retry is a full SECOND
+                //! Audiveris run; without this the progress bar restarting looks like a silent duplicate to the user.
+                emit retryingAfterError();
+
                 //! Re-launch an identical run on the padded PDF. start() swaps m_pdfPath and resets per-run state, but
                 //! leaves m_retriedWithPad set, so this cannot loop.
                 start(paddedPdf, m_pages, m_dpi, m_options);

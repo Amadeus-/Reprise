@@ -67,6 +67,10 @@ class ImportProgressModel : public QObject, public muse::Contextable, public mus
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     //! The streamed Audiveris stdout/stderr, surfaced in the popup's "Details" recognition-log expander.
     Q_PROPERTY(QString logText READ logText NOTIFY logTextChanged)
+    //! FIX 1: a persistent recovery banner. Empty on a normal run; set non-empty once AudiverisRunner hits the #711
+    //! edge-probe crash and re-runs on a white-margin-padded copy (a full SECOND pass), so the popup can explain WHY
+    //! the progress bar restarts instead of it reading as a silent duplicate run.
+    Q_PROPERTY(QString retryNotice READ retryNotice NOTIFY retryNoticeChanged)
     Q_PROPERTY(bool closePopupOnComplete READ closePopupOnComplete WRITE setClosePopupOnComplete NOTIFY closePopupOnCompleteChanged)
 
     QML_ELEMENT
@@ -93,6 +97,7 @@ public:
     QString progressCaption() const;
     QString status() const { return m_status; }
     QString logText() const { return m_logText; }
+    QString retryNotice() const { return m_retryNotice; }
 
     bool closePopupOnComplete() const;
     void setClosePopupOnComplete(bool close);
@@ -118,6 +123,7 @@ signals:
     void progressChanged();
     void statusChanged();
     void logTextChanged();
+    void retryNoticeChanged();
     void closePopupOnCompleteChanged();
 
     //! Ask the popup QML to hide() itself (auto-close on success when the checkbox is set).
@@ -130,6 +136,10 @@ private:
 
     void onRunnerProgress(int percent, int sheet, int total, const QString& stageHuman);
     void onRunnerFinished(bool ok, const QString& outputPath, const QString& error, const QString& tail);
+
+    //! FIX 1: the runner hit the #711 edge-probe crash and is starting the padded recovery pass -- set the persistent
+    //! recovery banner (m_retryNotice) so the popup explains the restart. Wired to AudiverisRunner::retryingAfterError.
+    void onRunnerRetrying();
 
     //! Append one streamed Audiveris output line to the recognition log (capped).
     void appendLog(const QString& line);
@@ -209,6 +219,10 @@ private:
     int m_totalPages = -1;
     QString m_status = "running";
     QString m_logText;
+
+    //! FIX 1: the recovery banner text. Set by onRunnerRetrying() when the #711 pad-retry begins; cleared per fresh
+    //! import in load(). Persists through the (second) recovery pass so the user keeps seeing why the bar restarted.
+    QString m_retryNotice;
 
     //! Set just before the imported score is opened; consumed on the next master-notation change.
     bool m_pendingGrandPianoReset = false;

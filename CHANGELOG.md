@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.4] — 2026-11-21
+
+### Changed
+- **Recovery retries now explain themselves.** When Audiveris trips on a page and Reprise re-runs to recover the
+  rest of the music, the progress window shows a gold "A page had trouble — retrying to recover your music…" banner
+  during the recovery pass — instead of silently appearing to process the pages a second time.
+
+### Fixed
+- **The progress window's recognition log can be copied.** The Details log now supports drag-selection, Ctrl+A /
+  Ctrl+C, and a Copy button — matching the "Recognition failed" window.
+
 ## [0.16.3] — 2026-11-21
 
 ### Added

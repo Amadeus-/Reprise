@@ -87,6 +87,13 @@ StyledDialogView {
         }
     }
 
+    //! FIX 2: clipboard helper for the "Details" recognition-log Copy (QtQuick has no clipboard binding, so copying the
+    //! whole log must go through C++). Reuses ImportErrorModel::copyToClipboard -- the SAME helper the error window uses --
+    //! so the progress view-model needs no clipboard plumbing of its own.
+    ImportErrorModel {
+        id: clipboard
+    }
+
     Component.onCompleted: {
         //! Hand the view-model this popup's own window, so the app-lifetime controller can close + settle it safely on
         //! the success auto-close path (avoids a bare root.hide() racing the project-open churn -> onClose double-call).
@@ -334,6 +341,51 @@ StyledDialogView {
                     wrapMode: Text.Wrap
                 }
 
+                //! ===== Recovery banner (FIX 1) =====
+                //! Shown only when AudiverisRunner hit the #711 edge-probe crash and is re-running on a padded copy (a full
+                //! SECOND recognition pass). A distinct gold-tinted band -- separate from the dark "Analyzing page..." step
+                //! line above -- so the progress bar restarting reads as a recovery step, not a silent duplicate run. Set
+                //! once by the model (onRunnerRetrying) and persists for the rest of the run.
+                Rectangle {
+                    id: retryBanner
+
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: retryBannerLabel.implicitHeight + 16
+
+                    visible: progressModel.retryNotice.length > 0
+
+                    radius: 4
+                    color: "#FBF3DE"
+                    border.width: 1
+                    border.color: root.brandGold
+
+                    //! Gold left accent bar.
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        radius: parent.radius
+                        color: root.brandGold
+                    }
+
+                    StyledTextLabel {
+                        id: retryBannerLabel
+
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 10
+
+                        text: progressModel.retryNotice
+                        color: root.brandGoldDark
+                        font.bold: true
+                        horizontalAlignment: Text.AlignLeft
+                        wrapMode: Text.Wrap
+                    }
+                }
+
                 // ===== Gold progress bar + caption =====
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -467,28 +519,83 @@ StyledDialogView {
                         border.width: 1
                         border.color: root.cardStroke
 
-                        Flickable {
+                        //! FIX 2: themed scrollbars + a read-only SELECTABLE log, mirroring ImportErrorDialog's log tail so
+                        //! the progress window reaches parity with the error window (drag-select, Ctrl+A select-all, Ctrl+C
+                        //! copy; Ctrl+C with no selection copies the whole log).
+                        StyledFlickable {
                             id: logFlick
 
                             anchors.fill: parent
                             anchors.margins: 8
-                            clip: true
                             contentWidth: width
                             contentHeight: logLabel.implicitHeight
 
-                            //! Keep the newest streamed output in view.
-                            onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
+                            //! Keep the newest streamed output in view, but never yank the view while the user is selecting.
+                            onContentHeightChanged: {
+                                if (!logLabel.selectionActive) {
+                                    contentY = Math.max(0, contentHeight - height)
+                                }
+                            }
 
-                            StyledTextLabel {
+                            //! Read-only but SELECTABLE (mouse AND keyboard). Same pattern as ImportErrorDialog's tailLabel.
+                            TextEdit {
                                 id: logLabel
                                 width: parent.width
                                 text: progressModel.logText
                                 color: root.inkStep
                                 font: ui.theme.bodyFont
                                 horizontalAlignment: Text.AlignLeft
-                                wrapMode: Text.Wrap
+                                wrapMode: TextEdit.Wrap
+                                readOnly: true
+                                selectByMouse: true
+                                selectByKeyboard: true
+                                activeFocusOnPress: true
+                                persistentSelection: true
+                                selectionColor: root.brandGold
                                 opacity: 0.85
+
+                                readonly property bool selectionActive: selectionStart !== selectionEnd
+
+                                Keys.onPressed: function(event) {
+                                    if (event.modifiers & Qt.ControlModifier) {
+                                        if (event.key === Qt.Key_A) {
+                                            logLabel.selectAll()
+                                            event.accepted = true
+                                        } else if (event.key === Qt.Key_C) {
+                                            if (logLabel.selectionStart === logLabel.selectionEnd) {
+                                                clipboard.copyToClipboard(progressModel.logText)
+                                            } else {
+                                                logLabel.copy()
+                                            }
+                                            event.accepted = true
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+
+                    //! FIX 2: a Copy affordance that copies the WHOLE recognition log (parity with the error window's Copy).
+                    Row {
+                        Layout.fillWidth: true
+
+                        visible: detailsBlock.expanded
+
+                        FlatButton {
+                            text: qsTrc("global", "Copy")
+
+                            normalColor: root.brandGold
+                            hoverHitColor: root.brandGoldLight
+
+                            contentItem: Component {
+                                StyledTextLabel {
+                                    text: qsTrc("global", "Copy")
+                                    color: root.brandNavyDeep
+                                    font: ui.theme.bodyFont
+                                }
+                            }
+
+                            onClicked: clipboard.copyToClipboard(progressModel.logText)
                         }
                     }
                 }
