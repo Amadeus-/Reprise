@@ -48,6 +48,16 @@ Item {
     //! True once the model rendered at least one original page from the held proofing map (right after an OMR import).
     readonly property bool hasContent: magModel.hasMap
 
+    //! THEME-AWARE read-only "original scan" surface tint -- the SAME binding ProofingStrip.qml uses, kept in sync by
+    //! hand (both panels are view-only scan surfaces and should match). Light theme -> soft warm ivory; dark theme ->
+    //! warm muted charcoal (a bright cream would glare in the dark). Dark vs light comes from the theme's own primary
+    //! background luminance, so the tint tracks whatever theme the user picks.
+    readonly property color readOnlyCream: {
+        let bg = ui.theme.backgroundPrimaryColor
+        let lum = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b
+        return lum < 0.5 ? Qt.rgba(0.16, 0.145, 0.12, 1.0) : Qt.rgba(0.969, 0.945, 0.882, 1.0)
+    }
+
     ProofingMagnifierModel {
         id: magModel
     }
@@ -56,9 +66,11 @@ Item {
         magModel.load()
     }
 
+    //! Whole-panel cream: the header ("Full detail view · Measure N · <note>") and all panel padding sit on the SAME
+    //! readOnlyCream, so the entire panel reads as a cream read-only reference with the scan detail matted in the middle.
     Rectangle {
         anchors.fill: parent
-        color: ui.theme.backgroundPrimaryColor
+        color: root.readOnlyCream
     }
 
     ColumnLayout {
@@ -127,14 +139,14 @@ Item {
             //! ~3.5 heads fit across or ~4 tall (so at least a little neighbouring context stays visible for comparison).
             //! A wider/taller floated window lifts those caps, so floating the panel shows more context at the same size.
             readonly property real noteBaseZoom: magModel.boxH > 0 ? targetHeadPx / magModel.boxH : 2
-            readonly property real noteCapW: magModel.boxW > 0 ? width / (magModel.boxW * 3.5) : noteBaseZoom
-            readonly property real noteCapH: magModel.boxH > 0 ? height / (magModel.boxH * 4) : noteBaseZoom
+            readonly property real noteCapW: magModel.boxW > 0 ? detailArea.width / (magModel.boxW * 3.5) : noteBaseZoom
+            readonly property real noteCapH: magModel.boxH > 0 ? detailArea.height / (magModel.boxH * 4) : noteBaseZoom
             readonly property real noteZoom: Math.max(0.4, Math.min(noteBaseZoom, noteCapW, noteCapH, 6))
 
             //! Fallback (measure) zoom: frame the WHOLE measure rect with a small pad, so the dashed marker reads as a
             //! measure-level fallback rather than a tight note close-up.
-            readonly property real fitZoom: (magModel.boxW > 0 && magModel.boxH > 0 && width > 0 && height > 0)
-                                            ? Math.max(0.1, Math.min(width / (magModel.boxW * 1.1), height / (magModel.boxH * 1.1), 6))
+            readonly property real fitZoom: (magModel.boxW > 0 && magModel.boxH > 0 && detailArea.width > 0 && detailArea.height > 0)
+                                            ? Math.max(0.1, Math.min(detailArea.width / (magModel.boxW * 1.1), detailArea.height / (magModel.boxH * 1.1), 6))
                                             : 1
 
             //! Effective magnification = the auto-chosen note/measure zoom times the user's mouse-wheel zoom (model.userZoom,
@@ -153,88 +165,102 @@ Item {
             //! crop into a viewport-sized Image gives the magnification without a giant or off-screen image item (Qt
             //! declined to paint both of those). The crop aspect == the viewport aspect, so Stretch fills it undistorted,
             //! and scaling crop->viewport works out to exactly `zoom` screen px per sheet px -- matching the overlays.
-            readonly property real clipW: zoom > 0 ? (width / zoom) * sheetToRendered : renderedW
-            readonly property real clipH: zoom > 0 ? (height / zoom) * sheetToRendered : renderedH
+            readonly property real clipW: zoom > 0 ? (detailArea.width / zoom) * sheetToRendered : renderedW
+            readonly property real clipH: zoom > 0 ? (detailArea.height / zoom) * sheetToRendered : renderedH
             readonly property real clipX: boxCx * sheetToRendered - clipW / 2
             readonly property real clipY: boxCy * sheetToRendered - clipH / 2
 
             Rectangle {
                 anchors.fill: parent
-                color: "white"
+                color: root.readOnlyCream
                 border.color: ui.theme.strokeColor
                 border.width: 1
             }
 
-            Image {
-                id: pageImage
+            //! Inset "matte" container: holds the magnified crop AND its highlight/fallback overlays, inset ~14px so the
+            //! readOnlyCream background shows as a frame around the detail. Because the crop and its overlays share THIS
+            //! container, the inset shifts them together and the highlight stays aligned with the note. The zoom/clip math
+            //! above reads detailArea.width/height, so the crop fills exactly this inset box (scan colors untouched -- no
+            //! tint over the scan; the cream only frames it).
+            Item {
+                id: detailArea
 
                 anchors.fill: parent
-                visible: view.pageEntry !== null && view.clipW > 0 && view.clipH > 0
+                anchors.margins: 14
+                clip: true
 
-                //! The crop shares the viewport aspect, so Stretch magnifies it to fill with no distortion.
-                fillMode: Image.Stretch
-                //! Nearest-neighbour: at high user-zoom the crop upscales past the rendered PNG's own resolution, where
-                //! smooth (bilinear) filtering would blur the scan -- crisp pixels read better for proofing than a smear.
-                smooth: false
-                source: view.pageEntry ? view.pageEntry.url : ""
-                //! Synchronous decode: an async load left the crop blank for >1s after each selection (the clip re-extract
-                //! was still Loading). cache keeps the decoded page, so only the first note on a page costs a decode; the
-                //! rest re-crop instantly. A proofing close-up must appear the instant the note is selected.
-                asynchronous: false
-                cache: true
-                //! Decode only the crop around the followed note/measure (rendered px); re-crops on selection with no
-                //! page re-render.
-                sourceClipRect: Qt.rect(view.clipX, view.clipY, view.clipW, view.clipH)
-            }
+                Image {
+                    id: pageImage
 
-            //! Matched-note highlight: a SOLID accent box over the exact recognised head (PhotoScore purple-ish via the
-            //! theme accent). The note is always centred, so this is a fixed centred overlay, drawn OUTSIDE the scaled
-            //! image so its border stays crisp and 2px at any zoom.
-            Rectangle {
-                id: noteHighlight
+                    anchors.fill: parent
+                    visible: view.pageEntry !== null && view.clipW > 0 && view.clipH > 0
 
-                visible: magModel.hasCurrent && !magModel.isFallback && view.pageEntry !== null
-
-                width: Math.max(3, magModel.boxW * view.zoom)
-                height: Math.max(3, magModel.boxH * view.zoom)
-                x: (view.width - width) / 2
-                y: (view.height - height) / 2
-
-                color: Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
-                border.color: ui.theme.accentColor
-                border.width: 2
-                radius: 2
-            }
-
-            //! Measure-level FALLBACK marker: a DASHED accent outline over the whole measure rect (grace/untrusted/
-            //! unmatched note, or a measure selection). Visibly a fallback -- never a solid note-point pretending
-            //! precision. QtQuick.Shapes is unused in this codebase, so draw the dashes with a plain Canvas. Centred
-            //! overlay like the note highlight (the measure box is likewise centred in the viewport).
-            Canvas {
-                id: fallbackMarker
-
-                visible: magModel.hasCurrent && magModel.isFallback && view.pageEntry !== null
-
-                width: Math.max(3, magModel.boxW * view.zoom)
-                height: Math.max(3, magModel.boxH * view.zoom)
-                x: (view.width - width) / 2
-                y: (view.height - height) / 2
-
-                onPaint: {
-                    let ctx = getContext("2d")
-                    ctx.reset()
-                    ctx.clearRect(0, 0, width, height)
-                    ctx.strokeStyle = ui.theme.accentColor
-                    ctx.lineWidth = 2
-                    ctx.setLineDash([10, 6])
-                    ctx.strokeRect(1, 1, Math.max(0, width - 2), Math.max(0, height - 2))
+                    //! The crop shares the viewport aspect, so Stretch magnifies it to fill with no distortion.
+                    fillMode: Image.Stretch
+                    //! Nearest-neighbour: at high user-zoom the crop upscales past the rendered PNG's own resolution, where
+                    //! smooth (bilinear) filtering would blur the scan -- crisp pixels read better for proofing than a smear.
+                    smooth: false
+                    source: view.pageEntry ? view.pageEntry.url : ""
+                    //! Synchronous decode: an async load left the crop blank for >1s after each selection (the clip re-extract
+                    //! was still Loading). cache keeps the decoded page, so only the first note on a page costs a decode; the
+                    //! rest re-crop instantly. A proofing close-up must appear the instant the note is selected.
+                    asynchronous: false
+                    cache: true
+                    //! Decode only the crop around the followed note/measure (rendered px); re-crops on selection with no
+                    //! page re-render.
+                    sourceClipRect: Qt.rect(view.clipX, view.clipY, view.clipW, view.clipH)
                 }
 
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
-                onVisibleChanged: {
-                    if (visible) {
-                        requestPaint()
+                //! Matched-note highlight: a SOLID accent box over the exact recognised head (PhotoScore purple-ish via the
+                //! theme accent). The note is always centred, so this is a fixed centred overlay, drawn OUTSIDE the scaled
+                //! image so its border stays crisp and 2px at any zoom. Centred in detailArea (parent), so it tracks the
+                //! inset crop exactly.
+                Rectangle {
+                    id: noteHighlight
+
+                    visible: magModel.hasCurrent && !magModel.isFallback && view.pageEntry !== null
+
+                    width: Math.max(3, magModel.boxW * view.zoom)
+                    height: Math.max(3, magModel.boxH * view.zoom)
+                    x: (parent.width - width) / 2
+                    y: (parent.height - height) / 2
+
+                    color: Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
+                    border.color: ui.theme.accentColor
+                    border.width: 2
+                    radius: 2
+                }
+
+                //! Measure-level FALLBACK marker: a DASHED accent outline over the whole measure rect (grace/untrusted/
+                //! unmatched note, or a measure selection). Visibly a fallback -- never a solid note-point pretending
+                //! precision. QtQuick.Shapes is unused in this codebase, so draw the dashes with a plain Canvas. Centred
+                //! overlay like the note highlight (the measure box is likewise centred in the viewport).
+                Canvas {
+                    id: fallbackMarker
+
+                    visible: magModel.hasCurrent && magModel.isFallback && view.pageEntry !== null
+
+                    width: Math.max(3, magModel.boxW * view.zoom)
+                    height: Math.max(3, magModel.boxH * view.zoom)
+                    x: (parent.width - width) / 2
+                    y: (parent.height - height) / 2
+
+                    onPaint: {
+                        let ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.clearRect(0, 0, width, height)
+                        ctx.strokeStyle = ui.theme.accentColor
+                        ctx.lineWidth = 2
+                        ctx.setLineDash([10, 6])
+                        ctx.strokeRect(1, 1, Math.max(0, width - 2), Math.max(0, height - 2))
+                    }
+
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    onVisibleChanged: {
+                        if (visible) {
+                            requestPaint()
+                        }
                     }
                 }
             }

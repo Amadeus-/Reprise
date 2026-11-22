@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.8] — 2026-11-22
+
+### Changed
+- **The original-scan band and detail view now carry a warm, read-only tint.** Both proofing panels use a soft
+  cream/ivory background (theme-aware) that sets them apart from the white editable score and makes clear they're
+  for reference, not editing. The scan itself keeps its true colors — only the panel background and the detail
+  view's frame are tinted.
+
 ## [0.16.7] — 2026-11-22
 
 ### Added

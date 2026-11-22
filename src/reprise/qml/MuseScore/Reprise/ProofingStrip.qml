@@ -52,6 +52,17 @@ Rectangle {
     //! Fixed height of the always-present header row (the host uses it as the collapsed height).
     readonly property int headerHeight: 32
 
+    //! THEME-AWARE read-only "original scan" surface tint. The two proofing panels paint this behind the scan so they
+    //! read as distinct view-only surfaces, not pure white editor space. In a LIGHT theme it's a soft warm ivory
+    //! (clearly off-white, low saturation, not yellow); in a DARK theme a bright cream would glare, so we drop to a
+    //! warm muted charcoal instead. Dark vs light is judged from the theme's own primary background luminance, so the
+    //! tint tracks any theme the user picks. ProofingMagnifier.qml carries the SAME binding for a matched look.
+    readonly property color readOnlyCream: {
+        let bg = ui.theme.backgroundPrimaryColor
+        let lum = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b
+        return lum < 0.5 ? Qt.rgba(0.16, 0.145, 0.12, 1.0) : Qt.rgba(0.969, 0.945, 0.882, 1.0)
+    }
+
     color: ui.theme.backgroundPrimaryColor
     clip: true
 
@@ -221,7 +232,7 @@ Rectangle {
 
         Rectangle {
             anchors.fill: parent
-            color: "white"
+            color: root.readOnlyCream
             border.color: ui.theme.strokeColor
             border.width: 1
         }
