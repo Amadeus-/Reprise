@@ -8,6 +8,16 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.5] — 2026-11-22
+
+### Added
+- **Tilted scans are straightened automatically before recognition.** Reprise now measures each page's skew and,
+  when a page is rotated, straightens it before running recognition — which markedly improves results on tilted
+  scans (far fewer misread measures, barlines, and key signatures). Pages that are already straight are left
+  untouched. A "Straightening the scan…" step appears in the progress window while it runs, the proofing view shows
+  the straightened page with its highlight boxes aligned, and your untouched original scan is preserved alongside
+  the straightened version inside the Reprise project (`.repr`).
+
 ## [0.16.4] — 2026-11-21
 
 ### Changed

@@ -24,6 +24,7 @@
 
 #include <memory>
 
+#include <QElapsedTimer>
 #include <QList>
 #include <QObject>
 #include <QPair>
@@ -137,6 +138,19 @@ private:
     void onRunnerProgress(int percent, int sheet, int total, const QString& stageHuman);
     void onRunnerFinished(bool ok, const QString& outputPath, const QString& error, const QString& tail);
 
+    //! PART 1 deskew progress: the runner straightened one page -- mirror its stage label into the popup as a determinate
+    //! per-page bar ("Straightening page N of M..."), shown before recognition. Wired to AudiverisRunner::preprocessing.
+    void onRunnerPreprocessing(int page, int total, const QString& stageHuman);
+
+    //! Launch Audiveris on `inputPath` (the deskewed PDF, or the original when nothing was straightened), rebuilding the
+    //! RecognitionOptions from the retained per-import fields. The single place load() and the deskew loop converge on.
+    void startRecognition(const QString& inputPath);
+
+    //! One turn of the CHUNKED deskew loop: process the next selected page via the runner, then re-arm itself on the next
+    //! event-loop turn so the popup repaints and Cancel stays responsive between pages. When every page is done it calls
+    //! finishDeskew() and starts recognition on the result (or the original when the regression gate left it a no-op).
+    void stepDeskew();
+
     //! FIX 1: the runner hit the #711 edge-probe crash and is starting the padded recovery pass -- set the persistent
     //! recovery banner (m_retryNotice) so the popup explains the restart. Wired to AudiverisRunner::retryingAfterError.
     void onRunnerRetrying();
@@ -241,5 +255,19 @@ private:
     //! surfacePartialImportNoticeIfAny() at the Done site to build + surface the "Import finished" notice. Reset per import in load().
     QList<QPair<int, QString> > m_skippedPages;
     bool m_multiMovement = false;
+
+    //! PART 1 deskew chunk-loop state. m_deskewTotal is the selected page count beginDeskew() armed; m_deskewNext is the
+    //! next page stepDeskew() will process; m_deskewAborted is set by cancel() so a pending step aborts instead of starting
+    //! recognition. Reset per import in load().
+    int m_deskewTotal = 0;
+    int m_deskewNext = 0;
+    bool m_deskewAborted = false;
+
+    //! Minimum-visible-duration timer for the "Straightening..." banner. Started the first time the deskew preprocessing
+    //! stage is shown (onRunnerPreprocessing) and read when the chunk loop finishes (stepDeskew): on an instant single-page
+    //! deskew the banner would flash sub-perceptibly, so if less than DESKEW_MIN_VISIBLE_MS has elapsed, startRecognition is
+    //! deferred by the remainder (via a timer, never a UI-thread sleep). Invalidated per import in load(); a no-deskew import
+    //! never starts it (the chunk loop is only entered when beginDeskew armed pages), so it is inherently deskew-only.
+    QElapsedTimer m_deskewBannerTimer;
 };
 }

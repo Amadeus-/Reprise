@@ -23,10 +23,12 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <QImage>
 #include <QList>
 #include <QMap>
 #include <QObject>
@@ -41,6 +43,7 @@
 #include "ilanguagepackservice.h"
 
 class QProcess;
+class QPdfDocument;
 
 namespace mu::reprise {
 //! Per-import recognition options collected from the intake dialog's "Options" panel (or the headless/MCP args),
@@ -69,6 +72,11 @@ public:
     explicit AudiverisRunner(const muse::modularity::ContextPtr& iocCtx, QObject* parent = nullptr)
         : QObject(parent), muse::Contextable(iocCtx) {}
 
+    //! Out-of-line so m_deskewPdf (unique_ptr<QPdfDocument>, forward-declared in this header) is destroyed in the .cpp
+    //! where QPdfDocument is a complete type -- importprogressmodel.cpp holds a shared_ptr<AudiverisRunner> but never
+    //! sees QtPdf, so the implicit destructor cannot be emitted there.
+    ~AudiverisRunner() override;
+
     //! Locate the Audiveris executable: the configured override (if set and still present) wins, else the detection
     //! search order ported from the C# Reprise Recognizer. Empty if not found.
     muse::io::path_t findAudiveris() const;
@@ -91,6 +99,49 @@ public:
 
     //! Kill the running Audiveris process and abandon the run. finished() is NOT emitted after a cancel().
     void cancel();
+
+    //! === PART 1: per-page DESKEW (pre-Audiveris) ============================================================
+    //! A projection-profile skew ENGINE plus a CHUNKED pipeline the progress model drives one page per event-loop turn,
+    //! so the popup stays responsive and Cancel works mid-straighten. Each SELECTED page is rasterized at the run DPI, its
+    //! own skew measured, and (only past the threshold) rotated onto a white canvas; the straightened pages are re-emitted
+    //! as ONE multi-page PDF fed to start(). Regression-gated: a page inside the dead-band is left untouched, and when NO
+    //! page needs correction finishDeskew() returns empty so the ORIGINAL is fed to Audiveris byte-identical.
+
+    //! Estimate a single page's skew (degrees) by projection-profile variance: downsample to <=~1000 px, binarize to an
+    //! ink mask, and for theta in [-6,+6] deg (0.2 deg steps) project the ink onto the rotated vertical axis and take the
+    //! row-sum VARIANCE -- staff lines peak (max variance) when level. Returns 0.0 inside the +-0.2 deg dead-band (no-op)
+    //! and 0.0 for an out-of-range |best|>6 deg result (never apply a wild angle). Sign matches deskewImage()/QTransform.
+    static double detectSkewAngle(const QImage& gray);
+
+    //! Rotate a page by angleDeg (QTransform().rotate, smooth) composited onto a WHITE canvas (no black corners) plus the
+    //! standard #711 white margin, so a straightened page keeps the same edge-crash protection as the pad paths.
+    static QImage deskewImage(const QImage& src, double angleDeg);
+
+    //! Open `input` (PDF via QPdfDocument, else a raster image via QImageReader), resolve the SELECTED page indices
+    //! (expandSheets semantics; all pages when none specified), and arm the chunked state. Returns true when there is at
+    //! least one page to process (the model then drives deskewStep()/finishDeskew()); false -> the caller skips straight to
+    //! start() on the original. Does NOT launch Audiveris.
+    bool beginDeskew(const muse::io::path_t& input, const QString& pages, int dpi);
+
+    //! Number of SELECTED pages beginDeskew() armed (what the chunk loop iterates).
+    int deskewPageCount() const { return static_cast<int>(m_deskewPages.size()); }
+
+    //! Process the i-th SELECTED page: render -> detectSkewAngle -> rotate if |angle|>=0.2 deg (recorded as rotated) else
+    //! keep as-is (still rasterized). Accumulates the resulting QImage + its angle, and emits preprocessing(i+1,total,...).
+    void deskewStep(int i);
+
+    //! Assemble the accumulated straightened pages into ONE multi-page PDF (page sized px*72/dpi, order preserved), set it
+    //! as the consumed input, and return its path. Returns EMPTY when NO page needed correction (caller feeds the original
+    //! untouched -- the byte-identical no-op). PART 2 will read the per-page angles (deskewAnglesDeg) for .repr provenance.
+    muse::io::path_t finishDeskew();
+
+    //! Per-SELECTED-page skew angles (degrees; 0.0 where left untouched), in page order. Retained after finishDeskew()
+    //! for PART 2's .repr provenance.
+    std::vector<double> deskewAnglesDeg() const { return m_deskewAngles; }
+
+    //! The input Audiveris actually recognized after any preprocessing (deskew + #711 pad) -- i.e. m_pdfPath. The
+    //! Two-Pane Proofing coordinate map is built against THIS, so the band/magnifier render the page the boxes are in.
+    muse::io::path_t consumedInputPath() const { return m_pdfPath; }
 
     //! Number of pages recognised in this run: the count of explicitly requested sheets, or the whole-book total
     //! (parsed from Audiveris' output) when every page was processed. Valid once the run has reported a total.
@@ -139,6 +190,11 @@ signals:
     //! pass is explained rather than looking like a silent duplicate run. Fires at most once per import (guarded by the
     //! same m_retriedWithPad latch that gates the pad retry).
     void retryingAfterError();
+
+    //! PART 1 deskew progress: the current page (1-based) of total being straightened, plus an already-localised stage
+    //! label ("Straightening the scan..." when total==1, else "Straightening page N of M..."). Emitted once per
+    //! deskewStep(); the model mirrors it into the stage text.
+    void preprocessing(int page, int total, const QString& stageHuman);
 
 private:
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
@@ -273,6 +329,22 @@ private:
     //! "page X" caption are monotonic and never regress on a transient stdout re-order or a late total correction.
     int m_maxSheet = 0;
     int m_maxPercent = -1;
+
+    //! === PART 1 deskew state ================================================================================
+    //! Armed by beginDeskew(), consumed by deskewStep()/finishDeskew(). The source is held open across the chunked steps
+    //! (the PDF document, or the pre-decoded image frames) so each step renders without reparsing. m_deskewImages
+    //! accumulates the per-page results in order; m_deskewAngles the matching angles; m_deskewRotatedAny gates the
+    //! byte-identical no-op (finishDeskew returns empty unless at least one page was actually rotated).
+    std::unique_ptr<QPdfDocument> m_deskewPdf;
+    std::vector<QImage> m_deskewSourceFrames;
+    bool m_deskewIsPdf = false;
+    std::vector<int> m_deskewPages;
+    int32_t m_deskewDpi = 0;
+    QString m_deskewInputPath;
+    QString m_deskewOutDir;
+    std::vector<QImage> m_deskewImages;
+    std::vector<double> m_deskewAngles;
+    bool m_deskewRotatedAny = false;
 
     QStringList m_tail;
 

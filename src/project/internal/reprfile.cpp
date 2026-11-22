@@ -184,7 +184,9 @@ bool parseProofingMap(const ByteArray& bytes, ProofingMap& out)
 
 ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
                        const std::string& originalFileName, const std::string& originalSuffix,
-                       const std::string& importJson, const ProofingMap& map)
+                       const std::string& importJson, const ProofingMap& map,
+                       const ByteArray& proofingScan, const std::string& proofingScanSuffix,
+                       const std::vector<double>& skewAnglesDeg)
 {
     ByteArray out;
     Buffer buf(&out);
@@ -208,6 +210,26 @@ ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
         manifest.set("import", importObj);
     }
 
+    //! proofingScan -- the deskewed render, recorded ONLY when a straightened copy was produced (proofingScan non-empty).
+    //! Old builds ignore this unknown manifest object; when absent, the bundle is byte-identical to a pre-0.16.5 save.
+    const std::string proofingScanSfx = proofingScanSuffix.empty() ? std::string("pdf") : proofingScanSuffix;
+    if (!proofingScan.empty())
+    {
+        JsonObject psObj;
+        psObj.set("suffix", proofingScanSfx);
+        psObj.set("deskewed", true);
+        if (!skewAnglesDeg.empty())
+        {
+            JsonArray angles;
+            for (double a : skewAnglesDeg)
+            {
+                angles << a;
+            }
+            psObj.set("skewAnglesDeg", angles);
+        }
+        manifest.set("proofingScan", psObj);
+    }
+
     zw.addFile(REPR_ENTRY_MANIFEST, JsonDocument(manifest).toJson(JsonDocument::Format::Indented));
 
     //! score.mscz -- a real standalone .mscz stored verbatim (ZIP-in-ZIP; already compressed, so deflate costs ~0).
@@ -216,6 +238,12 @@ ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
     //! original.<ext> -- the scan, byte-for-byte, extension preserved from the import source.
     const std::string origEntry = "original." + (originalSuffix.empty() ? std::string("dat") : originalSuffix);
     zw.addFile(origEntry, original);
+
+    //! proofing-scan.<ext> -- the deskewed render, written ONLY when present (keeps a straight import byte-identical).
+    if (!proofingScan.empty())
+    {
+        zw.addFile(REPR_ENTRY_PROOFINGSCAN + "." + proofingScanSfx, proofingScan);
+    }
 
     //! proofingmap.json -- the scan<->score coordinate map (sourcePath omitted; re-derived on open).
     zw.addFile(REPR_ENTRY_PROOFINGMAP, serializeProofingMap(map));
@@ -295,6 +323,46 @@ Ret readRepr(const path_t& path, ReprBundle& out)
             }
         }
     }
+
+    //! Optional (0.16.5+) proofing-scan.<ext> -- the deskewed render. Read the manifest proofingScan object first (its
+    //! suffix + the per-page skew angles), then extract the entry. Mirror the original's manifest-preferred-then-glob
+    //! fallback so a bundle whose manifest lost the suffix still restores the render. Absence is tolerated (legacy bundles).
+    if (manifest.contains("proofingScan"))
+    {
+        const JsonObject psObj = manifest.value("proofingScan").toObject();
+        out.proofingScanSuffix = psObj.value("suffix").toStdString();
+
+        const JsonArray angles = psObj.value("skewAnglesDeg").toArray();
+        for (size_t i = 0; i < angles.size(); ++i)
+        {
+            out.skewAnglesDeg.push_back(angles.at(i).toDouble());
+        }
+    }
+
+    if (!out.proofingScanSuffix.empty())
+    {
+        out.proofingScan = zip.fileData(REPR_ENTRY_PROOFINGSCAN + "." + out.proofingScanSuffix);
+    }
+    if (out.proofingScan.empty())
+    {
+        const std::string prefix = REPR_ENTRY_PROOFINGSCAN + ".";
+        for (const ZipReader::FileInfo& fi : zip.fileInfoList())
+        {
+            if (!fi.isFile)
+            {
+                continue;
+            }
+
+            const std::string name = fi.filePath.toStdString();
+            if (name.rfind(prefix, 0) == 0)
+            {
+                out.proofingScan = zip.fileData(name);
+                out.proofingScanSuffix = name.substr(prefix.size());
+                break;
+            }
+        }
+    }
+    out.hasProofingScan = !out.proofingScan.empty();
 
     const ByteArray mapBytes = zip.fileData(REPR_ENTRY_PROOFINGMAP);
     if (!mapBytes.empty() && parseProofingMap(mapBytes, out.map))

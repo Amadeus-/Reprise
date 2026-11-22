@@ -87,9 +87,12 @@ public:
     virtual notation::IMasterNotationPtr masterNotation() const = 0;
     virtual IProjectAudioSettingsPtr audioSettings() const = 0;
 
-    // Reprise .repr: record the source scan + manifest provenance so Save/Save-As can (re)assemble the bundle.
+    // Reprise .repr: record the source scan + manifest provenance so Save/Save-As can (re)assemble the bundle. The
+    // optional proofingScanPath/Suffix carry the deskewed render Audiveris consumed (stored alongside the literal original).
     virtual void setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
-                                   const std::string& importProvenanceJson) = 0;
+                                   const std::string& importProvenanceJson,
+                                   const muse::io::path_t& proofingScanPath = {},
+                                   const std::string& proofingScanSuffix = {}) = 0;
 };
 
 using INotationProjectPtr = std::shared_ptr<INotationProject>;

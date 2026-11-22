@@ -22,6 +22,9 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "../inotationproject.h"
 
 #include "async/asyncable.h"
@@ -123,7 +126,9 @@ public:
     // Reprise: record the source scan + manifest provenance so Save/Save-As can (re)assemble the .repr bundle. Set once
     // on import (the auto-save-as-.repr) and again when opening an existing .repr (originalScanPath = the extracted scan).
     void setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
-                           const std::string& importProvenanceJson) override;
+                           const std::string& importProvenanceJson,
+                           const muse::io::path_t& proofingScanPath = {},
+                           const std::string& proofingScanSuffix = {}) override;
 
 private:
     void setupProject();
@@ -176,6 +181,11 @@ private:
     std::string m_reprOriginalSuffix;      // e.g. "pdf"
     std::string m_reprOriginalFileName;    // e.g. "waltz.pdf" (recorded in the manifest)
     std::string m_reprManifestImport;      // manifest "import" provenance JSON object (compact), re-emitted on save
+    // Reprise .repr (0.16.5+): the deskewed render Audiveris consumed, stored alongside the literal original. Empty when
+    // no page was deskewed (bundle then stays byte-identical to a pre-0.16.5 save).
+    muse::io::path_t m_reprProofingScanPath; // on-disk path to read the deskewed render bytes from when saving the bundle
+    std::string m_reprProofingScanSuffix;    // e.g. "pdf"
+    std::vector<double> m_reprSkewAnglesDeg; // optional per-page deskew angles (provenance only)
 
     bool m_isNewlyCreated = false; /// true if the file has never been saved yet
     bool m_isImported = false;

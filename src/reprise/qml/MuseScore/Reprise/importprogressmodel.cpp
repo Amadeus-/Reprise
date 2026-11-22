@@ -67,6 +67,12 @@ using namespace muse;
 //! just-opened score's master-notation change fire so the Grand-Piano override lands before the model is gone.
 static constexpr int AUTO_CLOSE_DELAY_MS = 1400;
 
+//! Minimum time (ms) the deskew "Straightening..." banner must stay up so it is perceptible. On a single-page scan the
+//! straighten is a few ms, so without this floor the banner flashes sub-perceptibly and the user never sees it. When the
+//! chunked deskew loop finishes faster than this, startRecognition is deferred by the remainder via a timer (NOT a sleep,
+//! so the UI thread stays live and Cancel keeps working) -- see stepDeskew().
+static constexpr int DESKEW_MIN_VISIBLE_MS = 700;
+
 //! Backstop deadline (ms) for the import open -- purely a safety net, NOT how failure is normally detected. The open
 //! outcome is taken from the open-scenario promise owned in openImported(): a declined open reports its error Ret the
 //! instant it resolves, and a successful open is finalized by masterNotationChanged -- so a slow-but-valid open is never
@@ -101,6 +107,7 @@ void ImportProgressModel::initContext()
     QObject::connect(m_runner.get(), &AudiverisRunner::finished, this, &ImportProgressModel::onRunnerFinished);
     QObject::connect(m_runner.get(), &AudiverisRunner::outputLine, this, &ImportProgressModel::appendLog);
     QObject::connect(m_runner.get(), &AudiverisRunner::retryingAfterError, this, &ImportProgressModel::onRunnerRetrying);
+    QObject::connect(m_runner.get(), &AudiverisRunner::preprocessing, this, &ImportProgressModel::onRunnerPreprocessing);
 
     //! Once the imported score becomes the current master (the open is async): apply the Grand-Piano override and
     //! fill the Done line with the real measure count.
@@ -209,6 +216,15 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_skippedPages.clear();
     m_multiMovement = false;
 
+    //! PART 1 deskew: reset the chunk-loop state so each fresh import starts independent of any earlier one.
+    m_deskewTotal = 0;
+    m_deskewNext = 0;
+    m_deskewAborted = false;
+
+    //! Min-visible-duration: invalidate the banner timer so this run measures the "Straightening..." dwell from its own
+    //! first preprocessing stage, not a stale earlier run's.
+    m_deskewBannerTimer.invalidate();
+
     //! FIX 1: clear any recovery banner left from a prior run so each fresh import starts without it.
     m_retryNotice.clear();
     emit retryNoticeChanged();
@@ -219,13 +235,32 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_stageText = muse::qtrc("reprise", "Starting Audiveris...");
     emit progressChanged();
 
-    RecognitionOptions options;
-    options.recognizeText = recognizeText;
-    options.language = language.trimmed().isEmpty() ? QString("eng") : language.trimmed();
-    options.chordSymbols = chordSymbols;
-    options.lyricsAboveStaff = lyricsAboveStaff;
+    //! PART 1 deskew: before recognition, straighten each selected page. beginDeskew() opens the input and arms the
+    //! per-page state; when it has at least one page to process, drive it CHUNKED (one page per event-loop turn via a
+    //! single-shot timer) so the popup stays responsive and Cancel works between pages. The loop (stepDeskew) finishes by
+    //! starting recognition on the straightened PDF, or on the original when the regression gate left it a no-op. When
+    //! beginDeskew() returns false (nothing to process), start recognition directly on the original, exactly as before.
+    if (m_runner->beginDeskew(io::path_t(pdfPath), pages, dpi))
+    {
+        m_deskewTotal = m_runner->deskewPageCount();
+        m_deskewNext = 0;
+        //! Kick the first step on the next event-loop turn so the popup paints before any page is straightened.
+        QTimer::singleShot(0, this, [this]() { stepDeskew(); });
+        return;
+    }
 
-    const bool started = m_runner->start(io::path_t(pdfPath), pages, dpi, options);
+    startRecognition(pdfPath);
+}
+
+void ImportProgressModel::startRecognition(const QString& inputPath)
+{
+    RecognitionOptions options;
+    options.recognizeText = m_recognizeText;
+    options.language = m_language.trimmed().isEmpty() ? QString("eng") : m_language.trimmed();
+    options.chordSymbols = m_chordSymbols;
+    options.lyricsAboveStaff = m_lyricsAboveStaff;
+
+    const bool started = m_runner->start(io::path_t(inputPath), m_pages, m_dpi, options);
     if (!started)
     {
         //! FIX 2: route to the dedicated error window (deferred, so the popup finishes constructing first).
@@ -235,12 +270,92 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     }
 }
 
+void ImportProgressModel::stepDeskew()
+{
+    //! Cancelled mid-deskew -> abort before touching the runner again. cancel() set the flag and already reported aborted,
+    //! so there is nothing more to do here (no recognition is started).
+    if (m_deskewAborted || !m_runner)
+    {
+        return;
+    }
+
+    if (m_deskewNext >= m_deskewTotal)
+    {
+        //! Every selected page processed. finishDeskew() returns the straightened multi-page PDF, or EMPTY when no page
+        //! actually needed correction (the regression gate) -> feed Audiveris the ORIGINAL untouched (byte-identical).
+        const muse::io::path_t deskewed = m_runner->finishDeskew();
+        const QString nextInput = deskewed.empty() ? m_sourcePath : deskewed.toQString();
+
+        //! Min-visible-duration: a single-page deskew can finish in a few ms, so the "Straightening..." banner would flash
+        //! sub-perceptibly. Hold it up for at least DESKEW_MIN_VISIBLE_MS measured from when it first appeared; if less has
+        //! elapsed, defer startRecognition by the remainder via a single-shot timer (NOT a UI-thread sleep -- the popup
+        //! stays live and Cancel still works). The deferred turn re-checks m_deskewAborted so a Cancel during the hold
+        //! aborts cleanly instead of starting recognition. Applies only to a deskew run: this branch is reached solely via
+        //! the chunk loop (load() enters it only when beginDeskew armed pages), and the timer is started only by the deskew
+        //! preprocessing signal -- a no-deskew import never gets here.
+        const qint64 elapsed = m_deskewBannerTimer.isValid() ? m_deskewBannerTimer.elapsed() : DESKEW_MIN_VISIBLE_MS;
+        const int remaining = static_cast<int>(DESKEW_MIN_VISIBLE_MS - elapsed);
+        if (remaining > 0)
+        {
+            QTimer::singleShot(remaining, this, [this, nextInput]()
+            {
+                if (m_deskewAborted || !m_runner)
+                {
+                    return;
+                }
+
+                startRecognition(nextInput);
+            });
+            return;
+        }
+
+        startRecognition(nextInput);
+        return;
+    }
+
+    //! Process one page, then yield to the event loop so the bar + stage text repaint and Cancel stays responsive.
+    m_runner->deskewStep(m_deskewNext);
+    ++m_deskewNext;
+    QTimer::singleShot(0, this, [this]() { stepDeskew(); });
+}
+
+void ImportProgressModel::onRunnerPreprocessing(int page, int total, const QString& stageHuman)
+{
+    //! PART 1 deskew progress: a determinate per-page bar with the already-localised straighten stage (mirrors
+    //! onRunnerRetrying's banner idiom). Shown before the recognition stage; recognition's own progressChanged replaces it
+    //! once Audiveris starts.
+    //! Min-visible-duration: start the dwell clock the FIRST time the banner is shown, so stepDeskew() can hold it up for
+    //! at least DESKEW_MIN_VISIBLE_MS even when a single-page deskew finishes in a few ms.
+    if (!m_deskewBannerTimer.isValid())
+    {
+        m_deskewBannerTimer.start();
+    }
+
+    m_stageText = stageHuman;
+    if (total > 0)
+    {
+        m_percent = (page * 100) / total;
+        m_indeterminate = false;
+    }
+    else
+    {
+        m_percent = -1;
+        m_indeterminate = true;
+    }
+
+    emit progressChanged();
+}
+
 void ImportProgressModel::cancel()
 {
     if (m_runner)
     {
         m_runner->cancel();
     }
+
+    //! PART 1 deskew: abort a chunked straighten in flight -- the next scheduled stepDeskew() turn returns immediately
+    //! instead of processing another page or starting recognition.
+    m_deskewAborted = true;
 
     m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
@@ -471,7 +586,13 @@ void ImportProgressModel::openImported(const QString& outputPath)
             //! Pass the pre-strip Audiveris MusicXML (outputPath) too, so the per-NOTE head boxes are captured
             //! alongside the measure rects (Phase B1): its note order == the score about to open (the strip below
             //! preserves every musical value), giving each note box a runtime-computable key for B2's magnifier.
-            const ProofingMap pmap = ProofingMapBuilder::buildFromOmr(omrPath, m_sourcePath, m_dpi, outputPath);
+            //! PART 1 LIVE PROOFING: the band/magnifier must render the page the boxes are actually in -- that is the
+            //! input Audiveris consumed (the deskewed PDF when a page was straightened, else the original), NOT the
+            //! literal m_sourcePath. consumedInputPath() is exactly that post-preprocessing input; fall back to
+            //! m_sourcePath only if it is somehow empty. (The .repr save path below is PART 2 and still uses m_sourcePath.)
+            const QString scanPath = m_runner->consumedInputPath().toQString();
+            const QString proofingSource = scanPath.isEmpty() ? m_sourcePath : scanPath;
+            const ProofingMap pmap = ProofingMapBuilder::buildFromOmr(omrPath, proofingSource, m_dpi, outputPath);
             if (pmap.valid)
             {
                 proofingMapService()->setMap(pmap);
@@ -604,7 +725,18 @@ void ImportProgressModel::autoSaveImportedAsRepr()
     const std::string importJson(importBytes.constChar(), importBytes.size());
 
     const QString suffix = QFileInfo(m_sourcePath).suffix().toLower();
-    project->setReprBundleInfo(io::path_t(m_sourcePath), suffix.toStdString(), importJson);
+
+    //! PART 2 dual-storage: also hand the deskewed render Audiveris actually consumed, so the .repr stores BOTH the
+    //! literal original (m_sourcePath) AND the straightened render -- a reopen then reproduces the aligned band. Only when
+    //! a page was really deskewed (consumedInputPath != m_sourcePath); otherwise the proofing-scan args stay empty and the
+    //! bundle is byte-identical to today (original only).
+    const QString consumed = m_runner ? m_runner->consumedInputPath().toQString() : m_sourcePath;
+    const bool deskewed = (!consumed.isEmpty() && consumed != m_sourcePath);
+    const io::path_t proofingScanPath = deskewed ? io::path_t(consumed) : io::path_t();
+    const std::string proofingScanSuffix = deskewed ? QFileInfo(consumed).suffix().toLower().toStdString() : std::string();
+
+    project->setReprBundleInfo(io::path_t(m_sourcePath), suffix.toStdString(), importJson,
+                               proofingScanPath, proofingScanSuffix);
 
     const io::path_t reprPath(candidate);
     const muse::Ret ret = project->save(reprPath, project::SaveMode::SaveAs);

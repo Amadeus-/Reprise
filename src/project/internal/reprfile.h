@@ -23,6 +23,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "global/types/ret.h"
 #include "global/types/bytearray.h"
@@ -48,6 +49,9 @@ inline constexpr int REPR_FORMAT_VERSION = 1;
 inline const std::string REPR_ENTRY_MANIFEST = "manifest.json";
 inline const std::string REPR_ENTRY_SCORE = "score.mscz";
 inline const std::string REPR_ENTRY_PROOFINGMAP = "proofingmap.json";
+//! Optional (0.16.5+): the deskewed render Audiveris actually consumed, stored ALONGSIDE the verbatim original.<ext> so a
+//! reopen renders the straightened band the serialized boxes align to. Written only when a page was deskewed; absence tolerated.
+inline const std::string REPR_ENTRY_PROOFINGSCAN = "proofing-scan";
 
 //! Everything read back out of a .repr bundle. The score + original bytes are raw (the caller writes score.mscz to a
 //! memory buffer for MscReader and extracts the original to a real temp path); map.sourcePath is left empty here and the
@@ -59,6 +63,10 @@ struct ReprBundle
     std::string originalSuffix;       //! e.g. "pdf" (from the manifest; backfilled from the entry name if absent)
     std::string originalFileName;     //! e.g. "waltz.pdf" (from the manifest)
     std::string importJson;           //! the raw manifest "import" object (compact JSON), re-emitted on save; may be empty
+    muse::ByteArray proofingScan;     //! optional deskewed render bytes (empty when the source was not deskewed)
+    std::string proofingScanSuffix;   //! e.g. "pdf" (from the manifest proofingScan object; backfilled from the entry name)
+    bool hasProofingScan = false;     //! true when a non-empty proofing-scan.<ext> was present in the bundle
+    std::vector<double> skewAnglesDeg; //! optional per-page deskew angles (provenance only; empty when absent)
     int formatVersion = 0;
     bool hasMap = false;
     reprise::ProofingMap map;         //! sourcePath left empty here -- the caller repoints it to the extracted scan path
@@ -76,7 +84,9 @@ bool parseProofingMap(const muse::ByteArray& bytes, reprise::ProofingMap& out);
 //! must be a JSON object; it is embedded verbatim as manifest.import.
 muse::ByteArray assembleRepr(const muse::ByteArray& scoreMscz, const muse::ByteArray& original,
                              const std::string& originalFileName, const std::string& originalSuffix,
-                             const std::string& importJson, const reprise::ProofingMap& map);
+                             const std::string& importJson, const reprise::ProofingMap& map,
+                             const muse::ByteArray& proofingScan, const std::string& proofingScanSuffix,
+                             const std::vector<double>& skewAnglesDeg);
 
 //! Read + parse a .repr bundle from disk into `out`. The embedded original is NOT extracted to disk here. Returns a
 //! non-ok Ret (with a user-facing message) when the file cannot be opened, is missing a required entry, or its manifest

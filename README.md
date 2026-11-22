@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.16.4) — work in progress.** Reprise is early software under
+> **Pre-release (0.16.5) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -45,6 +45,9 @@ compatibility.
 - **Unreadable pages don't sink the whole import** — if some pages of a multi-page scan can't be recognized
   (a cover page with no music, or a page whose resolution is too low), Reprise imports the rest of your music and
   shows an **Import finished** summary listing exactly which pages were skipped and why.
+- **Tilted scans are straightened automatically** — Reprise measures each page's rotation and straightens a skewed
+  page before recognition, which sharply improves results on crooked scans; already-straight pages are left
+  untouched. Your original scan is preserved alongside the straightened one inside your Reprise project (`.repr`).
 - **Text & lyric recognition** — titles, lyrics, and tempo markings are read automatically
   during import. The **Tesseract OCR engine is bundled inside Audiveris** — not a separate
   program — and Reprise ships the training data it needs and points it there for you, so

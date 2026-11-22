@@ -71,6 +71,7 @@ public:
 
     MOCK_METHOD(void, setReprBundleInfo,
                 (const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
-                 const std::string& importProvenanceJson), (override));
+                 const std::string& importProvenanceJson, const muse::io::path_t& proofingScanPath,
+                 const std::string& proofingScanSuffix), (override));
 };
 }

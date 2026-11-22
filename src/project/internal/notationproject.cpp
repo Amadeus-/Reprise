@@ -349,17 +349,21 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
     m_reprOriginalFileName = bundle.originalFileName;
     m_reprOriginalSuffix = bundle.originalSuffix;
     m_reprManifestImport = bundle.importJson;
+    // Reprise 0.16.5+: carry the deskew provenance forward so a resave re-emits it (alignment itself comes from the map).
+    m_reprSkewAnglesDeg = bundle.skewAnglesDeg;
+
+    const QString tempRoot = QDir::tempPath() + "/reprise-repr";
 
     // Extract the original scan to a REAL temp path -- the proofing band + magnifier render it by filesystem path
     // (QPdfDocument::load / QImageReader), so a path inside the ZIP would never render. Retain that path so Save can
-    // re-bundle the scan. Best-effort: a missing/failed original just opens the score with no proofing view.
+    // re-bundle the LITERAL original verbatim. Best-effort: a missing/failed original just opens the score with no view.
+    QString proofingSourceQ;
     if (!bundle.original.empty()) {
         const QString baseName = bundle.originalFileName.empty()
                                  ? (QStringLiteral("original.")
                                     + QString::fromStdString(bundle.originalSuffix.empty() ? std::string("dat") : bundle.originalSuffix))
                                  : QString::fromStdString(bundle.originalFileName);
 
-        const QString tempRoot = QDir::tempPath() + "/reprise-repr";
         QDir().mkpath(tempRoot);
         const QString extractedQ = tempRoot + "/" + QString::number(QDateTime::currentMSecsSinceEpoch()) + "-" + baseName;
         const muse::io::path_t extracted(extractedQ);
@@ -367,16 +371,41 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
         Ret wret = fileSystem()->writeFile(extracted, bundle.original);
         if (wret) {
             m_reprOriginalPath = extracted;
-
-            if (bundle.hasMap) {
-                bundle.map.sourcePath = extracted.toStdString();
-                if (auto svc = proofingMapService()) {
-                    // mapChanged() fires -> the strip + magnifier rehydrate exactly as they do for a fresh import's map.
-                    svc->setMap(bundle.map);
-                }
-            }
+            proofingSourceQ = extractedQ;   // default proofing source: the literal original (overridden below if deskewed)
         } else {
             LOGW() << "Reprise .repr: failed to extract original scan to temp: " << extractedQ;
+        }
+    }
+
+    // Reprise 0.16.5+: when the bundle also carries a deskewed render, extract it too and make IT the proofing source, so
+    // the band/magnifier render the straightened page the serialized boxes live in (boxes are in deskewed-image space).
+    // Retain its path + suffix so a resave re-bundles the render losslessly. The literal original above is untouched.
+    if (bundle.hasProofingScan) {
+        const QString psSuffix = QString::fromStdString(
+            bundle.proofingScanSuffix.empty() ? std::string("pdf") : bundle.proofingScanSuffix);
+        const QString psName = QStringLiteral("proofing-scan.") + psSuffix;
+
+        QDir().mkpath(tempRoot);
+        const QString psQ = tempRoot + "/" + QString::number(QDateTime::currentMSecsSinceEpoch()) + "-" + psName;
+        const muse::io::path_t psPath(psQ);
+
+        Ret wret = fileSystem()->writeFile(psPath, bundle.proofingScan);
+        if (wret) {
+            m_reprProofingScanPath = psPath;
+            m_reprProofingScanSuffix = bundle.proofingScanSuffix;
+            proofingSourceQ = psQ;   // deskewed render becomes the proofing source
+        } else {
+            LOGW() << "Reprise .repr: failed to extract deskewed render to temp: " << psQ;
+        }
+    }
+
+    // Point the proofing map at the chosen proofing source (deskewed render if present, else the literal original). The
+    // serialized boxes align to that image's coordinate space, so the strip + magnifier render correctly on reopen.
+    if (bundle.hasMap && !proofingSourceQ.isEmpty()) {
+        bundle.map.sourcePath = proofingSourceQ.toStdString();
+        if (auto svc = proofingMapService()) {
+            // mapChanged() fires -> the strip + magnifier rehydrate exactly as they do for a fresh import's map.
+            svc->setMap(bundle.map);
         }
     }
 
@@ -445,8 +474,21 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
                                      ? io::filename(m_reprOriginalPath).toStdString()
                                      : m_reprOriginalFileName;
 
+    // Reprise 0.16.5+: the deskewed render bytes, from the retained proofing-scan path (set only when a page was
+    // straightened). Empty path / missing file -> no proofing-scan entry -> bundle is byte-identical to a straight import.
+    ByteArray proofingScanBytes;
+    if (!m_reprProofingScanPath.empty() && fileSystem()->exists(m_reprProofingScanPath)) {
+        RetVal<ByteArray> rv = fileSystem()->readFile(m_reprProofingScanPath);
+        if (rv.ret) {
+            proofingScanBytes = rv.val;
+        } else {
+            LOGW() << "Reprise .repr save: cannot read deskewed render: " << m_reprProofingScanPath;
+        }
+    }
+
     const ByteArray bundle = assembleRepr(scoreBytes, originalBytes, originalName, m_reprOriginalSuffix,
-                                          m_reprManifestImport, map);
+                                          m_reprManifestImport, map,
+                                          proofingScanBytes, m_reprProofingScanSuffix, m_reprSkewAnglesDeg);
 
     // Atomic-ish write: write a "_saving" sibling, copy over the target, remove the temp (mirrors doSave's dance).
     const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(path);
@@ -475,7 +517,8 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
 }
 
 void NotationProject::setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,
-                                        const std::string& importProvenanceJson)
+                                        const std::string& importProvenanceJson,
+                                        const muse::io::path_t& proofingScanPath, const std::string& proofingScanSuffix)
 {
     m_reprOriginalPath = originalScanPath;
     m_reprOriginalSuffix = originalSuffix;
@@ -483,6 +526,10 @@ void NotationProject::setReprBundleInfo(const muse::io::path_t& originalScanPath
     // leave the directory portion in the recorded manifest file name.
     m_reprOriginalFileName = io::filename(muse::io::Dir::fromNativeSeparators(originalScanPath)).toStdString();
     m_reprManifestImport = importProvenanceJson;
+    // Reprise 0.16.5+: the deskewed render consumed by Audiveris (empty when the source was not deskewed -> bundle stays
+    // byte-identical to a pre-0.16.5 save, storing only the literal original).
+    m_reprProofingScanPath = proofingScanPath;
+    m_reprProofingScanSuffix = proofingScanSuffix;
 }
 
 Ret NotationProject::doImport(const muse::io::path_t& path, const OpenParams& openParams)

@@ -50,6 +50,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QTransform>
 #include <QtPdf/QPdfDocument>
 #include <QtPdf/QPdfDocumentRenderOptions>
 
@@ -67,6 +68,21 @@ static const QStringList STEP_ORDER = {
     "KEYS", "CLEFS", "TIME", "MEASURES", "CHORDS", "CURVES", "TEXTS",
     "SYMBOLS", "RHYTHMS", "LINKS", "PAGE"
 };
+
+//! Audiveris/PDFBox-matching PDF render options: grayscale + anti-aliasing OFF (text/image/path). Shared by the #711
+//! PDF pad (buildPaddedPdf) and the PART 1 deskew render so both reproduce the same pixel grid PDFBox would at the run DPI.
+static QPdfDocumentRenderOptions pdfGrayAaOffOptions()
+{
+    QPdfDocumentRenderOptions options;
+    options.setRenderFlags(QPdfDocumentRenderOptions::RenderFlag::Grayscale
+                           | QPdfDocumentRenderOptions::RenderFlag::TextAliased
+                           | QPdfDocumentRenderOptions::RenderFlag::ImageAliased
+                           | QPdfDocumentRenderOptions::RenderFlag::PathAliased);
+
+    return options;
+}
+
+AudiverisRunner::~AudiverisRunner() = default;
 
 muse::io::path_t AudiverisRunner::findAudiveris() const
 {
@@ -394,11 +410,7 @@ muse::io::path_t AudiverisRunner::buildPaddedPdf(const muse::io::path_t& pdfPath
 
     //! Match Audiveris/PDFBox rasterization: grayscale + anti-aliasing OFF (text/image/path), at the SAME DPI the run
     //! used -- never a downgrade -- so the retry reproduces the original page content with only a white border added.
-    QPdfDocumentRenderOptions options;
-    options.setRenderFlags(QPdfDocumentRenderOptions::RenderFlag::Grayscale
-                           | QPdfDocumentRenderOptions::RenderFlag::TextAliased
-                           | QPdfDocumentRenderOptions::RenderFlag::ImageAliased
-                           | QPdfDocumentRenderOptions::RenderFlag::PathAliased);
+    const QPdfDocumentRenderOptions options = pdfGrayAaOffOptions();
 
     //! PDF pages: a DPI-scaled margin (at least 100 px) so the border is proportionate at any resolution.
     const int32_t margin = std::max<int32_t>(100, static_cast<int32_t>(std::lround(static_cast<double>(dpi) / 3.0)));
@@ -470,6 +482,437 @@ muse::io::path_t AudiverisRunner::buildPaddedPdf(const muse::io::path_t& pdfPath
 
     LOGI() << "Reprise: PDF pad: re-emitted " << pageCount << " page(s) with a " << margin
            << " px white margin at " << dpi << " dpi -> " << outPath;
+
+    return io::path_t(outPath);
+}
+
+double AudiverisRunner::detectSkewAngle(const QImage& input)
+{
+    if (input.isNull())
+    {
+        return 0.0;
+    }
+
+    //! Downsample the working copy to <=~1000 px on the longest side (fast transform -- this is a measurement, not output).
+    QImage img = input;
+    const int32_t longest = std::max(img.width(), img.height());
+    if (longest > 1000)
+    {
+        img = (img.width() >= img.height()) ? img.scaledToWidth(1000, Qt::FastTransformation)
+                                            : img.scaledToHeight(1000, Qt::FastTransformation);
+    }
+
+    img = img.convertToFormat(QImage::Format_Grayscale8);
+    const int32_t w = img.width();
+    const int32_t h = img.height();
+    if (w < 8 || h < 8)
+    {
+        return 0.0;
+    }
+
+    //! Binarize to an ink mask and collect the ink pixel coordinates, centered on the image middle. A fixed threshold is
+    //! fine for a white-paper scan (background ~255, ink ~0); the centered coords let each candidate angle project the
+    //! ink onto a rotated vertical axis with a plain 2D rotation.
+    constexpr uint8_t kInkThreshold = 140;
+    const double cx = w / 2.0;
+    const double cy = h / 2.0;
+
+    std::vector<float> ix;
+    std::vector<float> iy;
+    ix.reserve(100000);
+    iy.reserve(100000);
+    for (int32_t y = 0; y < h; ++y)
+    {
+        const uint8_t* line = img.constScanLine(y);
+        for (int32_t x = 0; x < w; ++x)
+        {
+            if (line[x] < kInkThreshold)
+            {
+                ix.push_back(static_cast<float>(x - cx));
+                iy.push_back(static_cast<float>(y - cy));
+            }
+        }
+    }
+
+    //! Too little ink (a blank/near-blank page) -> do not chase noise; report level.
+    if (ix.size() < 500)
+    {
+        return 0.0;
+    }
+
+    //! Cap the sample so a mostly-dark page stays bounded in work per candidate angle.
+    size_t stride = 1;
+    if (ix.size() > 300000)
+    {
+        stride = ix.size() / 300000 + 1;
+    }
+
+    constexpr double kPi = 3.14159265358979323846;
+
+    double bestVar = -1.0;
+    double bestAngle = 0.0;
+    std::vector<double> hist(static_cast<size_t>(h), 0.0);
+    for (int32_t a = -30; a <= 30; ++a)
+    {
+        const double deg = a * 0.2;
+        const double rad = deg * kPi / 180.0;
+        const double s = std::sin(rad);
+        const double c = std::cos(rad);
+
+        std::fill(hist.begin(), hist.end(), 0.0);
+        double count = 0.0;
+        for (size_t k = 0; k < ix.size(); k += stride)
+        {
+            //! y' = x*sin + y*cos (the QTransform().rotate(deg) convention), binned into the row histogram.
+            const double ry = static_cast<double>(ix[k]) * s + static_cast<double>(iy[k]) * c + cy;
+            const int32_t row = static_cast<int32_t>(std::lround(ry));
+            if (row >= 0 && row < h)
+            {
+                hist[static_cast<size_t>(row)] += 1.0;
+                count += 1.0;
+            }
+        }
+
+        if (count <= 0.0)
+        {
+            continue;
+        }
+
+        //! Variance of the row-sum profile: staff lines concentrate into few rows (high variance) when level.
+        const double mean = count / static_cast<double>(h);
+        double var = 0.0;
+        for (int32_t r = 0; r < h; ++r)
+        {
+            const double d = hist[static_cast<size_t>(r)] - mean;
+            var += d * d;
+        }
+        var /= static_cast<double>(h);
+
+        if (var > bestVar)
+        {
+            bestVar = var;
+            bestAngle = deg;
+        }
+    }
+
+    //! Dead-band no-op, and clamp away a wild result (never apply a wild angle).
+    if (std::fabs(bestAngle) < 0.2)
+    {
+        return 0.0;
+    }
+    if (std::fabs(bestAngle) > 6.0)
+    {
+        return 0.0;
+    }
+
+    return bestAngle;
+}
+
+QImage AudiverisRunner::deskewImage(const QImage& src, double angleDeg)
+{
+    if (src.isNull())
+    {
+        return src;
+    }
+
+    //! Same fixed white border as the single-image pad (padImageToTemp), so a straightened page keeps the #711 edge-crash
+    //! protection a staff touching the raster edge would otherwise trip.
+    constexpr int32_t kMargin = 100;
+
+    //! Rotate on an ARGB copy so the exposed corners come out TRANSPARENT (not opaque black); compositing the rotated
+    //! image onto a white canvas then shows white in those corners instead of the black-corner artifact.
+    const QImage argb = src.convertToFormat(QImage::Format_ARGB32);
+    const QImage rotated = argb.transformed(QTransform().rotate(angleDeg), Qt::SmoothTransformation);
+
+    QImage canvas(rotated.width() + 2 * kMargin, rotated.height() + 2 * kMargin, QImage::Format_RGB32);
+    canvas.fill(Qt::white);
+    {
+        QPainter painter(&canvas);
+        painter.drawImage(kMargin, kMargin, rotated);
+    }
+
+    return canvas;
+}
+
+bool AudiverisRunner::beginDeskew(const muse::io::path_t& input, const QString& pages, int dpi)
+{
+    //! Fresh chunked state per call.
+    m_deskewPdf.reset();
+    m_deskewSourceFrames.clear();
+    m_deskewImages.clear();
+    m_deskewAngles.clear();
+    m_deskewPages.clear();
+    m_deskewRotatedAny = false;
+    m_deskewIsPdf = false;
+    m_deskewDpi = dpi > 0 ? dpi : 300;
+    m_deskewInputPath = input.toQString();
+    m_deskewOutDir.clear();
+
+    const std::string suffix = io::suffix(input);
+    int32_t sourcePageCount = 0;
+
+    if (suffix == "pdf")
+    {
+        auto doc = std::make_unique<QPdfDocument>();
+        if (doc->load(input.toQString()) != QPdfDocument::Error::None || doc->status() != QPdfDocument::Status::Ready)
+        {
+            LOGW() << "Reprise: deskew: could not load PDF " << input.toQString() << "; skipping deskew.";
+            return false;
+        }
+
+        sourcePageCount = doc->pageCount();
+        if (sourcePageCount < 1)
+        {
+            LOGW() << "Reprise: deskew: " << input.toQString() << " reports no pages; skipping deskew.";
+            return false;
+        }
+
+        m_deskewPdf = std::move(doc);
+        m_deskewIsPdf = true;
+    }
+    else
+    {
+        //! A raster image: decode every frame now (a single frame for the usual case; a multi-page TIFF yields several).
+        //! Pre-decoding keeps deskewStep() uniform with the PDF path and avoids a fragile per-step re-seek.
+        QImageReader reader(input.toQString());
+        int32_t frameCount = reader.imageCount();
+        if (frameCount < 1)
+        {
+            frameCount = 1;   //! some formats report 0 frames -> treat as a single image
+        }
+
+        for (int32_t f = 0; f < frameCount; ++f)
+        {
+            if (f > 0 && !reader.jumpToNextImage())
+            {
+                break;
+            }
+
+            QImage frame = reader.read();
+            if (frame.isNull())
+            {
+                if (f == 0)
+                {
+                    //! Reader could not decode frame 0 -> last-resort plain load (covers formats QImageReader stumbles on).
+                    const QImage one(input.toQString());
+                    if (!one.isNull())
+                    {
+                        m_deskewSourceFrames.push_back(one);
+                    }
+                }
+                break;
+            }
+
+            m_deskewSourceFrames.push_back(frame);
+        }
+
+        if (m_deskewSourceFrames.empty())
+        {
+            LOGW() << "Reprise: deskew: could not decode image " << input.toQString() << "; skipping deskew.";
+            return false;
+        }
+
+        sourcePageCount = static_cast<int32_t>(m_deskewSourceFrames.size());
+    }
+
+    //! Resolve the SELECTED pages (expandSheets gives 1-based sheet numbers; empty -> every page). Map to 0-based source
+    //! indices, dropping any out-of-range request so a bad range can never index past the real page count.
+    const std::vector<int> sheets = expandSheets(pages);
+    if (sheets.empty())
+    {
+        for (int32_t p = 0; p < sourcePageCount; ++p)
+        {
+            m_deskewPages.push_back(p);
+        }
+    }
+    else
+    {
+        for (int sheet : sheets)
+        {
+            const int32_t idx = sheet - 1;
+            if (idx >= 0 && idx < sourcePageCount)
+            {
+                m_deskewPages.push_back(idx);
+            }
+        }
+    }
+
+    if (m_deskewPages.empty())
+    {
+        m_deskewPdf.reset();
+        m_deskewSourceFrames.clear();
+        return false;
+    }
+
+    //! A persistent temp dir for the straightened PDF (survives until the process exits, like the recognition temp dir);
+    //! start() creates its OWN output dir, so this is separate.
+    QTemporaryDir tempDir(QDir::tempPath() + "/reprise-deskew-XXXXXX");
+    tempDir.setAutoRemove(false);
+    if (!tempDir.isValid())
+    {
+        LOGW() << "Reprise: deskew: could not create a temp output directory; skipping deskew.";
+        m_deskewPdf.reset();
+        m_deskewSourceFrames.clear();
+        m_deskewPages.clear();
+        return false;
+    }
+
+    m_deskewOutDir = tempDir.path();
+    m_deskewImages.reserve(m_deskewPages.size());
+    m_deskewAngles.reserve(m_deskewPages.size());
+
+    LOGI() << "Reprise: deskew: armed " << m_deskewPages.size() << " selected page(s) from " << input.toQString()
+           << " (dpi=" << m_deskewDpi << ")";
+
+    return true;
+}
+
+void AudiverisRunner::deskewStep(int i)
+{
+    const int32_t total = static_cast<int32_t>(m_deskewPages.size());
+    if (i < 0 || i >= total)
+    {
+        return;
+    }
+
+    //! Render the i-th selected source page to a QImage at the run DPI (grayscale, AA off -- the same grid PDFBox uses).
+    QImage rendered;
+    if (m_deskewIsPdf && m_deskewPdf)
+    {
+        const int32_t page = m_deskewPages[static_cast<size_t>(i)];
+        const QSizeF pts = m_deskewPdf->pagePointSize(page);
+        const QSize px(static_cast<int32_t>(std::lround(pts.width() * static_cast<double>(m_deskewDpi) / 72.0)),
+                       static_cast<int32_t>(std::lround(pts.height() * static_cast<double>(m_deskewDpi) / 72.0)));
+        rendered = m_deskewPdf->render(page, px, pdfGrayAaOffOptions());
+    }
+    else
+    {
+        const int32_t idx = m_deskewPages[static_cast<size_t>(i)];
+        if (idx >= 0 && idx < static_cast<int32_t>(m_deskewSourceFrames.size()))
+        {
+            rendered = m_deskewSourceFrames[static_cast<size_t>(idx)];
+        }
+    }
+
+    //! Measure this page's own skew; rotate only past the dead-band, else keep the page as rasterized (angle 0.0). The
+    //! kept page is still carried into the assembly so page count/order is preserved whenever ANY page was rotated.
+    double angle = 0.0;
+    QImage result = rendered;
+    if (!rendered.isNull())
+    {
+        angle = detectSkewAngle(rendered);
+        if (std::fabs(angle) >= 0.2)
+        {
+            result = deskewImage(rendered, angle);
+            m_deskewRotatedAny = true;
+        }
+        else
+        {
+            angle = 0.0;
+        }
+    }
+
+    m_deskewImages.push_back(result);
+    m_deskewAngles.push_back(angle);
+
+    //! Single-page scan -> no "page N of M" makes sense, so say "Straightening the scan..."; multi-page keeps the
+    //! "Straightening page N of M..." form. Both are already localised at source (the model mirrors stageHuman verbatim).
+    const QString stageHuman = (total == 1)
+                               ? muse::qtrc("reprise", "Straightening the scan...")
+                               : muse::qtrc("reprise", "Straightening page %1 of %2...").arg(i + 1).arg(total);
+    emit preprocessing(i + 1, total, stageHuman);
+}
+
+muse::io::path_t AudiverisRunner::finishDeskew()
+{
+    //! Regression gate: if NO page was actually rotated, feed Audiveris the ORIGINAL untouched (byte-identical no-op).
+    //! Angles are retained for PART 2; only the heavy source/page buffers are released here.
+    if (!m_deskewRotatedAny)
+    {
+        m_deskewPdf.reset();
+        m_deskewSourceFrames.clear();
+        m_deskewImages.clear();
+        return io::path_t();
+    }
+
+    if (m_deskewImages.empty() || m_deskewOutDir.isEmpty())
+    {
+        m_deskewPdf.reset();
+        m_deskewSourceFrames.clear();
+        m_deskewImages.clear();
+        return io::path_t();
+    }
+
+    const int32_t dpi = m_deskewDpi > 0 ? m_deskewDpi : 300;
+    const QString base = QFileInfo(m_deskewInputPath).completeBaseName();
+    const QString outPath = QDir(m_deskewOutDir).absoluteFilePath(base + "-deskewed.pdf");
+
+    //! Assemble the straightened pages into ONE multi-page PDF, mirroring buildPaddedPdf's assembly: each page sized so
+    //! its pixel raster maps 1:1 at the run DPI (page = px*72/dpi points), drawn 1:1, order preserved.
+    QPdfWriter writer(outPath);
+    writer.setResolution(dpi);
+    writer.setPageMargins(QMarginsF(0.0, 0.0, 0.0, 0.0));
+
+    QPainter painter;
+    bool painting = false;
+    for (const QImage& img : m_deskewImages)
+    {
+        //! A page that failed to render earlier (unexpected) becomes a blank white Letter page so the page count/order is
+        //! still preserved rather than silently dropped.
+        QImage page = img;
+        if (page.isNull())
+        {
+            page = QImage(static_cast<int32_t>(std::lround(8.5 * dpi)), static_cast<int32_t>(std::lround(11.0 * dpi)),
+                          QImage::Format_RGB32);
+            page.fill(Qt::white);
+        }
+
+        //! Composite onto an opaque white canvas so any stray alpha can never show through on the PDF page.
+        const int32_t cw = page.width();
+        const int32_t ch = page.height();
+        QImage canvas(cw, ch, QImage::Format_RGB32);
+        canvas.fill(Qt::white);
+        {
+            QPainter cp(&canvas);
+            cp.drawImage(0, 0, page);
+        }
+
+        const QPageSize ps(QSizeF(cw * 72.0 / static_cast<double>(dpi), ch * 72.0 / static_cast<double>(dpi)),
+                           QPageSize::Point);
+        writer.setPageSize(ps);
+        if (!painting)
+        {
+            if (!painter.begin(&writer))
+            {
+                LOGW() << "Reprise: deskew: could not open QPdfWriter at " << outPath << "; skipping deskew.";
+                m_deskewPdf.reset();
+                m_deskewSourceFrames.clear();
+                m_deskewImages.clear();
+                return io::path_t();
+            }
+
+            painting = true;
+        }
+        else
+        {
+            writer.newPage();
+        }
+
+        painter.drawImage(QPoint(0, 0), canvas);
+    }
+
+    if (painting)
+    {
+        painter.end();
+    }
+
+    //! Release the heavy buffers; keep m_deskewAngles for PART 2 provenance.
+    m_deskewPdf.reset();
+    m_deskewSourceFrames.clear();
+    m_deskewImages.clear();
+
+    LOGI() << "Reprise: deskew: re-emitted " << m_deskewAngles.size() << " straightened page(s) at " << dpi
+           << " dpi -> " << outPath;
 
     return io::path_t(outPath);
 }
