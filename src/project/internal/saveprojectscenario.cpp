@@ -1509,16 +1509,12 @@ Promise<RetVal<muse::io::path_t> > SaveProjectScenario::askLocalPath(INotationPr
     muse::io::path_t defaultPath = configuration()->defaultSavingFilePath(project, filenameAddition);
 
     std::vector<std::string> filter {
-        // Reprise: the working project format that preserves the proofing view is .repr, so it is the default Save filter;
-        // plain .mscz stays available (File > Export, and here) for sharing / other tools.
+        // Reprise: .repr is the working project format that preserves the proofing view, so it is the default Save filter;
+        // .mscz / .mxl / .musicxml are the other save / share formats (plain MuseScore, compressed and uncompressed MusicXML).
         muse::trc("project", "Reprise project") + " (*.repr)",
         muse::trc("project", "MuseScore file") + " (*.mscz)",
-        muse::trc("project", "Uncompressed MuseScore folder [experimental]")
-#ifdef Q_OS_MAC
-        + " (*)"
-#else
-        + " (*.)"
-#endif
+        muse::trc("project", "Compressed MusicXML") + " (*.mxl)",
+        muse::trc("project", "Uncompressed MusicXML") + " (*.musicxml)"
     };
 
     return interactive()->selectSavingFile(dialogTitle, defaultPath, filter)
@@ -1529,8 +1525,13 @@ Promise<RetVal<muse::io::path_t> > SaveProjectScenario::askLocalPath(INotationPr
             return resolve(RetVal<muse::io::path_t>(make_ret(Ret::Code::Cancel)));
         }
 
-        // Reprise: a .repr is a single-file ZIP container, NOT an uncompressed MSCX folder -- leave its path as-is.
-        if (!engraving::isMuseScoreFile(io::suffix(selectedPath)) && io::suffix(selectedPath) != REPRISE_PROJECT_SUFFIX) {
+        // Reprise: .repr (single-file ZIP container), .mxl and .musicxml are all single-file save targets written
+        // as-is -- leave their paths untouched. Only a bare/unknown suffix means an uncompressed MSCX FOLDER target.
+        const std::string selectedSuffix = io::suffix(selectedPath);
+        if (!engraving::isMuseScoreFile(selectedSuffix)
+            && selectedSuffix != REPRISE_PROJECT_SUFFIX
+            && selectedSuffix != "mxl"
+            && selectedSuffix != "musicxml") {
             // Then it must be that the user is trying to save a mscx file.
             // At the selected path, a folder will be created,
             // and inside the folder, a mscx file will be created.

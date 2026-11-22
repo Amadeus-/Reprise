@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.9] — 2026-11-22
+
+### Changed
+- **File ▸ Save As now offers MusicXML, and drops the experimental folder format.** You can save directly as a
+  Reprise project (`.repr`), a MuseScore file (`.mscz`), Compressed MusicXML (`.mxl`), or Uncompressed MusicXML
+  (`.musicxml`). The old "Uncompressed MuseScore folder [experimental]" option has been removed.
+
 ## [0.16.8] — 2026-11-22
 
 ### Changed
