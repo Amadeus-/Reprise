@@ -54,13 +54,15 @@ public:
         m_snapshot.phase = phase;
     }
 
-    void reportFinished(bool ok, const std::string& error, const std::string& details) override
+    void reportFinished(bool ok, const std::string& error, const std::string& details,
+                        const std::string& logFilePath = std::string()) override
     {
         m_snapshot.active = false;
         m_snapshot.status = ok ? "done" : "error";
         m_snapshot.hasError = !ok;
         m_snapshot.error = ok ? std::string() : error;
         m_snapshot.details = ok ? std::string() : details;
+        m_snapshot.logFilePath = ok ? std::string() : logFilePath;
         if (ok) {
             m_snapshot.percent = 100;
         }
@@ -76,6 +78,7 @@ public:
         m_snapshot.hasError = false;
         m_snapshot.error.clear();
         m_snapshot.details.clear();
+        m_snapshot.logFilePath.clear();
         m_activeChanged.notify();
     }
 

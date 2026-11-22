@@ -42,5 +42,8 @@ public:
 
     //! Copy the given text (the dialog builds "message\n\ndetails") to the system clipboard.
     Q_INVOKABLE void copyToClipboard(const QString& text) const;
+
+    //! Open the on-disk Audiveris log (reprise-audiveris.log) in the OS default handler. No-op if the path is empty or gone.
+    Q_INVOKABLE void openLogFile(const QString& path) const;
 };
 }

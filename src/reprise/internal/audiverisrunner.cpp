@@ -31,6 +31,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
@@ -547,6 +548,9 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_options = options;
     m_cancelled = false;
     m_sawArrayIndexCrash = false;
+    m_sawNoStaves = false;
+    m_sawLowInterline = false;
+    m_sawTooLarge = false;
     m_totalSheets = -1;
     m_currentSheet = -1;
     m_requestedSheetCount = 0;
@@ -556,6 +560,8 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_currentStep.clear();
     m_stdoutBuffer.clear();
     m_tail.clear();
+    m_fullLog.clear();
+    m_logFilePath.clear();
     //! NOTE: m_retriedWithPad is deliberately NOT reset here -- the PDF retry re-enters start(), and the guard must
     //! survive that re-entry so the pad is applied at most once per import.
 
@@ -923,6 +929,24 @@ void AudiverisRunner::pushTail(const QString& line)
         m_sawArrayIndexCrash = true;
     }
 
+    //! Audiveris's own failure signatures, scanned once each over every line, so a non-zero exit can be turned into a
+    //! specific, user-friendly message (no staves -> cover/title page; too-low interline / too-large image -> DPI advice).
+    if (!m_sawNoStaves && (line.contains("No regularly spaced lines found") || line.contains("No system found")))
+    {
+        m_sawNoStaves = true;
+    }
+    if (!m_sawLowInterline && line.contains("too low interline"))
+    {
+        m_sawLowInterline = true;
+    }
+    if (!m_sawTooLarge && line.contains("Too large image"))
+    {
+        m_sawTooLarge = true;
+    }
+
+    //! Accumulate the COMPLETE output (never truncated) for the error window + its on-disk copy.
+    m_fullLog << line;
+
     //! Small ring of the most recent output lines, surfaced in the popup's error state.
     static const int MAX_TAIL = 16;
     m_tail << line;
@@ -930,6 +954,28 @@ void AudiverisRunner::pushTail(const QString& line)
     {
         m_tail.removeFirst();
     }
+}
+
+QString AudiverisRunner::writeFullLogToFile()
+{
+    if (m_outDir.isEmpty() || m_fullLog.isEmpty())
+    {
+        return QString();
+    }
+
+    const QString path = QDir(m_outDir).absoluteFilePath("reprise-audiveris.log");
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+    {
+        LOGW() << "Reprise: could not write Audiveris log to " << path;
+        return QString();
+    }
+
+    f.write(m_fullLog.join('\n').toUtf8());
+    f.close();
+
+    m_logFilePath = path;
+    return path;
 }
 
 void AudiverisRunner::onErrorOccurred()
@@ -941,6 +987,7 @@ void AudiverisRunner::onErrorOccurred()
 
     const QString err = m_process->errorString();
     const QString tail = m_tail.join('\n');
+    writeFullLogToFile();
 
     m_process->deleteLater();
     m_process = nullptr;
@@ -962,6 +1009,7 @@ void AudiverisRunner::onFinished(int exitCode)
     LOGI() << "[audiveris] exited with code " << exitCode;
 
     const QString tail = m_tail.join('\n');
+    writeFullLogToFile();
 
     if (m_process)
     {
@@ -994,8 +1042,26 @@ void AudiverisRunner::onFinished(int exitCode)
         }
 
         LOGE() << "Reprise: Audiveris exited with code " << exitCode;
-        emit finished(false, QString(),
-                      muse::qtrc("reprise", "Audiveris failed to recognise the scan (exit code %1).").arg(exitCode), tail);
+
+        QString msg;
+        if (m_sawNoStaves)
+        {
+            msg = muse::qtrc("reprise", "No music was found on this page -- it looks like a cover or title page. Choose the pages that contain music and try again.");
+        }
+        else if (m_sawLowInterline)
+        {
+            msg = muse::qtrc("reprise", "This page's resolution is too low for the staff size. Try a higher resolution scan (around 300 DPI), or use a scan that has one score page per page of the PDF/image.");
+        }
+        else if (m_sawTooLarge)
+        {
+            msg = muse::qtrc("reprise", "The scan image is too large to process at this quality. Try a lower resolution (DPI) or fewer pages.");
+        }
+        else
+        {
+            msg = muse::qtrc("reprise", "Audiveris failed to recognise the scan (exit code %1).").arg(exitCode);
+        }
+
+        emit finished(false, QString(), msg, tail);
         return;
     }
 

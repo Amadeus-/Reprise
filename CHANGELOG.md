@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.2] — 2026-11-21
+
+### Changed
+- **Recognition failures now explain themselves in plain English.** When a scan can't be recognized, the
+  "Recognition failed" window leads with a calm, specific reason and suggestion — e.g. *"This page's resolution is
+  too low for the staff size. Try a higher resolution scan (around 300 DPI), or use a scan that has one score page
+  per page of the PDF/image."* — instead of a technical error dump. The full Audiveris log is tucked behind a
+  **"Details"** disclosure (collapsed by default), with a **Copy** button, an **"Open log file"** button, and
+  Ctrl+A / Ctrl+C selection. Specific messages cover a too-low-resolution scan, a no-music/cover page, and an
+  oversized image.
+
 ## [0.16.1] — 2026-11-21
 
 ### Fixed

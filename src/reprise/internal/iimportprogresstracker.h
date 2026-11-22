@@ -44,7 +44,8 @@ struct ImportProgressSnapshot {
     std::string pdfPath;             //! source PDF of the current/last run
     bool hasError = false;           //! the last finished run ended in error
     std::string error;               //! short error message
-    std::string details;             //! a tail of Audiveris output for the error
+    std::string details;             //! the full Audiveris output for the error (shown in the error window)
+    std::string logFilePath;         //! on-disk copy of the full Audiveris log, for the error window's "Open log file"
 };
 
 class IImportProgressTracker : MODULE_GLOBAL_INTERFACE
@@ -61,7 +62,8 @@ public:
     virtual void reportProgress(int percent, int page, int totalPages, const std::string& phase) = 0;
 
     //! The run finished: ok -> status "done"; else status "error" with the message + details tail.
-    virtual void reportFinished(bool ok, const std::string& error, const std::string& details) = 0;
+    virtual void reportFinished(bool ok, const std::string& error, const std::string& details,
+                                const std::string& logFilePath = std::string()) = 0;
 
     //! The run was aborted (user Cancel / header-X while running): clears the active flag WITHOUT recording an error, so
     //! the single-import guard (bound to snapshot().active via activeChanged) can never stick set after a cancel. Distinct

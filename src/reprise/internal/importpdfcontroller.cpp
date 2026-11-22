@@ -1465,6 +1465,7 @@ void ImportPdfController::showRecognitionError()
     UriQuery query("musescore://reprise/importpdf/error");
     query.addParam("message", Val(snap.error));
     query.addParam("details", Val(snap.details));
+    query.addParam("logFilePath", Val(snap.logFilePath));
 
     //! Harden against an edge re-entry: force any prior error window of this URI closed + settled before opening again.
     forceCloseAndSettle(query, nullptr);

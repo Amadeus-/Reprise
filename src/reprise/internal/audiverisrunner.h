@@ -98,6 +98,14 @@ public:
     //! Valid after a successful finished(ok=true); the temp output dir persists (autoRemove off) so it is readable then.
     muse::io::path_t omrPath() const;
 
+    //! The complete, un-truncated Audiveris output (stdout + stderr, in arrival order) for this run, joined with '\n'. Unlike
+    //! the short error tail, nothing is dropped -- this is what the error window shows in full and what Copy copies.
+    QString fullLog() const { return m_fullLog.join('\n'); }
+
+    //! The on-disk copy of the full log (reprise-audiveris.log under the run's output dir), written on finish/error. Empty
+    //! if it could not be written; the error window's "Open log file" button is enabled only when this is non-empty.
+    QString logFilePath() const { return m_logFilePath; }
+
 signals:
     //! percent: 0-100 determinate, or -1 while the sheet total is still unknown (indeterminate/animated bar).
     //! sheet/total: 1-based current sheet and the total (both -1 until known). stageHuman: a friendly, already
@@ -176,6 +184,10 @@ private:
     //! Keep only the last N lines (a small ring) for the error tail.
     void pushTail(const QString& line);
 
+    //! Write the full accumulated log (m_fullLog) to reprise-audiveris.log under the run's output dir; records the path in
+    //! m_logFilePath and returns it. Empty (and m_logFilePath left unset) if there is nothing to write or the write fails.
+    QString writeFullLogToFile();
+
     QProcess* m_process = nullptr;
     muse::io::path_t m_pdfPath;
     QString m_outDir;
@@ -192,6 +204,12 @@ private:
     //! EVERY line (not just the short error tail, whose ring can scroll the signature out), so the PDF retry trigger is
     //! reliable. Reset per fresh run in start(); drives the one-shot pad retry together with m_retriedWithPad.
     bool m_sawArrayIndexCrash = false;
+
+    //! Set once Audiveris's own failure signatures are seen anywhere in this run's output, so onFinished() can turn a
+    //! non-zero exit into a specific, friendly message instead of the generic "exit code N". Reset per fresh run in start().
+    bool m_sawNoStaves = false;
+    bool m_sawLowInterline = false;
+    bool m_sawTooLarge = false;
 
     //! Guards the PDF pad retry so it happens at most ONCE per import: a padded re-run that still fails is reported, not
     //! re-padded. Deliberately NOT reset in start() (the retry re-enters start()), only default-initialised per runner.
@@ -212,6 +230,12 @@ private:
     int m_maxPercent = -1;
 
     QStringList m_tail;
+
+    //! The complete un-truncated output (every line routed through pushTail) and the path of its on-disk copy. The error
+    //! window shows m_fullLog in full (the tail is only a last-resort fallback) and offers m_logFilePath via "Open log file".
+    QStringList m_fullLog;
+    QString m_logFilePath;
+
     bool m_cancelled = false;
 };
 }

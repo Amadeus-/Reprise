@@ -375,7 +375,9 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
         //! message + a tail of Audiveris output in the snapshot, then ask the app-lifetime controller to close this popup
         //! and open the error window (it reads the snapshot back). The popup never doubles as the error view.
         const QString message = error.isEmpty() ? muse::qtrc("reprise", "Audiveris could not recognise this scan.") : error;
-        importProgressTracker()->reportFinished(false, message.toStdString(), tail.toStdString());
+        const QString fullLog = m_runner ? m_runner->fullLog() : tail;
+        const QString logPath = m_runner ? m_runner->logFilePath() : QString();
+        importProgressTracker()->reportFinished(false, message.toStdString(), fullLog.toStdString(), logPath.toStdString());
         importProgressTracker()->requestErrorWindow();
         return;
     }
@@ -390,7 +392,9 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
     {
         //! FIX 2: degenerate scan (no recognised parts) -> the dedicated error window, not an in-place error state.
         const QString message = muse::qtrc("reprise", "No music could be recognised in this scan. Try a clearer or higher-resolution scan.");
-        importProgressTracker()->reportFinished(false, message.toStdString(), std::string());
+        const QString fullLog = m_runner ? m_runner->fullLog() : QString();
+        const QString logPath = m_runner ? m_runner->logFilePath() : QString();
+        importProgressTracker()->reportFinished(false, message.toStdString(), fullLog.toStdString(), logPath.toStdString());
         importProgressTracker()->requestErrorWindow();
         return;
     }

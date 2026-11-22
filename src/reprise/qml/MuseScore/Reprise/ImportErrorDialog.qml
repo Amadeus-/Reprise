@@ -37,6 +37,11 @@ StyledDialogView {
     //! Set from the opening UriQuery params (see ImportPdfController::showRecognitionError).
     property string message: ""
     property string details: ""
+    property string logFilePath: ""
+
+    //! Collapsed by default: the raw Audiveris log lives behind a "Details" disclosure so the calm plain-English cause
+    //! leads and the technical tail is on demand. Mirrors the intake "Options" disclosure idiom (chevron + animated reveal).
+    property bool showDetails: false
 
     objectName: "ImportErrorDialog"
 
@@ -240,49 +245,198 @@ StyledDialogView {
                 Layout.bottomMargin: 14
                 spacing: 12
 
-                //! Red headline message.
+                //! LEAD: the plain-English cause + suggestion (from AudiverisRunner::onFinished). Calm dark ink, not a red
+                //! alarm -- the header title/badge already signal the error; the body should read as a friendly explanation.
                 StyledTextLabel {
                     Layout.fillWidth: true
                     text: root.message
-                    color: root.brandError
-                    font: ui.theme.largeBodyBoldFont
+                    color: root.inkStep
+                    font: ui.theme.largeBodyFont
                     horizontalAlignment: Text.AlignLeft
                     wrapMode: Text.Wrap
                 }
 
-                //! Selectable Audiveris output tail (shown only when there is a details tail).
-                Rectangle {
+                //! ===== "Details" disclosure: the raw Audiveris log, collapsed by default =====
+                //! Mirrors the intake "Options" disclosure (ImportPdfOptionsDialog.qml): a clickable header row with a
+                //! rotating chevron over an animated height/opacity reveal. Present only when there is a log tail; when
+                //! expanded it shows the full scrollable log plus the Open-log + Copy actions.
+                Column {
+                    id: detailsSection
+
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 150
+                    spacing: 8
 
                     visible: root.details.length > 0
 
-                    radius: 4
-                    color: "#FFFFFF"
-                    border.width: 1
-                    border.color: root.cardStroke
+                    //! Header is an Item so the full-width MouseArea can fill it without clashing with a positioner.
+                    Item {
+                        id: detailsHeader
 
-                    Flickable {
-                        anchors.fill: parent
-                        anchors.margins: 8
+                        width: parent.width
+                        height: detailsHeaderRow.implicitHeight
+
+                        Row {
+                            id: detailsHeaderRow
+
+                            anchors.left: parent.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+
+                            StyledIconLabel {
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                iconCode: IconCode.SMALL_ARROW_DOWN
+                                //! Points right when collapsed, down when expanded; the rotation animates for a smooth disclosure.
+                                rotation: root.showDetails ? 0 : -90
+                                color: root.inkStep
+                                font.pixelSize: 12
+
+                                Behavior on rotation {
+                                    NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                }
+                            }
+
+                            StyledTextLabel {
+                                anchors.verticalCenter: parent.verticalCenter
+
+                                text: qsTrc("reprise", "Details")
+                                color: root.inkStep
+                                font.bold: true
+                                horizontalAlignment: Text.AlignLeft
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.showDetails = !root.showDetails
+                        }
+                    }
+
+                    //! Animated reveal: height tracks the content's implicitHeight when expanded (0 when collapsed). Because
+                    //! the dialog's contentHeight binds to mainColumn.implicitHeight, animating this height resizes the whole
+                    //! window smoothly rather than snapping. clip hides the content mid-animation.
+                    Item {
+                        id: detailsReveal
+
+                        width: parent.width
                         clip: true
-                        contentWidth: width
-                        contentHeight: tailLabel.implicitHeight
 
-                        //! Read-only but SELECTABLE so the user can drag-select the recognition error/log text (the Copy
-                        //! button beside Close copies the whole error in one click).
-                        TextEdit {
-                            id: tailLabel
+                        height: root.showDetails ? detailsContent.implicitHeight : 0
+                        opacity: root.showDetails ? 1 : 0
+                        visible: height > 0
+
+                        Behavior on height {
+                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                        }
+                        Behavior on opacity {
+                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                        }
+
+                        Column {
+                            id: detailsContent
+
                             width: parent.width
-                            text: root.details
-                            color: root.inkStep
-                            font: ui.theme.bodyFont
-                            horizontalAlignment: Text.AlignLeft
-                            wrapMode: TextEdit.Wrap
-                            readOnly: true
-                            selectByMouse: true
-                            selectionColor: root.brandGold
-                            opacity: 0.85
+                            spacing: 12
+
+                            //! Selectable Audiveris output: the FULL log, scrollable (StyledFlickable gives themed scrollbars)
+                            //! and keyboard-selectable (Ctrl+A / Ctrl+C).
+                            Rectangle {
+                                width: parent.width
+                                height: 180
+
+                                radius: 4
+                                color: "#FFFFFF"
+                                border.width: 1
+                                border.color: root.cardStroke
+
+                                StyledFlickable {
+                                    id: logFlick
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    contentWidth: width
+                                    contentHeight: tailLabel.implicitHeight
+
+                                    //! Read-only but SELECTABLE (mouse AND keyboard) so the user can drag-select or Ctrl+A /
+                                    //! Ctrl+C the recognition log. Ctrl+C with no active selection copies the whole log.
+                                    TextEdit {
+                                        id: tailLabel
+                                        width: parent.width
+                                        text: root.details
+                                        color: root.inkStep
+                                        font: ui.theme.bodyFont
+                                        horizontalAlignment: Text.AlignLeft
+                                        wrapMode: TextEdit.Wrap
+                                        readOnly: true
+                                        selectByMouse: true
+                                        selectByKeyboard: true
+                                        activeFocusOnPress: true
+                                        persistentSelection: true
+                                        selectionColor: root.brandGold
+                                        opacity: 0.85
+
+                                        Keys.onPressed: function(event) {
+                                            if (event.modifiers & Qt.ControlModifier) {
+                                                if (event.key === Qt.Key_A) {
+                                                    tailLabel.selectAll()
+                                                    event.accepted = true
+                                                } else if (event.key === Qt.Key_C) {
+                                                    if (tailLabel.selectionStart === tailLabel.selectionEnd) {
+                                                        errorModel.copyToClipboard(root.details)
+                                                    } else {
+                                                        tailLabel.copy()
+                                                    }
+                                                    event.accepted = true
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            //! Log actions live WITH the log (behind Details): Open log file = NAVY, Copy(-all) = GOLD.
+                            Row {
+                                spacing: 12
+
+                                //! Open log file: opens the on-disk Audiveris log in the OS default handler. Enabled only
+                                //! when a log path was captured for this run.
+                                FlatButton {
+                                    text: qsTrc("reprise", "Open log file")
+
+                                    enabled: root.logFilePath.length > 0
+
+                                    normalColor: root.brandNavy
+                                    hoverHitColor: root.brandNavyDeep
+
+                                    contentItem: Component {
+                                        StyledTextLabel {
+                                            text: qsTrc("reprise", "Open log file")
+                                            color: "#FFFFFF"
+                                            font: ui.theme.bodyFont
+                                        }
+                                    }
+
+                                    onClicked: errorModel.openLogFile(root.logFilePath)
+                                }
+
+                                //! Copy: copies the whole error message + Audiveris output to the clipboard.
+                                FlatButton {
+                                    text: qsTrc("global", "Copy")
+
+                                    normalColor: root.brandGold
+                                    hoverHitColor: root.brandGoldLight
+
+                                    contentItem: Component {
+                                        StyledTextLabel {
+                                            text: qsTrc("global", "Copy")
+                                            color: root.brandNavyDeep
+                                            font: ui.theme.bodyFont
+                                        }
+                                    }
+
+                                    onClicked: root.copyAll()
+                                }
+                            }
                         }
                     }
                 }
@@ -315,25 +469,7 @@ StyledDialogView {
 
                     Item { Layout.fillWidth: true }
 
-                    //! Copy = GOLD: copies the whole error message + Audiveris output to the clipboard.
-                    FlatButton {
-                        text: qsTrc("global", "Copy")
-
-                        normalColor: root.brandGold
-                        hoverHitColor: root.brandGoldLight
-
-                        contentItem: Component {
-                            StyledTextLabel {
-                                text: qsTrc("global", "Copy")
-                                color: root.brandNavyDeep
-                                font: ui.theme.bodyFont
-                            }
-                        }
-
-                        onClicked: root.copyAll()
-                    }
-
-                    //! Close = NAVY.
+                    //! Close = NAVY. Always visible; the log actions (Open log file / Copy) live behind Details with the log.
                     FlatButton {
                         text: qsTrc("global", "Close")
 

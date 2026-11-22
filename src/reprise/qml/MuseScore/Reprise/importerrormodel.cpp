@@ -24,6 +24,9 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QFileInfo>
 
 using namespace mu::reprise;
 
@@ -41,5 +44,16 @@ void ImportErrorModel::copyToClipboard(const QString& text) const
         clipboard->setText(text);
     }
 
+    return;
+}
+
+void ImportErrorModel::openLogFile(const QString& path) const
+{
+    if (path.isEmpty() || !QFileInfo::exists(path))
+    {
+        return;
+    }
+
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     return;
 }
