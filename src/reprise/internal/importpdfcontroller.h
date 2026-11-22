@@ -141,6 +141,12 @@ private:
     //! error message + details -- so the progress popup never doubles as the error view.
     void showRecognitionError();
 
+    //! "Import finished" partial-import notice. Driven by the tracker's noticeWindowRequested notification (observed in
+    //! init(), on a fresh event-loop turn). Opens the dedicated "musescore://reprise/importpdf/notice" window, populated from
+    //! the snapshot's partialSkippedReport + partialMultiMovement -- shown AFTER the valid pages imported, so the user learns
+    //! which pages were skipped while the rest of their music opened. Standalone (the progress popup is already closed).
+    void showImportNotice();
+
     //! Read-only MCP/API queries backed by the shared progress tracker.
     muse::RetVal<GetImportProgressCommand::Output> getImportProgress() const;
     muse::RetVal<GetImportErrorsCommand::Output> getImportErrors() const;

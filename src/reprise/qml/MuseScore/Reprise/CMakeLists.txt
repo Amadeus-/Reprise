@@ -36,6 +36,7 @@ qt_add_qml_module(reprise_qml
         ImportPdfOptionsDialog.qml
         ImportProgressDialog.qml
         ImportErrorDialog.qml
+        ImportNoticeDialog.qml
         ProofingStrip.qml
         ProofingMagnifier.qml
     RESOURCES

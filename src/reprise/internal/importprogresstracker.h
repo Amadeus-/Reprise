@@ -122,6 +122,24 @@ public:
         return m_errorWindowRequested;
     }
 
+    void reportPartialImport(const std::string& skippedReport, bool multiMovement) override
+    {
+        //! Set AFTER the success reportFinished(true,...); deliberately does NOT touch active/status. The fields auto-clear
+        //! on the next reportStarted()'s fresh snapshot.
+        m_snapshot.partialSkippedReport = skippedReport;
+        m_snapshot.partialMultiMovement = multiMovement;
+    }
+
+    void requestNoticeWindow() override
+    {
+        m_noticeWindowRequested.notify();
+    }
+
+    muse::async::Notification noticeWindowRequested() const override
+    {
+        return m_noticeWindowRequested;
+    }
+
 private:
     ImportProgressSnapshot m_snapshot;
 
@@ -132,5 +150,6 @@ private:
     muse::async::Notification m_popupCloseRequested;
     muse::async::Notification m_activeChanged;
     muse::async::Notification m_errorWindowRequested;
+    muse::async::Notification m_noticeWindowRequested;
 };
 }

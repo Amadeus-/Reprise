@@ -27,7 +27,10 @@
 #include <utility>
 #include <vector>
 
+#include <QList>
+#include <QMap>
 #include <QObject>
+#include <QPair>
 #include <QStringList>
 #include <QString>
 
@@ -102,6 +105,18 @@ public:
     //! the short error tail, nothing is dropped -- this is what the error window shows in full and what Copy copies.
     QString fullLog() const { return m_fullLog.join('\n'); }
 
+    //! The pages Audiveris could not recognise on this run, as (1-based sheet number -> reason code) pairs in ascending
+    //! sheet order. Reason codes are "no-music" (cover/title page or staves not found), "low-res" (interline too small for
+    //! the staff size), "too-large" (image over Audiveris's per-sheet pixel cap). Populated from the per-sheet failure
+    //! signatures scanned in pushTail(); empty when every requested page recognised. Read after a successful finished(ok=true)
+    //! by the "Import finished" notice (the valid pages still imported; this lists which pages were skipped).
+    QList<QPair<int, QString> > skippedPages() const;
+
+    //! True when the (re-export) pass produced more than one MusicXML movement -- i.e. survivor pages were non-contiguous
+    //! and Audiveris split them into separate movements, so only part of the music could be combined into one score. Valid
+    //! after a successful finished(ok=true) that went through the re-export path.
+    bool producedMultipleMovements() const { return m_multiMovement; }
+
     //! The on-disk copy of the full log (reprise-audiveris.log under the run's output dir), written on finish/error. Empty
     //! if it could not be written; the error window's "Open log file" button is enabled only when this is non-empty.
     QString logFilePath() const { return m_logFilePath; }
@@ -140,6 +155,16 @@ private:
 
     //! Search a directory (recursively) for the first file named <base>.<ext>, else any *.<ext>. Empty if none.
     muse::io::path_t locateOutput(const muse::io::path_t& dir, const std::string& base, const std::string& ext) const;
+
+    //! Launch a minimal SECOND Audiveris pass that re-exports the already-recognised .omr book, SKIPPING the pages that
+    //! failed the first run, so the valid pages still import. Reuses the first run's output dir (keeps m_fullLog +
+    //! m_invalidSheetReasons), wires the SAME QProcess signals + TESSDATA_PREFIX as start(), and sets m_reExportedOmr so
+    //! onFinished() handles the re-export outcome. Returns false (launching nothing) only if Audiveris or omrPath is empty.
+    bool startOmrReExport(const muse::io::path_t& omrPath);
+
+    //! All files matching *.<ext> anywhere under dir (recursive), sorted ascending by path. Used to collect the possibly
+    //! multiple MusicXML movements the re-export pass emits when the survivor pages were non-contiguous; mirrors locateOutput().
+    std::vector<muse::io::path_t> locateAllOutputs(const muse::io::path_t& dir, const std::string& ext) const;
 
     //! True if `suffix` (io::suffix: lower-case, no dot) is a SINGLE-frame raster image this Qt kit can decode, so it is
     //! eligible for the always-on single-image white-margin pad (padImageToTemp). TIFF is handled separately by
@@ -214,6 +239,20 @@ private:
     //! Guards the PDF pad retry so it happens at most ONCE per import: a padded re-run that still fails is reported, not
     //! re-padded. Deliberately NOT reset in start() (the retry re-enters start()), only default-initialised per runner.
     bool m_retriedWithPad = false;
+
+    //! Guards the skip-invalid re-export so it happens at most ONCE per import: a re-export that still fails is reported, not
+    //! re-exported. Deliberately NOT reset in start() (the re-export re-enters the QProcess machinery), only default-initialised
+    //! per runner -- same discipline as m_retriedWithPad.
+    bool m_reExportedOmr = false;
+
+    //! Per-sheet failure reasons recorded during the FIRST pass (1-based sheet number -> "no-music" / "low-res" / "too-large"),
+    //! in ascending key order (QMap). Drives both the skip-invalid re-export (which pages to drop) and the "Import finished"
+    //! notice's skipped-page list. Reset per fresh run in start(); PRESERVED across the re-export re-launch.
+    QMap<int, QString> m_invalidSheetReasons;
+
+    //! Set by the re-export finish when it produced more than one MusicXML movement (non-contiguous survivors). Surfaced via
+    //! producedMultipleMovements() so the notice can add the interior "some pages in the middle..." explanation.
+    bool m_multiMovement = false;
 
     int m_totalSheets = -1;
     int m_currentSheet = -1;

@@ -135,7 +135,17 @@ void ImportProgressModel::initContext()
             setStatus("done");
             importProgressTracker()->reportFinished(true, std::string(), std::string());
 
-            if (closePopupOnComplete())
+            //! "Import finished" notice (set AFTER the success reportFinished(true,...)): if any pages were skipped or the
+            //! survivors were split, open the separate gold notice window now that the score is confirmed open. No-op otherwise.
+            surfacePartialImportNoticeIfAny();
+
+            //! Only a CLEAN import (nothing skipped / not split) uses the checkbox-governed auto-close. When the import is
+            //! notice-worthy, the controller's showImportNotice() DISMISSES this popup (settled) as part of showing the
+            //! notice; a second auto-close scheduled here would be a RACING teardown of this same popup -- that race is
+            //! exactly the ticked-checkbox bug where the notice and the auto-close tore each other down and the notice
+            //! vanished. So skip the auto-close whenever the notice will take over closing this popup.
+            const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement;
+            if (!noticeWorthy && closePopupOnComplete())
             {
                 //! Auto-close the popup after the Done dwell. CRITICAL: do NOT emit closeRequested() -> root.hide() here.
                 //! root.hide() closes this fire-and-forget async-opened dialog from INSIDE itself, which races the
@@ -195,6 +205,8 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
     m_awaitingOpen = false;
+    m_skippedPages.clear();
+    m_multiMovement = false;
 
     setStatus("running");
     m_indeterminate = true;
@@ -397,6 +409,15 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
         importProgressTracker()->reportFinished(false, message.toStdString(), fullLog.toStdString(), logPath.toStdString());
         importProgressTracker()->requestErrorWindow();
         return;
+    }
+
+    //! Capture the skip-invalid result from the runner NOW (before the score opens): the pages Audiveris could not read (and
+    //! why), and whether the survivors were split into movements. Surfaced later by surfacePartialImportNoticeIfAny() at the
+    //! Done site, so the "Import finished" notice opens only after the score is confirmed open.
+    if (m_runner)
+    {
+        m_skippedPages = m_runner->skippedPages();
+        m_multiMovement = m_runner->producedMultipleMovements();
     }
 
     //! Recognition succeeded: show a full determinate bar and open the score. The score is NOT "Done" until it actually
@@ -638,7 +659,14 @@ void ImportProgressModel::finalizeOpenedInNewWindow()
     setStatus("done");
     importProgressTracker()->reportFinished(true, std::string(), std::string());
 
-    if (closePopupOnComplete())
+    //! "Import finished" notice (new-window open path): same as the in-window Done site -- surface skipped pages now that the
+    //! import's open has resolved successfully. No-op when nothing was skipped.
+    surfacePartialImportNoticeIfAny();
+
+    //! Only a CLEAN import uses the checkbox-governed auto-close; a notice-worthy import is closed by the controller as
+    //! part of showing the notice, so a second auto-close here would race that teardown (the ticked-path suppression bug).
+    const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement;
+    if (!noticeWorthy && closePopupOnComplete())
     {
         //! Same settled auto-close as the in-window path: ask the app-lifetime controller to close + settle this popup's
         //! own window after the Done dwell (never a self-close, which races teardown and double-delivers onClose -> SIGSEGV).
@@ -781,4 +809,44 @@ void ImportProgressModel::applyGrandPianoDefault()
     }
 
     LOGI() << "Reprise: defaulted " << keys.size() << " imported part(s) to Grand Piano";
+}
+
+void ImportProgressModel::surfacePartialImportNoticeIfAny()
+{
+    //! Nothing skipped and the survivors were not split -> no notice (the ordinary silent success).
+    if (m_skippedPages.isEmpty() && !m_multiMovement)
+    {
+        return;
+    }
+
+    //! Build the blessed per-page report, one "Page N: <reason> -- skipped" line per skipped page. The em-dash is injected as
+    //! %2 (QChar(0x2014)) to keep this source ASCII, matching the existing QChar(0x2014) idiom in this file. The interior
+    //! "some pages in the middle..." paragraph is NOT prepended here: it is rendered as its own paragraph in the notice QML,
+    //! gated on the multiMovement flag passed below, so it never double-renders alongside this per-page list.
+    const QString dash = QString(QChar(0x2014));
+    QStringList lines;
+    for (const QPair<int, QString>& p : m_skippedPages)
+    {
+        const int page = p.first;
+        const QString& reason = p.second;
+        if (reason == "low-res")
+        {
+            lines << muse::qtrc("reprise", "Page %1: resolution too low %2 skipped").arg(page).arg(dash);
+        }
+        else if (reason == "too-large")
+        {
+            lines << muse::qtrc("reprise", "Page %1: too large %2 skipped").arg(page).arg(dash);
+        }
+        else
+        {
+            //! "no-music" (and any unrecognised code) -> cover/title page or staves not found.
+            lines << muse::qtrc("reprise", "Page %1: no music / cover %2 skipped").arg(page).arg(dash);
+        }
+    }
+
+    const QString report = lines.join('\n');
+    importProgressTracker()->reportPartialImport(report.toStdString(), m_multiMovement);
+    importProgressTracker()->requestNoticeWindow();
+
+    return;
 }

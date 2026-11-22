@@ -148,6 +148,42 @@ muse::io::path_t AudiverisRunner::locateOutput(const muse::io::path_t& dir, cons
     return firstAny.isEmpty() ? io::path_t() : io::path_t(firstAny);
 }
 
+std::vector<muse::io::path_t> AudiverisRunner::locateAllOutputs(const muse::io::path_t& dir, const std::string& ext) const
+{
+    const QString glob = "*." + QString::fromStdString(ext);
+
+    QStringList paths;
+    QDirIterator it(dir.toQString(), QStringList() << glob, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext())
+    {
+        paths << it.next();
+    }
+
+    //! Ascending by path so the "first" movement is deterministic (Audiveris names split movements with an ordered suffix).
+    paths.sort();
+
+    std::vector<io::path_t> result;
+    result.reserve(static_cast<size_t>(paths.size()));
+    for (const QString& p : paths)
+    {
+        result.push_back(io::path_t(p));
+    }
+
+    return result;
+}
+
+QList<QPair<int, QString> > AudiverisRunner::skippedPages() const
+{
+    //! QMap iterates in ascending key order, so the list is already sorted by sheet number.
+    QList<QPair<int, QString> > result;
+    for (auto it = m_invalidSheetReasons.constBegin(); it != m_invalidSheetReasons.constEnd(); ++it)
+    {
+        result.append(qMakePair(it.key(), it.value()));
+    }
+
+    return result;
+}
+
 bool AudiverisRunner::isQtDecodableImage(const std::string& suffix)
 {
     //! SINGLE-frame raster formats this Qt kit has an image plugin for and that Audiveris reads as one raster sheet, so the
@@ -551,6 +587,10 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_sawNoStaves = false;
     m_sawLowInterline = false;
     m_sawTooLarge = false;
+    m_invalidSheetReasons.clear();
+    m_multiMovement = false;
+    //! NOTE: m_reExportedOmr is deliberately NOT reset here -- the skip-invalid re-export re-enters the QProcess machinery
+    //! (its own connections), and the guard must survive so the re-export runs at most once per import (like m_retriedWithPad).
     m_totalSheets = -1;
     m_currentSheet = -1;
     m_requestedSheetCount = 0;
@@ -709,6 +749,64 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     {
         emit progressChanged(-1, -1, -1, muse::qtrc("reprise", "Starting Audiveris..."));
     }, Qt::QueuedConnection);
+
+    m_process->start();
+    return true;
+}
+
+bool AudiverisRunner::startOmrReExport(const muse::io::path_t& omrPath)
+{
+    const io::path_t audiverisExe = findAudiveris();
+    if (audiverisExe.empty() || omrPath.empty())
+    {
+        return false;
+    }
+
+    //! One-shot guard: mark the re-export BEFORE launching so onFinished() routes its outcome through the re-export branch,
+    //! and so a re-export that itself fails is never re-exported again. Keep m_fullLog + m_invalidSheetReasons (the notice
+    //! reads the latter); clear only the short error tail so it reflects the re-export pass.
+    m_reExportedOmr = true;
+    m_tail.clear();
+
+    //! Minimal second pass: re-export the ALREADY-recognised .omr book. No -save (the book is already saved), no -sheets and
+    //! no pdfResolution (the book holds the recognised sheets; the failed stubs simply have nothing to export, so they are
+    //! skipped naturally). indentations=false keeps the surviving systems combined into one export, matching start().
+    std::vector<std::string> args = {
+        "-batch",
+        "-export",
+        "-constant", "org.audiveris.omr.sheet.ProcessingSwitches.indentations=false",
+        "-output", m_outDir.toStdString(),
+        "--",
+        omrPath.toQString().toStdString()
+    };
+
+    QStringList qargs;
+    for (const std::string& a : args)
+    {
+        qargs << QString::fromStdString(a);
+    }
+
+    m_process = new QProcess(this);
+    m_process->setProgram(audiverisExe.toQString());
+    m_process->setArguments(qargs);
+
+    //! Same TESSDATA_PREFIX setup as start() (export can still touch OCR data); mirror it exactly.
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const io::path_t tessdata = findRepriseTessdata();
+    if (!tessdata.empty())
+    {
+        env.insert("TESSDATA_PREFIX", tessdata.toQString());
+    }
+    m_process->setProcessEnvironment(env);
+
+    //! Same signal wiring as start(), so progress/log streaming and onFinished() behave identically for this pass.
+    connect(m_process, &QProcess::readyReadStandardOutput, this, &AudiverisRunner::onReadyReadStandardOutput);
+    connect(m_process, &QProcess::readyReadStandardError, this, &AudiverisRunner::onReadyReadStandardError);
+    connect(m_process, &QProcess::errorOccurred, this, &AudiverisRunner::onErrorOccurred);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this](int exitCode, QProcess::ExitStatus) { onFinished(exitCode); });
+
+    LOGI() << "[audiveris] re-export command: \"" << audiverisExe.toQString() << "\" " << qargs.join(' ');
 
     m_process->start();
     return true;
@@ -931,17 +1029,38 @@ void AudiverisRunner::pushTail(const QString& line)
 
     //! Audiveris's own failure signatures, scanned once each over every line, so a non-zero exit can be turned into a
     //! specific, user-friendly message (no staves -> cover/title page; too-low interline / too-large image -> DPI advice).
-    if (!m_sawNoStaves && (line.contains("No regularly spaced lines found") || line.contains("No system found")))
+    //! The global m_saw* flags still drive the all-invalid failure message; the per-sheet reason map (recorded below) drives
+    //! the skip-invalid re-export + the "Import finished" notice's skipped-page list.
+    QString reason;
+    if (line.contains("No regularly spaced lines found") || line.contains("No system found"))
     {
         m_sawNoStaves = true;
+        reason = "no-music";
     }
-    if (!m_sawLowInterline && line.contains("too low interline"))
+    else if (line.contains("too low interline"))
     {
         m_sawLowInterline = true;
+        reason = "low-res";
     }
-    if (!m_sawTooLarge && line.contains("Too large image"))
+    else if (line.contains("Too large image"))
     {
         m_sawTooLarge = true;
+        reason = "too-large";
+    }
+
+    //! Record the per-sheet reason the FIRST time a given sheet fails. The reason line itself carries the leading logger tag
+    //! "LEVEL [<book>#<N>] ..." (confirmed against captured Audiveris logs), so read the sheet number straight from it; the
+    //! untagged continuation lines (ExecutionException / "Caused by:") fall back to the last sheet parseLine saw. First
+    //! reason per sheet wins (contains() guard), so a later untagged line never overwrites the correctly-tagged one.
+    if (!reason.isEmpty())
+    {
+        static const QRegularExpression reSheetReason("\\[[^\\]]*#(\\d+)\\]");
+        const QRegularExpressionMatch mSheet = reSheetReason.match(line);
+        const int sheet = mSheet.hasMatch() ? mSheet.captured(1).toInt() : m_currentSheet;
+        if (sheet > 0 && !m_invalidSheetReasons.contains(sheet))
+        {
+            m_invalidSheetReasons.insert(sheet, reason);
+        }
     }
 
     //! Accumulate the COMPLETE output (never truncated) for the error window + its on-disk copy.
@@ -1017,6 +1136,34 @@ void AudiverisRunner::onFinished(int exitCode)
         m_process = nullptr;
     }
 
+    //! Skip-invalid re-export finish (handled FIRST, before the exit-code branch): this run was the minimal second pass that
+    //! re-exported the .omr book with the failed pages dropped. Its exit code is not authoritative (a partial export can
+    //! still report non-zero), so judge it purely by whether MusicXML was produced. Multiple .mxl means the survivor pages
+    //! were non-contiguous and Audiveris split them into movements -> flag m_multiMovement so the notice explains the gap.
+    if (m_reExportedOmr)
+    {
+        std::vector<io::path_t> outputs = locateAllOutputs(io::path_t(m_outDir), "mxl");
+        if (outputs.empty())
+        {
+            outputs = locateAllOutputs(io::path_t(m_outDir), "xml");
+        }
+
+        if (outputs.empty())
+        {
+            LOGE() << "Reprise: skip-invalid re-export produced no MusicXML under " << m_outDir;
+            emit finished(false, QString(),
+                          muse::qtrc("reprise", "Audiveris could not import the remaining pages after skipping the unreadable ones."),
+                          tail);
+            return;
+        }
+
+        m_multiMovement = outputs.size() > 1;
+        LOGI() << "Reprise: skip-invalid re-export produced " << outputs.size() << " movement(s), skipped "
+               << m_invalidSheetReasons.size() << " page(s)";
+        emit finished(true, outputs.front().toQString(), QString(), tail);
+        return;
+    }
+
     if (exitCode != 0)
     {
         //! PDF retry-on-crash for Audiveris #711: when a PDF run crashes with the edge-probe signature
@@ -1039,6 +1186,24 @@ void AudiverisRunner::onFinished(int exitCode)
             }
 
             LOGW() << "Reprise: PDF pad failed; reporting the original Audiveris failure.";
+        }
+
+        //! Skip-invalid re-export: some (but maybe not all) pages failed with a known signature. Rather than failing the
+        //! whole import, launch a minimal second pass that re-exports the already-recognised .omr book with the failed pages
+        //! dropped, so the valid pages still import. Ordered AFTER the #711 pad-retry (a crash is worth a padded re-run
+        //! first) and guarded by m_reExportedOmr so it runs at most once. Only when we actually recorded per-sheet reasons.
+        if (!m_reExportedOmr && !m_invalidSheetReasons.isEmpty())
+        {
+            const io::path_t omr = omrPath();
+            if (!omr.empty())
+            {
+                LOGW() << "Reprise: " << m_invalidSheetReasons.size() << " page(s) failed recognition; re-exporting the "
+                       << "recognised pages from " << omr.toQString() << " with the unreadable ones skipped.";
+                if (startOmrReExport(omr))
+                {
+                    return;
+                }
+            }
         }
 
         LOGE() << "Reprise: Audiveris exited with code " << exitCode;

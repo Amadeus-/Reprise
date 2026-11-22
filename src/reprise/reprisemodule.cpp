@@ -97,6 +97,10 @@ void RepriseModule::resolveImports()
         //! NOTE: Register the dedicated "Recognition failed" window (FIX 2), opened by the controller on a failed run
         //! after the progress popup is closed -- so the progress popup never doubles as the error view.
         ir->registerQmlUri(Uri("musescore://reprise/importpdf/error"), "MuseScore.Reprise", "ImportErrorDialog");
+
+        //! NOTE: Register the "Import finished" partial-import notice window (0.16.3), opened by the controller after the
+        //! valid pages import when some pages were skipped -- a gold INFO window separate from the red error dialog.
+        ir->registerQmlUri(Uri("musescore://reprise/importpdf/notice"), "MuseScore.Reprise", "ImportNoticeDialog");
     }
 }
 

@@ -46,6 +46,13 @@ struct ImportProgressSnapshot {
     std::string error;               //! short error message
     std::string details;             //! the full Audiveris output for the error (shown in the error window)
     std::string logFilePath;         //! on-disk copy of the full Audiveris log, for the error window's "Open log file"
+
+    //! "Import finished" partial-import notice (set AFTER a successful reportFinished(true,...) when some pages were skipped):
+    //! the pre-built, newline-joined per-page report ("Page N: ... -- skipped" lines, interior line prepended when split), and
+    //! whether survivors were non-contiguous (multi-movement). Read back by ImportPdfController::showImportNotice to populate
+    //! the notice window. Auto-cleared by reportStarted()'s fresh snapshot; NOT cleared by reportFinished (set after it).
+    std::string partialSkippedReport;
+    bool partialMultiMovement = false;
 };
 
 class IImportProgressTracker : MODULE_GLOBAL_INTERFACE
@@ -98,5 +105,16 @@ public:
     //! one of: Done auto-close, or a failure handed to the dedicated error window.
     virtual void requestErrorWindow() = 0;
     virtual muse::async::Notification errorWindowRequested() const = 0;
+
+    //! Record the partial-import result into the snapshot (skippedReport = the newline-joined per-page list already built by
+    //! ImportProgressModel; multiMovement = survivors were non-contiguous). Called AFTER the success reportFinished(true,...),
+    //! so it does NOT touch active/status -- it only fills the two partial fields the notice window reads back.
+    virtual void reportPartialImport(const std::string& skippedReport, bool multiMovement) = 0;
+
+    //! Some pages were skipped on an otherwise-successful import: ask the app-lifetime ImportPdfController to open the
+    //! dedicated "Import finished" notice window. Fired by ImportProgressModel once the imported score is confirmed open,
+    //! after reportPartialImport recorded the report; the controller reads the snapshot back to populate the notice.
+    virtual void requestNoticeWindow() = 0;
+    virtual muse::async::Notification noticeWindowRequested() const = 0;
 };
 }

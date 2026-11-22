@@ -665,6 +665,14 @@ void ImportPdfController::init()
     {
         muse::async::Async::call(this, [this]() { showRecognitionError(); });
     });
+
+    //! "Import finished" partial-import notice: some pages were skipped on an otherwise-successful import. Open the dedicated
+    //! notice window (the progress popup is already closed by its own success auto-close by now). Deferred to a fresh
+    //! event-loop turn (Async::call) for the same stack-unwind discipline as the error/success paths above.
+    importProgressTracker()->noticeWindowRequested().onNotify(this, [this]()
+    {
+        muse::async::Async::call(this, [this]() { showImportNotice(); });
+    });
 }
 
 muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
@@ -1468,6 +1476,30 @@ void ImportPdfController::showRecognitionError()
     query.addParam("logFilePath", Val(snap.logFilePath));
 
     //! Harden against an edge re-entry: force any prior error window of this URI closed + settled before opening again.
+    forceCloseAndSettle(query, nullptr);
+
+    interactive()->open(query);
+}
+
+void ImportPdfController::showImportNotice()
+{
+    //! Some pages were skipped (or the survivors were split) on an otherwise-successful import. DISMISS the progress popup
+    //! first (settled), regardless of the close-after-import checkbox, THEN open the standalone "Import finished" notice --
+    //! so the notice is the SINGLE window: never stacked on top of a still-open progress popup (the unticked-checkbox
+    //! stacking bug), and never racing a separate checkbox-governed auto-close of this same popup (the ticked-checkbox
+    //! suppression bug, which tore the notice down). This is the exact ordered close-then-open showRecognitionError uses.
+    //! closeProgressPopup is a no-op if the popup is already gone. The notice is populated from the app-lifetime snapshot
+    //! the model filled via reportPartialImport (the per-page report + multi-movement flag), which survives the popup
+    //! view-model's teardown -- so the snapshot is captured by value BEFORE the close pumps the popup to destruction.
+    const ImportProgressSnapshot snap = importProgressTracker()->snapshot();
+
+    closeProgressPopup();
+
+    UriQuery query("musescore://reprise/importpdf/notice");
+    query.addParam("skippedReport", Val(snap.partialSkippedReport));
+    query.addParam("multiMovement", Val(snap.partialMultiMovement));
+
+    //! Harden against an edge re-entry: force any prior notice window of this URI closed + settled before opening again.
     forceCloseAndSettle(query, nullptr);
 
     interactive()->open(query);

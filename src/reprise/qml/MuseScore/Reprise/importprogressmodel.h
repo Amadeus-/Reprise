@@ -24,7 +24,9 @@
 
 #include <memory>
 
+#include <QList>
 #include <QObject>
+#include <QPair>
 #include <QString>
 #include <qqmlintegration.h>
 
@@ -174,6 +176,13 @@ private:
     //! TEMPORARY Reprise default: force every imported part to Grand Piano (applied on the next master-notation change).
     void applyGrandPianoDefault();
 
+    //! "Import finished" partial-import notice: if this import skipped any pages (m_skippedPages non-empty) or split the
+    //! survivors into movements (m_multiMovement), build the blessed newline-joined per-page report (the interior "some pages
+    //! in the middle..." line prepended when multi-movement), record it into the tracker via reportPartialImport, and ask the
+    //! controller to open the notice window (requestNoticeWindow). No-op when nothing was skipped. Called at each Done site,
+    //! right before the popup auto-close is scheduled, so the notice opens only after the score is confirmed open.
+    void surfacePartialImportNoticeIfAny();
+
     std::shared_ptr<AudiverisRunner> m_runner;
 
     QString m_title;
@@ -212,5 +221,11 @@ private:
     //! promise with an error Ret and reportOpenFailed() surfaces a graceful error. Guards both the success
     //! finalization and the open-failure path so each fires exactly once per import.
     bool m_awaitingOpen = false;
+
+    //! Captured from the runner on the success path (onRunnerFinished) BEFORE the score opens: the pages Audiveris skipped
+    //! (1-based sheet -> reason code), and whether the survivors were split into multiple movements. Consumed by
+    //! surfacePartialImportNoticeIfAny() at the Done site to build + surface the "Import finished" notice. Reset per import in load().
+    QList<QPair<int, QString> > m_skippedPages;
+    bool m_multiMovement = false;
 };
 }

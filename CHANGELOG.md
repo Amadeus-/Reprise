@@ -8,6 +8,22 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.3] — 2026-11-21
+
+### Added
+- **Scans with a few unreadable pages now import the rest of your music.** If some pages of a multi-page scan
+  can't be recognized — a cover or title page with no music, a page whose resolution is too low, or an oversized
+  page — Reprise now skips just those pages, imports the good ones, and shows an **Import finished** summary
+  listing exactly which pages were skipped and why (with a **Copy** button). Previously a single bad page could
+  fail the whole import. If a skipped page falls *between* good pages (so the remaining music can't yet be joined
+  into one score), Reprise says so rather than silently dropping part of the music. An import where *no* page can
+  be read still shows the "Recognition failed" window.
+
+### Fixed
+- **The "pages skipped" summary always appears, and on its own.** The Import finished notice now shows whenever
+  pages were skipped, regardless of the "Close this window after importing" setting, and the progress window is
+  dismissed first — so you see a single clean notice instead of two stacked windows.
+
 ## [0.16.2] — 2026-11-21
 
 ### Changed
