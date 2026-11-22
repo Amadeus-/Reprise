@@ -22,6 +22,10 @@
 
 #pragma once
 
+#include <cstdint>
+#include <map>
+
+#include <QString>
 #include <qqmlintegration.h>
 
 #include "abstractscoresmodel.h"
@@ -30,6 +34,7 @@
 
 #include "project/iprojectconfiguration.h"
 #include "project/irecentfilescontroller.h"
+#include "project/imscmetareader.h"
 #include "io/ifilesystem.h"
 #include "modularity/ioc.h"
 
@@ -43,6 +48,7 @@ public:
     muse::GlobalInject<IProjectConfiguration> configuration;
     muse::ContextInject<IRecentFilesController> recentFilesController = { this };
     muse::GlobalInject<muse::io::IFileSystem> fileSystem;
+    muse::GlobalInject<IMscMetaReader> mscMetaReader;
 
 public:
     RecentScoresModel(QObject* parent = nullptr);
@@ -62,5 +68,18 @@ private:
 
     QVariantMap makeItem(const RecentFile& file) const;
     int findRow(const muse::io::path_t& path) const;
+
+    // Reprise: per-card embedded-meta derived from the score file. Cached by path + mtime so each recent score's
+    // title/composer (and a .repr's page-range label) is read once per change, not on every list rebuild.
+    struct CardMeta {
+        QString title;       //! embedded score title (empty when none / unreadable -> card falls back to the clean file name)
+        QString composer;    //! embedded composer (empty when none -> the "(Composer)" part is omitted)
+        QString pages;       //! decorated ".repr" page-range label e.g. "[all]"/"[page 5]"/"[pages 1-3]" (empty for non-.repr)
+        int64_t mtimeMs = 0; //! last-modified epoch ms the cached values were read at (cache-invalidation key)
+    };
+
+    CardMeta cardMetaFor(const RecentFile& file) const;
+
+    mutable std::map<QString, CardMeta> m_cardMetaCache;
 };
 }

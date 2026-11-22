@@ -26,6 +26,7 @@
 
 #include "global/io/path.h"
 #include "global/types/retval.h"
+#include "global/types/bytearray.h"
 
 class QPixmap;
 
@@ -42,6 +43,9 @@ public:
 
     virtual muse::RetVal<QPixmap> readThumbnail(const muse::io::path_t& filePath) const = 0;
     virtual muse::RetVal<ProjectMeta> readMeta(const muse::io::path_t& filePath) const = 0;
+    //! Reprise: read project meta straight from in-memory .mscz bytes (no path to stat). Used for a score embedded
+    //! inside another container (a .repr bundle's score.mscz), where readMeta(path) cannot open the inner zip.
+    virtual muse::RetVal<ProjectMeta> readMeta(const muse::ByteArray& msczData) const = 0;
     virtual muse::RetVal<CloudProjectInfo> readCloudProjectInfo(const muse::io::path_t& filePath) const = 0;
 };
 }

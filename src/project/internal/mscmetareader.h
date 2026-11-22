@@ -43,6 +43,7 @@ class MscMetaReader : public IMscMetaReader
 public:
     muse::RetVal<QPixmap> readThumbnail(const muse::io::path_t& filePath) const override;
     muse::RetVal<ProjectMeta> readMeta(const muse::io::path_t& filePath) const override;
+    muse::RetVal<ProjectMeta> readMeta(const muse::ByteArray& msczData) const override;
     muse::RetVal<CloudProjectInfo> readCloudProjectInfo(const muse::io::path_t& filePath) const override;
 
 private:

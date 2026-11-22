@@ -21,10 +21,18 @@
  */
 #include "recentscoresmodel.h"
 
+#include <QDateTime>
+
 #include "translation.h"
 #include "dataformatter.h"
 #include "io/fileinfo.h"
 #include "types/reprisenameutils.h"
+#include "types/projectmeta.h"
+#include "internal/reprfile.h"
+
+#include "global/types/bytearray.h"
+#include "global/serialization/zipreader.h"
+#include "global/serialization/json.h"
 
 #include "log.h"
 
@@ -155,6 +163,99 @@ static QString cleanDisplayName(const RecentFile& file)
     return repriseCleanDisplayName(file.path.toQString());
 }
 
+// Reprise: format a .repr manifest "import.pages" value into the SQUARE-BRACKET card suffix. "all"/empty -> "[all]";
+// a single page "5" -> "[page 5]"; a range "1-3" -> "[pages 1<U+2013>3]" (hyphen rendered as an en-dash); a comma list
+// "1,3,5" -> "[pages 1,3,5]". ASCII source: the en-dash is injected via QChar(0x2013).
+static QString formatReprPagesLabel(const QString& pagesRaw)
+{
+    const QString trimmed = pagesRaw.trimmed();
+    if (trimmed.isEmpty() || trimmed.compare("all", Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("[all]");
+    }
+
+    bool isSingleInt = false;
+    trimmed.toInt(&isSingleInt);
+    if (isSingleInt) {
+        return "[page " + trimmed + "]";
+    }
+
+    QString display = trimmed;
+    display.replace('-', QChar(0x2013));
+    return "[pages " + display + "]";
+}
+
+// Reprise: LIGHT crack of a .repr outer zip -- pull ONLY the embedded score.mscz bytes (for the title/composer read) and
+// the manifest's raw "import.pages" string (for the page-range label). Avoids readRepr's full extraction of the original
+// scan + proofing render. Returns false (card falls back to the clean file name, no page part) on any failure.
+static bool readReprCardSource(const muse::io::path_t& path, muse::ByteArray& scoreMsczOut, QString& pagesRawOut)
+{
+    muse::ZipReader zip(path);
+    if (!zip.exists() || zip.hasError()) {
+        return false;
+    }
+
+    scoreMsczOut = zip.fileData(REPR_ENTRY_SCORE);
+    if (scoreMsczOut.empty()) {
+        return false;
+    }
+
+    const muse::ByteArray manifestBytes = zip.fileData(REPR_ENTRY_MANIFEST);
+    if (!manifestBytes.empty()) {
+        std::string err;
+        const muse::JsonDocument mdoc = muse::JsonDocument::fromJson(manifestBytes, &err);
+        const muse::JsonObject manifest = mdoc.rootObject();
+        if (manifest.contains("import")) {
+            const muse::JsonObject import = manifest.value("import").toObject();
+            pagesRawOut = QString::fromStdString(import.value("pages").toStdString());
+        }
+    }
+
+    return true;
+}
+
+RecentScoresModel::CardMeta RecentScoresModel::cardMetaFor(const RecentFile& file) const
+{
+    const QString pathStr = file.path.toQString();
+
+    const QDateTime lastModified = io::FileInfo(file.path).lastModified().toQDateTime();
+    const int64_t mtimeMs = lastModified.isValid() ? lastModified.toMSecsSinceEpoch() : 0;
+
+    const auto cached = m_cardMetaCache.find(pathStr);
+    if (cached != m_cardMetaCache.end() && cached->second.mtimeMs == mtimeMs) {
+        return cached->second;
+    }
+
+    CardMeta cm;
+    cm.mtimeMs = mtimeMs;
+
+    const std::string suffix = io::suffix(file.path);
+
+    if (suffix == REPRISE_PROJECT_SUFFIX) {
+        // .repr: read title/composer from the embedded score.mscz bytes, and the page label from the manifest -- one zip open.
+        muse::ByteArray scoreMscz;
+        QString pagesRaw;
+        if (readReprCardSource(file.path, scoreMscz, pagesRaw)) {
+            const muse::RetVal<ProjectMeta> meta = mscMetaReader()->readMeta(scoreMscz);
+            if (meta.ret) {
+                cm.title = meta.val.title;
+                cm.composer = meta.val.composer;
+            }
+            cm.pages = formatReprPagesLabel(pagesRaw);
+        }
+    } else {
+        // Plain recents (.mscz etc.): title/composer from the file directly when trivially available; readMeta refuses an
+        // unsupported suffix (e.g. .musicxml) with a non-ok Ret, which leaves title/composer empty -> clean-file-name fallback.
+        const muse::RetVal<ProjectMeta> meta = mscMetaReader()->readMeta(file.path);
+        if (meta.ret) {
+            cm.title = meta.val.title;
+            cm.composer = meta.val.composer;
+        }
+    }
+
+    m_cardMetaCache[pathStr] = cm;
+    return cm;
+}
+
 QVariantMap RecentScoresModel::makeItem(const RecentFile& file) const
 {
     QVariantMap obj;
@@ -165,6 +266,15 @@ QVariantMap RecentScoresModel::makeItem(const RecentFile& file) const
     QString fileSizeString = (fileSize.ret && fileSize.val > 0) ? DataFormatter::formatFileSize(fileSize.val).toQString() : QString();
 
     obj[NAME_KEY] = cleanDisplayName(file);
+
+    // Reprise: decorated-card roles (NAME_KEY stays the plain clean name used for open/delete). The card QML composes
+    // "{Title} ({Composer}) [pages]" from these: TITLE empty -> the card uses NAME_KEY; COMPOSER empty -> no "(...)";
+    // PAGES empty (every non-.repr recent) -> no "[...]".
+    const CardMeta cardMeta = cardMetaFor(file);
+    obj[TITLE_KEY] = cardMeta.title;
+    obj[COMPOSER_KEY] = cardMeta.composer;
+    obj[PAGES_KEY] = cardMeta.pages;
+
     obj[PATH_KEY] = file.path.toQString();
     obj[SUFFIX_KEY] = QString::fromStdString(suffix);
     obj[FILE_SIZE_KEY] = fileSizeString;

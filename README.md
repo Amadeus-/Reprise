@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.16.5) — work in progress.** Reprise is early software under
+> **Pre-release (0.16.6) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -62,8 +62,8 @@ compatibility.
 - **Streamlined, correction-focused UI** — the interface is pared down around
   scanning and correcting: a **Scans** home, a dedicated **Edit** workspace, and
   menus trimmed to what the workflow needs.
-- **Manage your recent scans** — the Scans home lists your recent imports with clean
-  names; clear the whole list or remove individual entries (your files are never deleted —
+- **Manage your recent scans** — the Scans home lists your recent imports labeled with their title, composer, and
+  the pages you scanned; clear the whole list or remove individual entries (your files are never deleted —
   only the shortcuts to them are forgotten).
 - **See the original alongside your score** — after importing, the original scanned page
   appears in a band above the editable score and smoothly follows along as you move through

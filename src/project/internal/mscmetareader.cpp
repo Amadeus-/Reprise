@@ -54,6 +54,12 @@ static std::string readTextAndChildrenText(XmlStreamReader& reader)
             text += reader.asciiText();
             break;
         case XmlStreamReader::StartElement:
+            // Reprise: a <br/> line break in a styled credit (title/composer) is otherwise dropped with nothing between the
+            // lines, mashing "SAINT-SAENS" + "Arr. Martin Setchell" into one word in the recent-scans card label; emit a single
+            // space so multi-line credits read naturally. Presentation only -- the stored metadata is untouched.
+            if (reader.name() == "br") {
+                text += ' ';
+            }
             text += readTextAndChildrenText(reader);
             break;
         case XmlStreamReader::EndElement:
@@ -114,6 +120,45 @@ RetVal<ProjectMeta> MscMetaReader::readMeta(const muse::io::path_t& filePath) co
     }
 
     meta.val.filePath = filePath;
+
+    return meta;
+}
+
+RetVal<ProjectMeta> MscMetaReader::readMeta(const muse::ByteArray& msczData) const
+{
+    RetVal<ProjectMeta> meta;
+
+    if (msczData.empty()) {
+        meta.ret = make_ret(Ret::Code::InternalError);
+        return meta;
+    }
+
+    // Reprise: read straight from the in-memory .mscz bytes via an IODevice (no temp file). The MscReader's
+    // ZipFileReader uses params.device when set and opens it ReadOnly itself; it does not own the buffer.
+    Buffer buf(const_cast<ByteArray*>(&msczData));
+
+    MscReader::Params params;
+    params.device = &buf;
+    params.mode = MscIoMode::Zip;
+
+    MscReader msczReader(params);
+    if (!msczReader.open()) {
+        meta.ret = make_ret(Ret::Code::InternalError);
+        return meta;
+    }
+
+    auto scoreData = Buffer::opened(IODevice::ReadOnly, msczReader.readScoreFile());
+    XmlStreamReader xmlReader(&scoreData);
+
+    meta.ret = make_ok();
+    doReadMeta(xmlReader, meta.val);
+
+    ByteArray thumbnailData = msczReader.readThumbnailFile();
+    if (!thumbnailData.empty()) {
+        if (!meta.val.thumbnail.loadFromData(thumbnailData.toQByteArrayNoCopy(), "PNG")) {
+            meta.ret = make_ret(Ret::Code::BadData);
+        }
+    }
 
     return meta;
 }

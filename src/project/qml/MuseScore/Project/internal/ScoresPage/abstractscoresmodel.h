@@ -59,6 +59,11 @@ protected:
     };
 
     static const QString NAME_KEY;
+    // Reprise: decorated-card roles. NAME_KEY stays the plain clean name (open/delete identity); these carry the
+    // embedded score title, composer and the .repr page-range label so the card QML can compose "{Title} ({Composer}) [pages]".
+    static const QString TITLE_KEY;
+    static const QString COMPOSER_KEY;
+    static const QString PAGES_KEY;
     static const QString PATH_KEY;
     static const QString SUFFIX_KEY;
     static const QString FILE_SIZE_KEY;

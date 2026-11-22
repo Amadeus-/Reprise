@@ -161,6 +161,9 @@ Item {
                 }
 
                 name: score.name
+                scoreTitle: score.scoreTitle ?? ""
+                composer: score.composer ?? ""
+                pages: score.pages ?? ""
                 path: score.path ?? ""
                 suffix: score.suffix ?? ""
                 thumbnailUrl: score.thumbnailUrl ?? ""

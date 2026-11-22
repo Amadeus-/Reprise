@@ -26,6 +26,9 @@
 using namespace mu::project;
 
 const QString AbstractScoresModel::NAME_KEY("name");
+const QString AbstractScoresModel::TITLE_KEY("scoreTitle");
+const QString AbstractScoresModel::COMPOSER_KEY("composer");
+const QString AbstractScoresModel::PAGES_KEY("pages");
 const QString AbstractScoresModel::PATH_KEY("path");
 const QString AbstractScoresModel::SUFFIX_KEY("suffix");
 const QString AbstractScoresModel::FILE_SIZE_KEY("fileSize");

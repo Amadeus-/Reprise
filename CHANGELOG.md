@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.6] — 2026-11-22
+
+### Added
+- **Recent scans now show the title, composer, and pages at a glance.** Each entry in the Scans home reads
+  *"Title (Composer) [pages]"* — e.g. *"Dynamics 1 (Leon Vinken) [all]"* — using the score's own title and
+  composer, falling back to the file name when no title is available and omitting the composer when there isn't
+  one. The page part reflects what you imported (`[all]` / `[pages 1–2]` / `[page 5]`).
+
 ## [0.16.5] — 2026-11-22
 
 ### Added

@@ -144,7 +144,21 @@ ListItemBlank {
             StyledTextLabel {
                 Layout.fillWidth: true
 
-                text: root.score.name ?? ""
+                // Reprise: "{Title} ({Composer}) [pages]" -- Title is the embedded score title when present, else the
+                // clean file name (score.name); the composer and page parts are appended only when non-empty.
+                text: {
+                    const title = root.score.scoreTitle ?? ""
+                    let label = (title.length > 0) ? title : (root.score.name ?? "")
+                    const composer = root.score.composer ?? ""
+                    if (composer.length > 0) {
+                        label += " (" + composer + ")"
+                    }
+                    const pages = root.score.pages ?? ""
+                    if (pages.length > 0) {
+                        label += " " + pages
+                    }
+                    return label
+                }
                 font: ui.theme.largeBodyFont
                 horizontalAlignment: Text.AlignLeft
             }

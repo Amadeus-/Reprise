@@ -31,6 +31,11 @@ FocusScope {
     id: root
 
     property string name: ""
+    // Reprise: decorated-card parts. name stays the plain clean file name (open/delete). scoreTitle is the embedded
+    // score title (empty -> fall back to name); composer and pages are appended conditionally by the label below.
+    property string scoreTitle: ""
+    property string composer: ""
+    property string pages: ""
     property string path: ""
     property string suffix: ""
     property alias timeSinceModified: timeSinceModified.text
@@ -314,7 +319,18 @@ FocusScope {
             StyledTextLabel {
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                text: root.name
+                // Reprise: "{Title} ({Composer}) [pages]" -- Title is the embedded score title when present, else the
+                // clean file name; the composer and page parts are appended only when non-empty.
+                text: {
+                    var label = (root.scoreTitle && root.scoreTitle.length > 0) ? root.scoreTitle : root.name
+                    if (root.composer && root.composer.length > 0) {
+                        label += " (" + root.composer + ")"
+                    }
+                    if (root.pages && root.pages.length > 0) {
+                        label += " " + root.pages
+                    }
+                    return label
+                }
 
                 wrapMode: Text.WrapAnywhere
                 maximumLineCount: 1
