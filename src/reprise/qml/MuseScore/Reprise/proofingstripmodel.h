@@ -36,6 +36,7 @@
 #include "project/iprojectsession.h"
 
 #include "internal/iproofingmapservice.h"
+#include "internal/iproofingviewcontrol.h"
 
 class QImage;
 class QTimer;
@@ -77,9 +78,15 @@ class ProofingStripModel : public QObject, public muse::Contextable, public muse
     //! The followed global measure index (0-based, pickup = 0), or -1 when nothing is selected. Shown in the header.
     Q_PROPERTY(int currentMeasure READ currentMeasure NOTIFY followChanged)
 
+    //! User-driven zoom factor for the band (mouse-wheel follow-centered zoom). 1.0 = fit-to-width; the setter clamps to
+    //! [0.5, 4.0]. A Q_PROPERTY (not a plain QML property) so it survives a model rebuild and can later be driven by a dev
+    //! tool; QML binds to model.userZoom and folds it into imgScale + the page width.
+    Q_PROPERTY(double userZoom READ userZoom WRITE setUserZoom NOTIFY userZoomChanged)
+
     QML_ELEMENT
 
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
+    muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
 public:
@@ -96,6 +103,11 @@ public:
     int rectW() const { return m_rectW; }
     int rectH() const { return m_rectH; }
     int currentMeasure() const { return m_currentMeasure; }
+    double userZoom() const { return m_userZoom; }
+
+    //! Clamp zoom to [0.5, 4.0] and, if it changed, store it + emit userZoomChanged (the QML folds it into imgScale and
+    //! re-centers the followed measure). The Q_PROPERTY WRITE accessor for model.userZoom.
+    void setUserZoom(double zoom);
 
     //! Called from the band's Component.onCompleted: subscribe to map + notation changes (once) and render + follow.
     Q_INVOKABLE void load();
@@ -103,6 +115,7 @@ public:
 signals:
     void changed();
     void followChanged();
+    void userZoomChanged();
 
 private:
     //! Re-render the band from whatever the service currently holds (clears the previous render first), then recompute
@@ -154,6 +167,9 @@ private:
     int32_t m_rectW = 0;
     int32_t m_rectH = 0;
     int32_t m_currentMeasure = -1;
+
+    //! User-driven band zoom (mouse-wheel). 1.0 = fit-to-width; clamped to [0.5, 4.0] by setUserZoom.
+    double m_userZoom = 1.0;
 
     //! Receiver for the CURRENT notation's selectionChanged + hoveredMeasureChanged; reset (destroyed+recreated) on every
     //! notation switch so a previous notation's subscriptions never linger (the NotationSwitchListModel per-notation idiom).

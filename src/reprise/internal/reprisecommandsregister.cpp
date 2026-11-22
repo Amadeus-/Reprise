@@ -76,6 +76,9 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API tool: select a note by measure/staff/index and report its head box (drives the B2 magnifier)
     makeCommandInfo<ProofingDebugSelectNoteCommand>(),
+
+    // Reprise dev MCP/API tool: set the live follow band's / magnifier's user zoom (drive + screenshot zoom states)
+    makeCommandInfo<ProofingDebugSetZoomCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

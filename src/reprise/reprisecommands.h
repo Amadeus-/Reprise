@@ -475,6 +475,50 @@ struct ProofingDebugSelectNoteCommand {
     };
 };
 
+//! NOTE Reprise dev MCP/API "drive" tool for the Two-Pane Proofing panels: set the LIVE follow band's or floating
+//! magnifier's user zoom factor, so a headless agent can drive + screenshot the zoom states and regression-check them.
+//! `panel` picks which live view-model to drive ("band" = the A3 follow band, "magnifier" = the B2 full-detail
+//! magnifier); `factor` is the user zoom (1.0 = fit-to-width / the auto-chosen note zoom). The handler reaches the
+//! transient QML-instantiated view-model through IProofingViewControl (each model self-registers on load) and drives its
+//! `userZoom` Q_PROPERTY via the Qt property system -- the model's setUserZoom clamps to [0.5, 4.0], and the CLAMPED
+//! applied value is read back into `zoom`. Runs synchronously on the Qt GUI thread (the same dispatch path the other
+//! proofing-debug tools use). ok=false + error ("no <panel> proofing panel is open") when that panel is not currently
+//! loaded, or when `panel` is neither "band" nor "magnifier". Marked ReadOnly so it is allowlisted with the other dev
+//! tools -- it only changes a view-model's zoom, not the document.
+struct ProofingDebugSetZoomCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/proofing-debug-set-zoom");
+    static const inline auto title = muse::MnemonicString("reprise", "Proofing debug set zoom");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Set the live proofing follow band's or magnifier's user zoom factor");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::ReadOnly;
+
+    std::string panel;    // required: "band" or "magnifier"
+    double factor = 1.0;  // required: user zoom factor (1.0 = fit-to-width; clamped to [0.5, 4.0] by the model)
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "panel", &ProofingDebugSetZoomCommand::panel,
+                               "Which live proofing panel to zoom: 'band' (A3 follow band) or 'magnifier' (B2 full-detail view)",
+                               muse::rcommand::Presence::Required },
+        muse::rcommand::Field{ "factor", &ProofingDebugSetZoomCommand::factor,
+                               "User zoom factor (1.0 = fit-to-width / auto note zoom; clamped to [0.5, 4.0])",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        double zoom = 0.0;
+        std::string error;
+    };
+
+    using O = ProofingDebugSetZoomCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the requested panel was live and its zoom was set" },
+        muse::rcommand::Field{ "zoom", &O::zoom, "The clamped user zoom actually applied (0 on failure)" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
+
 //! NOTE Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen IN-PROCESS, with no foreground
 //! activation and no synthetic mouse input (the Firefox-bridge model). The handler runs synchronously on the Qt GUI
 //! thread (the same dispatch path the capture tools use), calling interactive()->open(UriQuery(...)) for the resolved

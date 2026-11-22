@@ -39,6 +39,8 @@
 #include "internal/importprogresstracker.h"
 #include "internal/iproofingmapservice.h"
 #include "internal/proofingmapservice.h"
+#include "internal/iproofingviewcontrol.h"
+#include "internal/proofingviewcontrol.h"
 #include "internal/mcpcuration.h"
 
 using namespace mu::reprise;
@@ -75,6 +77,13 @@ void RepriseModule::registerExports()
     //! and the ImportPdfController both reach it via GlobalInject.
     m_proofingMapService = std::make_shared<ProofingMapService>();
     globalIoc()->registerExport<IProofingMapService>(mname, m_proofingMapService);
+
+    //! NOTE: Two-Pane Proofing LIVE view-model bridge. The follow band + magnifier view-models are QML-instantiated and
+    //! transient, so they self-register here (as bare QObject*) on load and unregister in their dtors; the dev
+    //! reprise.proofing-debug-set-zoom handler reaches them through this to drive their userZoom Q_PROPERTY headlessly.
+    //! Exported globally so both the QML-instantiated models and the ImportPdfController reach it via GlobalInject.
+    m_proofingViewControl = std::make_shared<ProofingViewControl>();
+    globalIoc()->registerExport<IProofingViewControl>(mname, m_proofingViewControl);
 }
 
 void RepriseModule::resolveImports()

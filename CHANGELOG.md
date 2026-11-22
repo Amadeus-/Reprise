@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.7] — 2026-11-22
+
+### Added
+- **Zoom the original-scan band and the detail view with the mouse wheel.** Scroll the wheel over the following
+  original-scan band or the floating detail view to zoom its scan in or out. The view stays centered on the
+  measure/note you're on and keeps your chosen zoom as you move through the score, and a small percentage readout
+  appears while you zoom. Each panel keeps its own independent zoom.
+
 ## [0.16.6] — 2026-11-22
 
 ### Added

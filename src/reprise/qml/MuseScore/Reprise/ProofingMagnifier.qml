@@ -137,7 +137,10 @@ Item {
                                             ? Math.max(0.1, Math.min(width / (magModel.boxW * 1.1), height / (magModel.boxH * 1.1), 6))
                                             : 1
 
-            readonly property real zoom: magModel.isFallback ? fitZoom : noteZoom
+            //! Effective magnification = the auto-chosen note/measure zoom times the user's mouse-wheel zoom (model.userZoom,
+            //! clamped [0.5, 4.0]). The crop (clipW/clipH) and the overlays all derive from `zoom`, so folding userZoom in
+            //! here scales the render AND the highlight box together and keeps the followed spot centered -- all automatic.
+            readonly property real zoom: (magModel.isFallback ? fitZoom : noteZoom) * magModel.userZoom
 
             //! Rendered PNG pixel dims of the followed page, and the rendered px per sheet px (the PNG is capped at
             //! MAGNIFIER_PAGE_MAX_SIDE, so it can be slightly smaller than the sheet-image space the boxes live in).
@@ -170,6 +173,9 @@ Item {
 
                 //! The crop shares the viewport aspect, so Stretch magnifies it to fill with no distortion.
                 fillMode: Image.Stretch
+                //! Nearest-neighbour: at high user-zoom the crop upscales past the rendered PNG's own resolution, where
+                //! smooth (bilinear) filtering would blur the scan -- crisp pixels read better for proofing than a smear.
+                smooth: false
                 source: view.pageEntry ? view.pageEntry.url : ""
                 //! Synchronous decode: an async load left the crop blank for >1s after each selection (the clip re-extract
                 //! was still Loading). cache keeps the decoded page, so only the first note on a page costs a decode; the
@@ -253,6 +259,25 @@ Item {
                         fallbackMarker.requestPaint()
                     }
                 }
+            }
+
+            //! Mouse-wheel zoom: each notch (~120) steps the magnifier zoom by ~10% (1 + angleDelta.y/1200), clamped in the
+            //! model to [0.5, 4.0]. The crop recenters on the followed box automatically, so no scroll bookkeeping is needed.
+            //! Consumes the event so nothing behind the panel scrolls. No drag-pan.
+            WheelHandler {
+                onWheel: function(wheel) {
+                    let factor = 1 + wheel.angleDelta.y / 1200
+                    magModel.userZoom = Math.max(0.5, Math.min(4.0, magModel.userZoom * factor))
+                    wheel.accepted = true
+                }
+            }
+
+            ProofingZoomReadout {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 6
+                z: 10
+                zoomPercent: Math.round(magModel.userZoom * 100)
             }
         }
     }

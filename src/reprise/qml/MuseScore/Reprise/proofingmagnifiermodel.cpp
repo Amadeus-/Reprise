@@ -70,6 +70,13 @@ ProofingMagnifierModel::ProofingMagnifierModel(QObject* parent)
 
 ProofingMagnifierModel::~ProofingMagnifierModel()
 {
+    //! Drop the live-model registration so the dev reprise.proofing-debug-set-zoom handler never drives a destroyed
+    //! magnifier (the control also holds us as a QPointer, so this is belt-and-braces). Guarded if the IoC is already gone.
+    if (proofingViewControl())
+    {
+        proofingViewControl()->unregisterMagnifier(this);
+    }
+
     clearRendered();
 }
 
@@ -78,6 +85,13 @@ void ProofingMagnifierModel::load()
     if (!m_inited)
     {
         m_inited = true;
+
+        //! Register this live magnifier with the proofing view-control bridge so the dev reprise.proofing-debug-set-zoom
+        //! tool can drive our userZoom headlessly. Unregistered in the dtor (the control also holds us as a QPointer).
+        if (proofingViewControl())
+        {
+            proofingViewControl()->registerMagnifier(this);
+        }
 
         //! Debounce hover-follow: apply only the latest hovered note/measure once the mouse settles (~100ms), so a fast
         //! sweep doesn't thrash the magnifier's page switch + crop. Single-shot; owned by this (QObject parent).
@@ -533,6 +547,20 @@ void ProofingMagnifierModel::applyHover()
 
         return;
     }
+
+    return;
+}
+
+void ProofingMagnifierModel::setUserZoom(double zoom)
+{
+    const double clamped = std::clamp(zoom, 0.5, 4.0);
+    if (qFuzzyCompare(clamped, m_userZoom))
+    {
+        return;
+    }
+
+    m_userZoom = clamped;
+    emit userZoomChanged();
 
     return;
 }

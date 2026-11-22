@@ -148,15 +148,26 @@ Rectangle {
         readonly property real sheetW: pageEntry ? pageEntry.sheetWidth : 0
         readonly property real sheetH: pageEntry ? pageEntry.sheetHeight : 0
 
-        //! Scale from sheet-image pixels to on-screen band pixels: the page is drawn at the full band width, so one
-        //! scale factor maps both axes (the rendered image is stretched into a box of the exact sheet aspect).
-        readonly property real imgScale: sheetW > 0 ? width / sheetW : 1
+        //! Scale from sheet-image pixels to on-screen band pixels. At userZoom = 1 the page is drawn at the full band
+        //! width (fit-to-width); userZoom multiplies that so one scale factor still maps both axes (the rendered image is
+        //! stretched into a box of the exact sheet aspect). model.userZoom is the mouse-wheel zoom, clamped [0.5, 4.0].
+        readonly property real imgScale: (sheetW > 0 ? width / sheetW : 1) * bandModel.userZoom
         readonly property real pageDispH: sheetH * imgScale
+
+        //! On-screen width of the page at the current zoom (sheet space * imgScale == band width * userZoom). At userZoom
+        //! > 1 this exceeds the viewport, so the band scrolls HORIZONTALLY too; the highlight shares this space (both scale
+        //! by imgScale and shift by scrollOffsetX), so the page image is sized to it to stay aligned when scrolled.
+        readonly property real pageDispW: sheetW > 0 ? sheetW * imgScale : viewport.width
 
         //! Vertical scroll position (px, >= 0) of the page within the viewport: the page's top is drawn at
         //! y = -scrollOffset, so a larger offset reveals lower systems. Assigned by scrollToCurrent; the Behavior
         //! below animates the move SMOOTHLY while the window is visible, or snaps it instantly while minimized.
         property real scrollOffset: 0
+
+        //! Horizontal scroll position (px, >= 0), mirroring scrollOffset: the page's left is drawn at x = -scrollOffsetX,
+        //! so a larger offset reveals columns to the right. Only meaningful once userZoom > 1 (the page is wider than the
+        //! viewport); scrollToCurrent centers the followed measure on X exactly as it does on Y.
+        property real scrollOffsetX: 0
 
         //! True while the containing window is minimized. A minimized / non-exposed window FREEZES Qt's QML
         //! animation driver, so an animated scrollOffset would stay stuck at its start value -- which is exactly
@@ -178,6 +189,17 @@ Rectangle {
             }
         }
 
+        //! Same minimized-window gate as scrollOffset above: animate the horizontal move when the window is visible, snap
+        //! it instantly while minimized (the capture harness) so it can never freeze mid-animation at the wrong column.
+        Behavior on scrollOffsetX {
+            enabled: !bandArea.windowMinimized
+
+            NumberAnimation {
+                duration: 220
+                easing.type: Easing.OutCubic
+            }
+        }
+
         //! Centre the followed measure's system in the viewport, clamped to the page bounds. Assigns scrollOffset to
         //! the target; the Behavior above animates (visible window) or snaps instantly (minimized) based on window
         //! state -- what we scroll TO is window-state-independent, only HOW (animate vs direct-set) varies.
@@ -189,6 +211,12 @@ Rectangle {
             let target = (bandModel.rectY + bandModel.rectH / 2) * imgScale - viewport.height / 2
             let maxY = Math.max(0, pageDispH - viewport.height)
             scrollOffset = Math.max(0, Math.min(maxY, target))
+
+            //! Center the followed measure horizontally too (only bites once userZoom > 1 makes the page wider than the
+            //! viewport; at fit-to-width maxX is 0, so this clamps to 0 and the page stays left-aligned as before).
+            let targetX = (bandModel.rectX + bandModel.rectW / 2) * imgScale - viewport.width / 2
+            let maxX = Math.max(0, pageDispW - viewport.width)
+            scrollOffsetX = Math.max(0, Math.min(maxX, targetX))
         }
 
         Rectangle {
@@ -208,8 +236,9 @@ Rectangle {
             Image {
                 id: pageImage
 
-                width: viewport.width
+                width: bandArea.pageDispW
                 height: bandArea.pageDispH
+                x: -bandArea.scrollOffsetX
                 y: -bandArea.scrollOffset
 
                 //! The box is already the exact sheet aspect, so Stretch fills it with no distortion and keeps the
@@ -227,7 +256,7 @@ Rectangle {
 
                 visible: bandModel.hasCurrent && bandArea.imgScale > 0
 
-                x: bandModel.rectX * bandArea.imgScale
+                x: bandModel.rectX * bandArea.imgScale - bandArea.scrollOffsetX
                 y: bandModel.rectY * bandArea.imgScale - bandArea.scrollOffset
                 width: bandModel.rectW * bandArea.imgScale
                 height: bandModel.rectH * bandArea.imgScale
@@ -244,10 +273,33 @@ Rectangle {
             function onFollowChanged() {
                 bandArea.scrollToCurrent()
             }
+            //! After a wheel-zoom, re-center the followed measure so it stays put while the page grows/shrinks around it;
+            //! because imgScale folds in userZoom, the zoom persists across auto-follow for free.
+            function onUserZoomChanged() {
+                bandArea.scrollToCurrent()
+            }
         }
 
         onWidthChanged: scrollToCurrent()
         onPageDispHChanged: scrollToCurrent()
+
+        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~10% (1 + angleDelta.y/1200), clamped in the model to
+        //! [0.5, 4.0]. Consumes the event so the notation editor behind never also scrolls. No drag-pan.
+        WheelHandler {
+            onWheel: function(wheel) {
+                let factor = 1 + wheel.angleDelta.y / 1200
+                bandModel.userZoom = Math.max(0.5, Math.min(4.0, bandModel.userZoom * factor))
+                wheel.accepted = true
+            }
+        }
+
+        ProofingZoomReadout {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 8
+            z: 10
+            zoomPercent: Math.round(bandModel.userZoom * 100)
+        }
 
         StyledTextLabel {
             //! Shown before any page has rendered / while the follow has nothing to line up.

@@ -39,6 +39,7 @@ qt_add_qml_module(reprise_qml
         ImportNoticeDialog.qml
         ProofingStrip.qml
         ProofingMagnifier.qml
+        ProofingZoomReadout.qml
     RESOURCES
         resources/titlebar-mark.svg
     IMPORTS

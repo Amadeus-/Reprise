@@ -37,6 +37,7 @@
 #include "notation/inotationinteraction.h"
 
 #include "internal/iproofingmapservice.h"
+#include "internal/iproofingviewcontrol.h"
 
 class QImage;
 class QTimer;
@@ -86,9 +87,15 @@ class ProofingMagnifierModel : public QObject, public muse::Contextable, public 
     //! A short human-readable pitch label for the followed note (e.g. "C4"), empty on a measure-level fallback. Header.
     Q_PROPERTY(QString currentNoteName READ currentNoteName NOTIFY followChanged)
 
+    //! User-driven zoom factor (mouse-wheel), multiplied onto the magnifier's effective zoom. 1.0 = the auto-chosen
+    //! note/measure zoom; the setter clamps to [0.5, 4.0]. A Q_PROPERTY (not a plain QML property) so it survives a model
+    //! rebuild and can later be driven by a dev tool; the crop + overlays already derive from `zoom`, so this just scales.
+    Q_PROPERTY(double userZoom READ userZoom WRITE setUserZoom NOTIFY userZoomChanged)
+
     QML_ELEMENT
 
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
+    muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
 public:
@@ -107,6 +114,11 @@ public:
     int boxH() const { return m_boxH; }
     int currentMeasure() const { return m_currentMeasure; }
     QString currentNoteName() const { return m_currentNoteName; }
+    double userZoom() const { return m_userZoom; }
+
+    //! Clamp zoom to [0.5, 4.0] and, if it changed, store it + emit userZoomChanged (the QML multiplies it onto the
+    //! effective magnification). The Q_PROPERTY WRITE accessor for model.userZoom.
+    void setUserZoom(double zoom);
 
     //! Called from the panel's Component.onCompleted: subscribe to map + notation changes (once) and render + follow.
     Q_INVOKABLE void load();
@@ -114,6 +126,7 @@ public:
 signals:
     void changed();
     void followChanged();
+    void userZoomChanged();
 
 private:
     //! Re-render from whatever the service currently holds (clears the previous render first), then recompute the follow.
@@ -177,6 +190,9 @@ private:
     int32_t m_boxH = 0;
     int32_t m_currentMeasure = -1;
     QString m_currentNoteName;
+
+    //! User-driven magnifier zoom (mouse-wheel). 1.0 = the auto-chosen note/measure zoom; clamped to [0.5, 4.0].
+    double m_userZoom = 1.0;
 
     //! Receiver for the CURRENT notation's selectionChanged + hovered note/measure channels; reset (destroyed+recreated) on
     //! every notation switch so a previous notation's subscriptions never linger (the NotationSwitchListModel idiom).

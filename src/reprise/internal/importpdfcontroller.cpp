@@ -647,6 +647,10 @@ void ImportPdfController::init()
     commandDispatcher()->onRequest<ProofingDebugSelectNoteCommand>(this, std::function<muse::RetVal<ProofingDebugSelectNoteCommand::Output>(const ProofingDebugSelectNoteCommand&)>(
                                                                        [this](const ProofingDebugSelectNoteCommand& c) { return proofingDebugSelectNote(c); }));
 
+    //! Dev tool: set the live Two-Pane Proofing follow band's / magnifier's user zoom (drive + screenshot zoom states).
+    commandDispatcher()->onRequest<ProofingDebugSetZoomCommand>(this, std::function<muse::RetVal<ProofingDebugSetZoomCommand::Output>(const ProofingDebugSetZoomCommand&)>(
+                                                                    [this](const ProofingDebugSetZoomCommand& c) { return proofingDebugSetZoom(c); }));
+
     //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
     //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
     //! the transient popup. Deferred to a fresh event-loop turn so the popup's own call stack (the asking QTimer lambda)
@@ -2012,6 +2016,46 @@ muse::RetVal<ProofingDebugSelectNoteCommand::Output> ImportPdfController::proofi
             }
         }
     }
+
+    return RV::make_ok(out);
+}
+
+muse::RetVal<ProofingDebugSetZoomCommand::Output> ImportPdfController::proofingDebugSetZoom(const ProofingDebugSetZoomCommand& cmd)
+{
+    using RV = muse::RetVal<ProofingDebugSetZoomCommand::Output>;
+
+    ProofingDebugSetZoomCommand::Output out;
+
+    //! Resolve which live view-model to drive. The band + magnifier models self-register with IProofingViewControl on
+    //! their load(), so a panel that is not currently open (no proofing view instantiated) resolves to nullptr.
+    QObject* model = nullptr;
+    if (cmd.panel == "band")
+    {
+        model = proofingViewControl()->bandModel();
+    }
+    else if (cmd.panel == "magnifier")
+    {
+        model = proofingViewControl()->magnifierModel();
+    }
+    else
+    {
+        out.error = "unknown panel '" + cmd.panel + "' (expected 'band' or 'magnifier')";
+        return RV::make_ok(out);
+    }
+
+    if (!model)
+    {
+        out.error = "no " + cmd.panel + " proofing panel is open";
+        return RV::make_ok(out);
+    }
+
+    //! Drive the model's userZoom Q_PROPERTY through the Qt property system: its WRITE accessor (setUserZoom) clamps the
+    //! value to [0.5, 4.0] and emits userZoomChanged (the QML re-scales + re-centers). Reading the property straight back
+    //! yields the CLAMPED applied value, so a caller that asked for an out-of-range factor sees exactly what the panel
+    //! now shows -- no concrete-type coupling to the QML view-model needed.
+    model->setProperty("userZoom", QVariant(cmd.factor));
+    out.zoom = model->property("userZoom").toDouble();
+    out.ok = true;
 
     return RV::make_ok(out);
 }

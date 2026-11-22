@@ -42,6 +42,7 @@
 #include "ilanguagepackservice.h"
 #include "iimportprogresstracker.h"
 #include "iproofingmapservice.h"
+#include "iproofingviewcontrol.h"
 #include "audiverisrunner.h"
 
 #include "reprise/reprisecommands.h"
@@ -62,6 +63,7 @@ class ImportPdfController : public muse::Contextable, public muse::async::Asynca
     muse::GlobalInject<mu::reprise::ILanguagePackService> languagePackService;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
+    muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
     muse::GlobalInject<mu::project::IProjectConfiguration> projectConfiguration;
     muse::ContextInject<mu::appshell::ISessionsManager> sessionsManager = { this };
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
@@ -196,6 +198,13 @@ private:
     //! a headless agent verify the magnifier zooms + highlights the correct note, and check the note<->box match against
     //! reprise.get-proofing-map. Runs on the Qt GUI thread. ok=false + error on no score / out-of-range measure or index.
     muse::RetVal<ProofingDebugSelectNoteCommand::Output> proofingDebugSelectNote(const ProofingDebugSelectNoteCommand& cmd);
+
+    //! Dev MCP/API "drive" tool for the Two-Pane Proofing panels: set the LIVE follow band's or floating magnifier's user
+    //! zoom factor, so a headless agent can drive + screenshot each zoom state and regression-check it. Reaches the
+    //! transient QML view-model through IProofingViewControl (each model self-registers on load) and drives its userZoom
+    //! Q_PROPERTY via the Qt property system -- setUserZoom clamps to [0.5, 4.0] and the clamped value is read back. Runs
+    //! on the Qt GUI thread. ok=false + error when the requested panel is not currently loaded, or panel is unknown.
+    muse::RetVal<ProofingDebugSetZoomCommand::Output> proofingDebugSetZoom(const ProofingDebugSetZoomCommand& cmd);
 
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;

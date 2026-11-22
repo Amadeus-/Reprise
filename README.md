@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.16.6) — work in progress.** Reprise is early software under
+> **Pre-release (0.16.7) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -69,7 +69,7 @@ compatibility.
   appears in a band above the editable score and smoothly follows along as you move through
   it, highlighting the measure you are on. A floating **detail view** panel shows a magnified
   close-up of the exact note you're on, so you can check each recognized note against the
-  original at a readable size. Your work saves as a **Reprise project (`.repr`)** that reopens
+  original at a readable size. You can zoom either panel in or out with the mouse wheel. Your work saves as a **Reprise project (`.repr`)** that reopens
   with the original scan and this whole proofing view intact.
 - **Easy setup** — Preferences auto-detects your Audiveris install on first run, with
   manual override. There is no separate Tesseract to install or configure — its OCR engine

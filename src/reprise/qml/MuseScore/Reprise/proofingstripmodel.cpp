@@ -65,6 +65,13 @@ ProofingStripModel::ProofingStripModel(QObject* parent)
 
 ProofingStripModel::~ProofingStripModel()
 {
+    //! Drop the live-model registration so the dev reprise.proofing-debug-set-zoom handler never drives a destroyed band
+    //! (the control also holds us as a QPointer, so this is belt-and-braces). Guarded in case the IoC is already gone.
+    if (proofingViewControl())
+    {
+        proofingViewControl()->unregisterBand(this);
+    }
+
     clearRendered();
 }
 
@@ -73,6 +80,13 @@ void ProofingStripModel::load()
     if (!m_inited)
     {
         m_inited = true;
+
+        //! Register this live band with the proofing view-control bridge so the dev reprise.proofing-debug-set-zoom tool
+        //! can drive our userZoom headlessly. Unregistered in the dtor (the control also holds us as a QPointer).
+        if (proofingViewControl())
+        {
+            proofingViewControl()->registerBand(this);
+        }
 
         //! Debounce hover-follow: apply only the latest hovered measure once the mouse settles (~100ms), so a fast sweep
         //! across measures doesn't thrash the band's page switch + scroll. Single-shot; owned by this (QObject parent).
@@ -412,6 +426,20 @@ void ProofingStripModel::followMeasure(int32_t measure)
     }
 
     emit followChanged();
+
+    return;
+}
+
+void ProofingStripModel::setUserZoom(double zoom)
+{
+    const double clamped = std::clamp(zoom, 0.5, 4.0);
+    if (qFuzzyCompare(clamped, m_userZoom))
+    {
+        return;
+    }
+
+    m_userZoom = clamped;
+    emit userZoomChanged();
 
     return;
 }

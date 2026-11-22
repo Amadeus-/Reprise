@@ -73,6 +73,8 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "reprise/proofing-debug-goto",
         // dev "drive" tool: select a note by measure/staff/index and report its head box (B2 magnifier)
         "reprise/proofing-debug-select-note",
+        // dev "drive" tool: set the live follow band's / magnifier's user zoom (drive + screenshot zoom states)
+        "reprise/proofing-debug-set-zoom",
         // OCR language-pack helpers (verify the Preferences pack manager headlessly)
         "reprise/list-languages",
         "reprise/add-language",
