@@ -151,9 +151,16 @@ private:
     //! (updateFollow) and the hover path (the debounce timer). measure < 0 clears hasCurrent (selection cleared).
     void followMeasure(int32_t measure);
 
-    //! Hover-follow entry (subscribed ALONGSIDE selectionChanged): latch the hovered measure and (re)arm the debounce so a
-    //! fast mouse sweep applies only once the mouse settles. Ignores measure < 0 (empty canvas / non-measure) and no-map.
+    //! Hover-follow entry (subscribed ALONGSIDE selectionChanged): a LEADING-edge + fixed-window throttle -- the first move
+    //! applies immediately (snappy), then further moves within the window are latched and applied once per window (the
+    //! trailing timeout), so a continuous sweep updates at a steady rate instead of only after the mouse fully stops.
+    //! Ignores measure < 0 (empty canvas / non-measure) and no-map.
     void scheduleHoverFollow(int32_t measure);
+
+    //! FIRST-MEASURE-ON-OPEN: as soon as BOTH the proofing map is held AND a notation is open, select the first note of
+    //! measure 1 so selectionChanged fires and both proofing panels populate with NO hover required. Runs once per map
+    //! generation and never overrides an existing selection; this is the ONE deliberate place the band drives the cursor.
+    void maybeSelectFirstOnOpen();
 
     bool m_inited = false;
     bool m_hasMap = false;
@@ -180,5 +187,9 @@ private:
     QTimer* m_hoverDebounce = nullptr;
     //! The most recent measure the mouse hovered (>= 0), latched for the debounce timer to apply; -1 = nothing pending.
     int32_t m_pendingHoverMeasure = -1;
+
+    //! The map generation the FIRST-MEASURE-ON-OPEN auto-select has already run for (-1 = none yet). Guards it to once per
+    //! map so switching scores / selecting elsewhere never re-yanks the cursor back to measure 1.
+    int32_t m_autoSelectGeneration = -1;
 };
 }

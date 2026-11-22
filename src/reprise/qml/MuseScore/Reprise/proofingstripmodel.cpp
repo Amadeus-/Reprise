@@ -40,6 +40,7 @@
 #include "notation/inotation.h"
 #include "notation/inotationinteraction.h"
 #include "notation/inotationselection.h"
+#include "notation/notationtypes.h"
 
 #include "engraving/dom/measurebase.h"
 
@@ -88,16 +89,24 @@ void ProofingStripModel::load()
             proofingViewControl()->registerBand(this);
         }
 
-        //! Debounce hover-follow: apply only the latest hovered measure once the mouse settles (~100ms), so a fast sweep
-        //! across measures doesn't thrash the band's page switch + scroll. Single-shot; owned by this (QObject parent).
+        //! Hover-follow throttle window (~50ms). scheduleHoverFollow() applies the FIRST move of a burst immediately (leading
+        //! edge) and opens this window; moves arriving during the window are latched and applied here when it elapses
+        //! (trailing edge). A continuous sweep thus updates at a steady ~20 Hz instead of only after the mouse fully stops --
+        //! which was the old "sometimes slow, sometimes snappy" behaviour of a restart-every-move debounce. The per-apply cost
+        //! is just a scroll-offset + highlight move (the page PNGs are rendered once at import, not per hover), so ~20 Hz is
+        //! cheap. Single-shot; owned by this (QObject parent).
         m_hoverDebounce = new QTimer(this);
         m_hoverDebounce->setSingleShot(true);
-        m_hoverDebounce->setInterval(100);
+        m_hoverDebounce->setInterval(50);
         connect(m_hoverDebounce, &QTimer::timeout, this, [this]()
         {
+            //! Trailing edge: apply the latest measure latched during the window (if any). Do NOT reopen the window here --
+            //! the next move re-arms the leading edge, which keeps the steady cadence without busy-spinning when idle.
             if (m_pendingHoverMeasure >= 0)
             {
-                followMeasure(m_pendingHoverMeasure);
+                const int32_t measure = m_pendingHoverMeasure;
+                m_pendingHoverMeasure = -1;
+                followMeasure(measure);
             }
         });
 
@@ -158,6 +167,11 @@ void ProofingStripModel::rebuild()
 
     //! Recompute the highlight for whatever is currently selected against the fresh map.
     updateFollow();
+
+    //! FIRST-MEASURE-ON-OPEN: if the map arrived while a notation is already current (e.g. a .repr reopen, or the band
+    //! re-instantiated over an open score), seed the selection now so the panels populate without a hover. No-op when the
+    //! notation is not yet open -- resubscribeSelection() retries the instant it becomes current.
+    maybeSelectFirstOnOpen();
 
     return;
 }
@@ -321,6 +335,46 @@ void ProofingStripModel::resubscribeSelection()
 
     updateFollow();
 
+    //! FIRST-MEASURE-ON-OPEN: this fires on currentNotationChanged (a fresh import or a .repr reopen making its score
+    //! current) -- the reliable "notation is now open" signal. Seed the first-note selection so both panels populate with no
+    //! hover. Guarded to once per map generation + skips when a selection already exists.
+    maybeSelectFirstOnOpen();
+
+    return;
+}
+
+void ProofingStripModel::maybeSelectFirstOnOpen()
+{
+    //! Run only once per held map, and only while a map IS held (nothing to proof otherwise).
+    if (!m_hasMap || m_autoSelectGeneration == m_generation)
+    {
+        return;
+    }
+
+    const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    if (!notation || !notation->interaction())
+    {
+        //! Notation not open yet (e.g. map set just before a fresh import's score opens) -- resubscribeSelection() retries
+        //! this the instant currentNotationChanged fires for the opened score.
+        return;
+    }
+
+    //! Mark done for THIS map before touching the selection: select() emits selectionChanged -> updateFollow() re-enters, and
+    //! the guard above must already be set so we never recurse into a second auto-select.
+    m_autoSelectGeneration = m_generation;
+
+    const mu::notation::INotationSelectionPtr sel = notation->interaction()->selection();
+    if (sel && !sel->isNone())
+    {
+        //! The user (or a restored .repr) already has a selection -- leave it; the follow is already populated from it.
+        return;
+    }
+
+    //! Select the first navigable element (the first note/rest of measure 1 -- Navigation::firstElement, the same target as
+    //! Ctrl+Home / "go to beginning"). Does NOT require note-input mode. The resulting selectionChanged drives updateFollow()
+    //! here and the magnifier's follow, so both panels populate on the first note of measure 1.
+    notation->interaction()->select(mu::notation::SelectionTarget::FirstItem);
+
     return;
 }
 
@@ -360,18 +414,28 @@ void ProofingStripModel::scheduleHoverFollow(int32_t measure)
         return;
     }
 
-    //! Latch the latest hovered measure and (re)arm the debounce: a fast sweep coalesces to one apply once the mouse
-    //! settles. Already showing this measure -> nothing to do (don't re-arm the timer for a no-op).
+    //! Already showing this measure -> nothing to do (and clear any stale pending so the trailing edge doesn't re-apply it).
     if (measure == m_currentMeasure && m_hasCurrent)
     {
+        m_pendingHoverMeasure = -1;
         return;
     }
 
-    m_pendingHoverMeasure = measure;
-    if (m_hoverDebounce)
+    //! LEADING EDGE: the first move of a burst (no window open) applies IMMEDIATELY so the band feels instant, then opens the
+    //! throttle window. Subsequent moves within the window are latched (below) and applied by the trailing timeout -- giving a
+    //! steady update rate during a continuous sweep instead of the old apply-only-after-the-mouse-stops lag.
+    if (m_hoverDebounce && !m_hoverDebounce->isActive())
     {
+        m_pendingHoverMeasure = -1;
+        followMeasure(measure);
         m_hoverDebounce->start();
+
+        return;
     }
+
+    //! Inside the open window: latch the latest hovered measure for the trailing apply. Do NOT restart the window (that would
+    //! be the old sliding debounce that never fires mid-sweep); the fixed window keeps the cadence steady.
+    m_pendingHoverMeasure = measure;
 
     return;
 }

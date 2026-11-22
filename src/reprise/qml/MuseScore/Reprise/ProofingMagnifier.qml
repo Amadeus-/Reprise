@@ -24,6 +24,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 
 import Muse.Ui
 import Muse.UiComponents
@@ -189,11 +190,13 @@ Item {
                 anchors.margins: 14
                 clip: true
 
+                //! The magnified scan crop. NOT drawn directly (visible: false) -- it is only the MULTIPLY blend's foreground
+                //! source below, so the scan PAPER reads cream while the notes stay dark (same mechanism as the following band).
                 Image {
                     id: pageImage
 
                     anchors.fill: parent
-                    visible: view.pageEntry !== null && view.clipW > 0 && view.clipH > 0
+                    visible: false
 
                     //! The crop shares the viewport aspect, so Stretch magnifies it to fill with no distortion.
                     fillMode: Image.Stretch
@@ -209,6 +212,30 @@ Item {
                     //! Decode only the crop around the followed note/measure (rendered px); re-crops on selection with no
                     //! page re-render.
                     sourceClipRect: Qt.rect(view.clipX, view.clipY, view.clipW, view.clipH)
+                }
+
+                //! Solid cream fill matching the crop: the MULTIPLY blend's BASE source (view-only, not drawn direct). A
+                //! uniform cream, so white paper x cream = cream and black notes x cream = black regardless of crop position.
+                Rectangle {
+                    id: magCream
+
+                    anchors.fill: parent
+                    color: root.readOnlyCream
+                    visible: false
+                }
+
+                //! TRUE multiply blend of the magnified crop over the cream (Qt5Compat.GraphicalEffects -- same mechanism as
+                //! the following band, no new shader/build infra). The note-head highlight + dashed fallback marker below still
+                //! render on top. Shown on the same condition the raw crop used to be (a decodable crop for the followed page).
+                Blend {
+                    id: blendedCrop
+
+                    anchors.fill: parent
+                    visible: view.pageEntry !== null && view.clipW > 0 && view.clipH > 0
+
+                    source: magCream
+                    foregroundSource: pageImage
+                    mode: "multiply"
                 }
 
                 //! Matched-note highlight: a SOLID accent box over the exact recognised head (PhotoScore purple-ish via the
@@ -287,12 +314,12 @@ Item {
                 }
             }
 
-            //! Mouse-wheel zoom: each notch (~120) steps the magnifier zoom by ~10% (1 + angleDelta.y/1200), clamped in the
+            //! Mouse-wheel zoom: each notch (~120) steps the magnifier zoom by ~8% (1 + angleDelta.y/1500), clamped in the
             //! model to [0.5, 4.0]. The crop recenters on the followed box automatically, so no scroll bookkeeping is needed.
             //! Consumes the event so nothing behind the panel scrolls. No drag-pan.
             WheelHandler {
                 onWheel: function(wheel) {
-                    let factor = 1 + wheel.angleDelta.y / 1200
+                    let factor = 1 + wheel.angleDelta.y / 1500
                     magModel.userZoom = Math.max(0.5, Math.min(4.0, magModel.userZoom * factor))
                     wheel.accepted = true
                 }

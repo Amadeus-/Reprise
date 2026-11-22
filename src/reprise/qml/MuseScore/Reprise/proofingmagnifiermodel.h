@@ -169,9 +169,11 @@ private:
     //! (the "rest / between notes / measure selection" fallback). gm < 0 or no matching rect clears hasCurrent.
     void followMeasureOnly(int32_t gm);
 
-    //! Hover-follow entries (subscribed ALONGSIDE selectionChanged). Latch the latest hovered note / measure and (re)arm the
-    //! debounce so a fast sweep applies only once the mouse settles. applyHover() picks note-level when a note is hovered,
-    //! else the measure-level fallback; a leave (no note AND measure < 0) holds the last view rather than blanking it.
+    //! Hover-follow entries (subscribed ALONGSIDE selectionChanged). A LEADING-edge + fixed-window throttle: the measure
+    //! channel (which fires first) only latches; the note channel (fires last) applies the first move of a burst immediately
+    //! then throttles the rest to one apply per window, so a continuous sweep updates at a steady rate instead of only after
+    //! the mouse stops. applyHover() picks note-level when a note is hovered, else the measure-level fallback; a leave (no
+    //! note AND measure < 0) holds the last view rather than blanking it.
     void scheduleHoverNote(const mu::notation::HoveredNoteInfo& note);
     void scheduleHoverMeasure(int32_t measure);
     void applyHover();

@@ -25,6 +25,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
+import Qt5Compat.GraphicalEffects
 
 import Muse.Ui
 import Muse.UiComponents
@@ -244,22 +245,63 @@ Rectangle {
             anchors.margins: 1
             clip: true
 
+            //! The raw scanned page. NOT drawn directly (visible: false) -- it is only the MULTIPLY blend's foreground source,
+            //! so the white paper reads cream while the black notes stay black. CRITICAL: it is sized at the rendered PNG's
+            //! NATURAL pixels (not the zoomed on-screen size), because a GraphicalEffects source item is captured into an
+            //! offscreen texture at its OWN size -- sizing it to the zoomed page would allocate a huge FBO at high zoom. The
+            //! Blend item below carries the zoom/scroll geometry and simply samples this bounded texture, so crispness and
+            //! cost match the old direct-draw at every zoom level.
             Image {
                 id: pageImage
 
-                width: bandArea.pageDispW
-                height: bandArea.pageDispH
-                x: -bandArea.scrollOffsetX
-                y: -bandArea.scrollOffset
+                width: bandArea.pageEntry ? bandArea.pageEntry.width : 0
+                height: bandArea.pageEntry ? bandArea.pageEntry.height : 0
 
-                //! The box is already the exact sheet aspect, so Stretch fills it with no distortion and keeps the
-                //! top-left origin at (0,0) -- which the highlight's sheet-pixel -> band-pixel scaling relies on.
+                //! 1:1 decode at the rendered PNG's own pixels -> a crisp, bounded source texture; the Blend upscales it.
                 fillMode: Image.Stretch
                 source: bandArea.pageEntry ? bandArea.pageEntry.url : ""
-                asynchronous: true
+                //! SYNCHRONOUS decode (matches the magnifier). The Blend below samples THIS item as its foreground texture, but
+                //! a Qt5Compat GraphicalEffects Blend captures its foregroundSource at first composite and does NOT re-capture
+                //! when an ASYNC image's texture arrives a frame later -- so on score OPEN the band painted only the cream BASE
+                //! and stayed blank until any re-layout (a zoom nudge changing pageDispW/H) dirtied the Blend geometry and forced
+                //! a re-composite. Decoding synchronously makes the foreground texture present BEFORE the first composite, so
+                //! measure 1's scan paints on open with no hover/nudge. The page PNG is bounded (BAND_PAGE_MAX_SIDE) and cached,
+                //! so only the first follow onto a given page costs a decode; later follows on that page reuse it.
+                asynchronous: false
                 cache: true
-                //! Decode at the rendered PNG's own width so the page stays crisp at readable band widths.
                 sourceSize.width: bandArea.pageEntry ? bandArea.pageEntry.width : 0
+                visible: false
+            }
+
+            //! Solid cream fill: the MULTIPLY blend's BASE source (view-only, not drawn direct). white_paper x cream = cream;
+            //! black_note x cream = black -- so the scan PAPER reads cream and the notes stay dark. A uniform colour, so a
+            //! small texture upscales identically; matched to the page texture size purely for clarity.
+            Rectangle {
+                id: pageCream
+
+                width: pageImage.width
+                height: pageImage.height
+                color: root.readOnlyCream
+                visible: false
+            }
+
+            //! TRUE multiply blend of the scan over the cream (Qt5Compat.GraphicalEffects, already used across the app -- no
+            //! new shader/build infra). THIS item carries the zoom + scroll geometry (the old pageImage geometry): it samples
+            //! the bounded source textures above and paints the cream-tinted page at the display size, so the top-left origin
+            //! at (0,0)-minus-scroll still lines the highlight up. Highlight overlay below renders on top. Shown only once the
+            //! async page image is Ready so an unresolved (empty) source never flashes before the scan appears.
+            Blend {
+                id: blendedPage
+
+                x: -bandArea.scrollOffsetX
+                y: -bandArea.scrollOffset
+                width: bandArea.pageDispW
+                height: bandArea.pageDispH
+
+                source: pageCream
+                foregroundSource: pageImage
+                mode: "multiply"
+                visible: pageImage.status === Image.Ready
             }
 
             Rectangle {
@@ -294,11 +336,11 @@ Rectangle {
         onWidthChanged: scrollToCurrent()
         onPageDispHChanged: scrollToCurrent()
 
-        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~10% (1 + angleDelta.y/1200), clamped in the model to
+        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~8% (1 + angleDelta.y/1500), clamped in the model to
         //! [0.5, 4.0]. Consumes the event so the notation editor behind never also scrolls. No drag-pan.
         WheelHandler {
             onWheel: function(wheel) {
-                let factor = 1 + wheel.angleDelta.y / 1200
+                let factor = 1 + wheel.angleDelta.y / 1500
                 bandModel.userZoom = Math.max(0.5, Math.min(4.0, bandModel.userZoom * factor))
                 wheel.accepted = true
             }

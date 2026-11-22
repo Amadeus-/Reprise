@@ -8,6 +8,21 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.10] — 2026-11-22
+
+### Changed
+- **The cream read-only tint now covers the scan itself.** The original-scan band and detail view tint the scan's
+  paper cream (notes stay dark), so the panels read cream everywhere, not just in the margins.
+- **Smaller mouse-wheel zoom step** in the proofing panels, for finer control.
+- **Snappier hover-follow** — the band and detail view keep up as you move the mouse across measures (the follow
+  delay used to restart on every move and only caught up once the mouse stopped).
+
+### Fixed
+- **The band and detail view now open already showing the first measure**, instead of staying empty until you
+  hover over the score.
+- **The original-scan band no longer comes up blank on open** (a compositing quirk left its scan unpainted until
+  something forced a redraw).
+
 ## [0.16.9] — 2026-11-22
 
 ### Changed

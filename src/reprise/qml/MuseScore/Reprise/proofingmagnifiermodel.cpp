@@ -93,13 +93,19 @@ void ProofingMagnifierModel::load()
             proofingViewControl()->registerMagnifier(this);
         }
 
-        //! Debounce hover-follow: apply only the latest hovered note/measure once the mouse settles (~100ms), so a fast
-        //! sweep doesn't thrash the magnifier's page switch + crop. Single-shot; owned by this (QObject parent).
+        //! Hover-follow throttle window (~50ms), mirroring the following band. scheduleHoverNote() applies the FIRST move of a
+        //! burst immediately (leading edge) and opens this window; moves arriving during the window are latched and applied
+        //! here when it elapses (trailing edge). A continuous sweep thus updates at a steady ~20 Hz instead of only after the
+        //! mouse fully stops -- the old "sometimes slow, sometimes snappy" behaviour of a restart-every-move debounce. The
+        //! per-apply cost is just a sourceClipRect re-crop of the already-rendered page PNG (rendered once at import, cached),
+        //! so ~20 Hz is cheap. Single-shot; owned by this (QObject parent).
         m_hoverDebounce = new QTimer(this);
         m_hoverDebounce->setSingleShot(true);
-        m_hoverDebounce->setInterval(100);
+        m_hoverDebounce->setInterval(50);
         connect(m_hoverDebounce, &QTimer::timeout, this, [this]()
         {
+            //! Trailing edge: apply the latest note/measure latched during the window. Do NOT reopen the window -- the next
+            //! move re-arms the leading edge, keeping the cadence steady without busy-spinning when idle.
             applyHover();
         });
 
@@ -493,16 +499,25 @@ void ProofingMagnifierModel::followMeasureOnly(int32_t gm)
 
 void ProofingMagnifierModel::scheduleHoverNote(const mu::notation::HoveredNoteInfo& note)
 {
-    //! Ignore all hover while no map is held (nothing to magnify). Otherwise latch the latest hovered note and (re)arm the
-    //! debounce; applyHover() decides note-vs-measure once the mouse settles.
+    //! Ignore all hover while no map is held (nothing to magnify). Otherwise latch the latest hovered note, then drive the
+    //! LEADING-edge + fixed-window throttle. NOTE on ordering: NotationViewInputController::updateHoveredMeasure (and the
+    //! hover-leave path) ALWAYS emit setHoveredMeasure() BEFORE setHoveredNote() for a given mouse event, so by the time this
+    //! note channel fires both m_pendingHoverMeasure and m_pendingHoverNote are latched for THIS move -- which is why the
+    //! leading apply lives here (the last channel of the pair), so applyHover() sees the complete state and picks note-vs-
+    //! measure correctly with no measure-before-note flash.
     if (!m_hasMap)
     {
         return;
     }
 
     m_pendingHoverNote = note;
-    if (m_hoverDebounce)
+
+    //! LEADING EDGE: the first move of a burst (no window open) applies immediately so the magnifier feels instant, then opens
+    //! the throttle window. Moves within the window are latched and applied by the trailing timeout -- a steady update rate
+    //! during a continuous sweep instead of apply-only-after-the-mouse-stops.
+    if (m_hoverDebounce && !m_hoverDebounce->isActive())
     {
+        applyHover();
         m_hoverDebounce->start();
     }
 
@@ -511,18 +526,15 @@ void ProofingMagnifierModel::scheduleHoverNote(const mu::notation::HoveredNoteIn
 
 void ProofingMagnifierModel::scheduleHoverMeasure(int32_t measure)
 {
-    //! Latch the latest hovered measure (INCLUDING -1 on leave, so applyHover() can tell a leave from a rest-hover) and
-    //! (re)arm the debounce. Ignored while no map is held.
+    //! Latch the latest hovered measure (INCLUDING -1 on leave, so applyHover() can tell a leave from a rest-hover). This
+    //! channel fires FIRST of the measure/note pair (see scheduleHoverNote), so it only latches -- the note channel that
+    //! follows drives the leading-edge apply + throttle window once both values are in hand. Ignored while no map is held.
     if (!m_hasMap)
     {
         return;
     }
 
     m_pendingHoverMeasure = measure;
-    if (m_hoverDebounce)
-    {
-        m_hoverDebounce->start();
-    }
 
     return;
 }
