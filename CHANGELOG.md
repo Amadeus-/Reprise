@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.11] — 2026-11-22
+
+### Fixed
+- **The original-scan band and detail view now follow across pages of a multi-page scan.** Moving to a measure on
+  a later page switches the panels to that page's scan. (After the cream tint was added in 0.16.10 they had been
+  staying on page 1's image when you crossed onto a later page.)
+
 ## [0.16.10] — 2026-11-22
 
 ### Changed

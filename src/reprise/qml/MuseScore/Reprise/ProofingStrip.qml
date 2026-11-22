@@ -271,6 +271,16 @@ Rectangle {
                 cache: true
                 sourceSize.width: bandArea.pageEntry ? bandArea.pageEntry.width : 0
                 visible: false
+
+                //! Reprise: on a multi-page follow (page 2+), force the multiply Blend to RE-SAMPLE this foreground. A
+                //! Qt5Compat GraphicalEffects Blend snapshots its foregroundSource and does NOT re-sample on a source-content
+                //! change alone (page geometry -- pageDispW/H -- is identical across pages), so a page switch would otherwise
+                //! keep showing the previous page's scan. Re-assigning foregroundSource drops + re-grabs the (synchronously
+                //! decoded) new-page texture. Fires only on a PAGE change (source url), not within-page scroll/zoom.
+                onSourceChanged: {
+                    blendedPage.foregroundSource = null
+                    blendedPage.foregroundSource = pageImage
+                }
             }
 
             //! Solid cream fill: the MULTIPLY blend's BASE source (view-only, not drawn direct). white_paper x cream = cream;

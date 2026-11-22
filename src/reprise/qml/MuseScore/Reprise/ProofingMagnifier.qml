@@ -212,6 +212,14 @@ Item {
                     //! Decode only the crop around the followed note/measure (rendered px); re-crops on selection with no
                     //! page re-render.
                     sourceClipRect: Qt.rect(view.clipX, view.clipY, view.clipW, view.clipH)
+
+                    //! Reprise: same page-switch Blend re-sample as the band -- when the followed note is on a different
+                    //! page, force blendedCrop to re-grab the new page's texture (the Blend does not re-sample on a
+                    //! source-url change alone). Fires only on a PAGE change, not a within-page re-crop (sourceClipRect).
+                    onSourceChanged: {
+                        blendedCrop.foregroundSource = null
+                        blendedCrop.foregroundSource = pageImage
+                    }
                 }
 
                 //! Solid cream fill matching the crop: the MULTIPLY blend's BASE source (view-only, not drawn direct). A
