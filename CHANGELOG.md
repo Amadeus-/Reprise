@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.14] — 2026-11-22
+
+### Fixed
+- **Large scans no longer fail with a "too large" error after straightening.** Deskewing a near-maximum-size scan
+  could push the straightened image just over Audiveris's size limit and abort the import; Reprise now caps the
+  import resolution per page so the straightened render stays under the limit — only when needed, so normal-size
+  scans are unaffected.
+
 ## [0.16.13] — 2026-11-22
 
 ### Added

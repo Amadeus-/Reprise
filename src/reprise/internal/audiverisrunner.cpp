@@ -82,6 +82,20 @@ static QPdfDocumentRenderOptions pdfGrayAaOffOptions()
     return options;
 }
 
+//! Audiveris's per-sheet input cap (org.audiveris.omr.sheet.SheetStub constant maxPixelCount): a sheet whose pixel count
+//! exceeds this is rejected with "Too large image". ONE shared copy for this TU, uniquely named (NOT the AUDIVERIS_MAX_PIXELS
+//! / IMAGE_PAD_MARGIN that importpdfcontroller.cpp defines at file scope) so the Unity build -- which concatenates both .cpp
+//! into a single TU -- sees no duplicate-symbol clash. The deskew DPI clamp and the image/TIFF/deskew pads all read these.
+static constexpr int64_t kSheetMaxPixels = 20000000;
+
+//! The fixed white border the image, TIFF, and deskew pads add on EACH side (the #711 edge-probe-crash margin): a staff
+//! touching the raster edge trips AreaUtil.verticalCore, and the maintainer workaround is to composite onto a white margin.
+static constexpr int32_t kPadMargin = 100;
+
+//! Safety target the deskew render clamps to, held a little below kSheetMaxPixels so the rotation bounding-box growth and the
+//! margin rounding slop that deskew adds AFTER the projection can never push the final straightened sheet back over the cap.
+static constexpr int64_t kDeskewSafetyPixels = 19500000;
+
 AudiverisRunner::~AudiverisRunner() = default;
 
 muse::io::path_t AudiverisRunner::findAudiveris() const
@@ -219,11 +233,11 @@ muse::io::path_t AudiverisRunner::padImageToTemp(const muse::io::path_t& imagePa
         return io::path_t();
     }
 
-    //! Local to avoid a Unity-build name clash with the same-named file-scope constants in importpdfcontroller.cpp (both
-    //! .cpp are concatenated into one Unity TU). Audiveris's per-sheet pixel cap (SheetStub maxPixelCount) and the fixed
-    //! image border, kept in sync with preflightImageSize in that file, which applies the matching skip-the-pad fallback.
-    constexpr int64_t kMaxPixels = 20000000;
-    constexpr int32_t kMargin = 100;
+    //! Audiveris's per-sheet pixel cap and the fixed image border, kept in sync with preflightImageSize (which applies the
+    //! matching skip-the-pad fallback). Aliased to the shared file-scope constants so the cap/border value lives in ONE
+    //! place; the aliases keep the Unity build clash-free (the file-scope names differ from importpdfcontroller.cpp's).
+    constexpr int64_t kMaxPixels = kSheetMaxPixels;
+    constexpr int32_t kMargin = kPadMargin;
 
     //! Judge the PADDED pixel count against Audiveris's per-sheet cap; if the border alone would push it over, skip the
     //! pad (feed the original) rather than trading the #711 crash for Audiveris's own oversize rejection.
@@ -320,11 +334,11 @@ muse::io::path_t AudiverisRunner::padTiffToTemp(const muse::io::path_t& imagePat
         frames.push_back(frame);
     }
 
-    //! Local to avoid a Unity-build name clash with the same-named file-scope constants in importpdfcontroller.cpp. The
-    //! per-sheet pixel cap (SheetStub maxPixelCount) and the fixed image border, matching padImageToTemp (TIFF frames are
-    //! native rasters like any other image, so a fixed 100 px border -- not a DPI-scaled one -- is the right pad).
-    constexpr int64_t kMaxPixels = 20000000;
-    constexpr int32_t kMargin = 100;
+    //! Per-sheet pixel cap and the fixed image border, matching padImageToTemp (TIFF frames are native rasters like any other
+    //! image, so a fixed 100 px border -- not a DPI-scaled one -- is the right pad). Aliased to the shared file-scope
+    //! constants so the value lives in ONE place while the Unity build stays clash-free.
+    constexpr int64_t kMaxPixels = kSheetMaxPixels;
+    constexpr int32_t kMargin = kPadMargin;
 
     //! Qt 6's qtiff handler cannot WRITE a multi-page TIFF (its write() opens a fresh handle per call with no
     //! TIFFWriteDirectory/append), so re-emit the padded frames as a single multi-page PDF, which Audiveris reads
@@ -616,8 +630,9 @@ QImage AudiverisRunner::deskewImage(const QImage& src, double angleDeg)
     }
 
     //! Same fixed white border as the single-image pad (padImageToTemp), so a straightened page keeps the #711 edge-crash
-    //! protection a staff touching the raster edge would otherwise trip.
-    constexpr int32_t kMargin = 100;
+    //! protection a staff touching the raster edge would otherwise trip. The shared file-scope kPadMargin is the single
+    //! source for this border; the deskew DPI clamp in deskewStep() projects the SAME value so the two always agree.
+    constexpr int32_t kMargin = kPadMargin;
 
     //! Rotate on an ARGB copy so the exposed corners come out TRANSPARENT (not opaque black); compositing the rotated
     //! image onto a white canvas then shows white in those corners instead of the black-corner artifact.
@@ -803,6 +818,37 @@ void AudiverisRunner::deskewStep(int i)
         angle = detectSkewAngle(rendered);
         if (std::fabs(angle) >= 0.2)
         {
+            //! DESKEW OVERSIZE CLAMP. deskewImage() rotates the page (which GROWS its bounding box) and then adds a fixed
+            //! kPadMargin-px white border on EACH side (the #711 edge-crash margin). On a borderline scan that rotated+padded
+            //! sheet can tip past Audiveris's 20 MP per-sheet cap (kSheetMaxPixels) and the page is rejected "Too large image"
+            //! -- even though the SAME page imports fine WITHOUT deskew (observed: hardtimes-a4.pdf, ~15.5 MP flat at 400 dpi,
+            //! deskewed to 3916x5155 = 20.19 MP). The rotation growth is the LARGER contributor, so project AFTER the angle is
+            //! known: take the rotated bounding box PLUS the 2*kPadMargin border, and only when that exceeds the safety target
+            //! (kDeskewSafetyPixels, held below the cap so the fixed-margin rounding slop that scaling leaves can't push the
+            //! final sheet back over) scale the render DOWN by sqrt(target / projected) -- i.e. a lower effective render DPI
+            //! for THIS page only. A page whose rotated+padded size is already under the target keeps its full resolution (no
+            //! regression). finishDeskew() sizes the straightened PDF page from the resulting pixel grid at m_deskewDpi, so the
+            //! clamped grid still maps 1:1 for both the Audiveris run and the PART 2 proofing render.
+            constexpr double kPi = 3.14159265358979323846;
+            const double rad = std::fabs(angle) * kPi / 180.0;
+            const double cosA = std::cos(rad);
+            const double sinA = std::sin(rad);
+            const double rotW = rendered.width() * cosA + rendered.height() * sinA;
+            const double rotH = rendered.width() * sinA + rendered.height() * cosA;
+            const int64_t projected = static_cast<int64_t>(std::llround(rotW + 2 * kPadMargin))
+                                      * static_cast<int64_t>(std::llround(rotH + 2 * kPadMargin));
+            if (projected > kDeskewSafetyPixels)
+            {
+                const double factor = std::sqrt(static_cast<double>(kDeskewSafetyPixels) / static_cast<double>(projected));
+                const int32_t newW = std::max<int32_t>(1, static_cast<int32_t>(std::floor(rendered.width() * factor)));
+                const int32_t effectiveDpi = std::max<int32_t>(1, static_cast<int32_t>(std::lround(m_deskewDpi * factor)));
+                LOGI() << "Reprise: deskew oversize clamp: page " << (i + 1) << " rotated+padded projects " << projected
+                       << " px (> " << kDeskewSafetyPixels << " target); scaling the " << m_deskewDpi
+                       << " dpi render down to width " << newW << " px (effective ~" << effectiveDpi
+                       << " dpi) to stay under the 20 MP cap.";
+                rendered = rendered.scaledToWidth(newW, Qt::SmoothTransformation);
+            }
+
             result = deskewImage(rendered, angle);
             m_deskewRotatedAny = true;
         }
