@@ -92,4 +92,10 @@ muse::ByteArray assembleRepr(const muse::ByteArray& scoreMscz, const muse::ByteA
 //! non-ok Ret (with a user-facing message) when the file cannot be opened, is missing a required entry, or its manifest
 //! major version is newer than this build supports.
 muse::Ret readRepr(const muse::io::path_t& path, ReprBundle& out);
+
+//! Read ONLY the original scan entry out of a .repr bundle (manifest for its suffix/file name + the original.<ext> bytes),
+//! WITHOUT decoding score.mscz / proofing-scan / proofingmap. Used by the deferred-original save path (0.16.15): opening a
+//! deskewed .repr no longer extracts the original to a temp file, so a later Save re-reads just the original straight from
+//! the source bundle. Returns non-ok when the file cannot be opened; `out` is left empty when no original entry is present.
+muse::Ret readReprOriginal(const muse::io::path_t& path, muse::ByteArray& out, std::string& outSuffix, std::string& outFileName);
 }

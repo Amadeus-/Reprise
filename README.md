@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.16.14) — work in progress.** Reprise is early software under
+> **Pre-release (0.16.15) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -94,6 +94,14 @@ compatibility.
   to open it in Reprise, with its own icon in Explorer.
 - A **bad-timing navigator** and a correction-focused keypad for fast fixes.
 - Richer import/OMR options.
+
+## Known limitations
+
+- **Multi-measure rests show the wrong count.** On scanned parts, the recognition reads the multi-measure-rest
+  symbol but not the number printed above it, so each one collapses to a single bar — which makes the total bar
+  count (and every bar number after it) shift, so an imported part may not line up with a conductor score or
+  rehearsal numbers. This is a limitation of the recognition engine (Audiveris); a fix is already in its
+  development branch and will be picked up in a future Reprise update.
 
 ## License
 

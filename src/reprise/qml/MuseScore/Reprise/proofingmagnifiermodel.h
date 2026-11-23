@@ -129,6 +129,15 @@ signals:
     void userZoomChanged();
 
 private:
+    //! Coalesce + DEFER the heavy render to the next event-loop turn instead of running it inline. The proofing map's
+    //! mapChanged() is a SYNCHRONOUS notify fired from inside NotationProject::doLoadRepr on the UI thread; rebuilding
+    //! inline there renders every page (QPdfDocument load + per-page render + PNG write) and freezes the .repr open. A
+    //! zero-delay single-shot lets doLoadRepr return and the editor become interactive FIRST, then the magnifier renders
+    //! with its placeholder showing. The DockPanel's Loader (active: root.visible) already means this model exists ONLY
+    //! while the panel is actually shown, so a collapsed/unseen magnifier never subscribes and never renders. m_rebuildScheduled
+    //! coalesces a burst of notifies into one render.
+    void scheduleRebuild();
+
     //! Re-render from whatever the service currently holds (clears the previous render first), then recompute the follow.
     void rebuild();
 
@@ -182,6 +191,10 @@ private:
     bool m_hasMap = false;
     QVariantList m_pages;
     int32_t m_generation = 0;
+
+    //! true between a scheduleRebuild() and the deferred render firing, so a burst of mapChanged / load notifies coalesces
+    //! into a single render rather than queuing one per notify.
+    bool m_rebuildScheduled = false;
 
     int32_t m_currentPageIndex = -1;
     bool m_hasCurrent = false;

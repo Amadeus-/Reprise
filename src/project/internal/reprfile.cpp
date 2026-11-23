@@ -380,4 +380,60 @@ Ret readRepr(const path_t& path, ReprBundle& out)
 
     return muse::make_ok();
 }
+
+Ret readReprOriginal(const path_t& path, ByteArray& out, std::string& outSuffix, std::string& outFileName)
+{
+    out = ByteArray();
+    outSuffix.clear();
+    outFileName.clear();
+
+    ZipReader zip(path);
+    if (!zip.exists() || zip.hasError())
+    {
+        return Ret(static_cast<int>(Ret::Code::UnknownError),
+                   "Reprise: cannot open .repr bundle for original extraction: " + path.toStdString());
+    }
+
+    //! Manifest first for the recorded original suffix + file name (the same source of truth readRepr uses).
+    const ByteArray manifestBytes = zip.fileData(REPR_ENTRY_MANIFEST);
+    if (!manifestBytes.empty())
+    {
+        std::string err;
+        const JsonDocument mdoc = JsonDocument::fromJson(manifestBytes, &err);
+        const JsonObject origObj = mdoc.rootObject().value("original").toObject();
+        outFileName = origObj.value("fileName").toStdString();
+        outSuffix = origObj.value("suffix").toStdString();
+    }
+
+    //! Prefer the manifest-recorded original.<ext>; fall back to scanning for any "original.*" entry (mirrors readRepr) so a
+    //! bundle whose manifest lost the suffix still yields the scan, backfilling the suffix/name from the found entry.
+    if (!outSuffix.empty())
+    {
+        out = zip.fileData("original." + outSuffix);
+    }
+    if (out.empty())
+    {
+        for (const ZipReader::FileInfo& fi : zip.fileInfoList())
+        {
+            if (!fi.isFile)
+            {
+                continue;
+            }
+
+            const std::string name = fi.filePath.toStdString();
+            if (name.rfind("original.", 0) == 0)
+            {
+                out = zip.fileData(name);
+                outSuffix = name.substr(std::string("original.").size());
+                if (outFileName.empty())
+                {
+                    outFileName = name;
+                }
+                break;
+            }
+        }
+    }
+
+    return muse::make_ok();
+}
 }

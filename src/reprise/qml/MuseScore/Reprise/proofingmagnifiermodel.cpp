@@ -110,9 +110,12 @@ void ProofingMagnifierModel::load()
         });
 
         //! Re-render whenever a fresh import replaces (or clears) the held map, independent of notation-change timing.
+        //! DEFERRED (not inline): mapChanged() is a synchronous notify fired from inside NotationProject::doLoadRepr on the
+        //! UI thread, so rendering here inline would freeze the .repr open. scheduleRebuild() posts the render to the next
+        //! event-loop turn so the open finishes first and the editor is interactive before the magnifier renders.
         proofingMapService()->mapChanged().onNotify(this, [this]()
         {
-            rebuild();
+            scheduleRebuild();
         });
 
         //! Re-point the selection subscription whenever the user switches to a different score/part.
@@ -122,8 +125,31 @@ void ProofingMagnifierModel::load()
         });
     }
 
-    rebuild();
+    //! Defer the initial render too (panel first shown): scheduleRebuild() keeps the first paint off whatever triggered the
+    //! panel's creation, so the placeholder shows immediately and the render follows on the next event-loop turn. Selection
+    //! wiring is cheap (no render) and stays synchronous so follow is ready the moment pages exist.
+    scheduleRebuild();
     resubscribeSelection();
+
+    return;
+}
+
+void ProofingMagnifierModel::scheduleRebuild()
+{
+    if (m_rebuildScheduled)
+    {
+        return;
+    }
+
+    m_rebuildScheduled = true;
+
+    //! Context object `this`: Qt auto-cancels the pending single-shot if this model is destroyed first (the DockPanel's
+    //! Loader destroys it when the panel is hidden), so the deferred render never fires on a dead magnifier.
+    QTimer::singleShot(0, this, [this]()
+    {
+        m_rebuildScheduled = false;
+        rebuild();
+    });
 
     return;
 }
@@ -199,13 +225,24 @@ void ProofingMagnifierModel::renderPdfPages(const QString& sourcePath, const Pro
             continue;
         }
 
-        //! Fit the page into a MAGNIFIER_PAGE_MAX_SIDE box, preserving aspect, and render straight to that pixel size.
+        const int32_t sheetW = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageWidth : 0;
+        const int32_t sheetH = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageHeight : 0;
+
+        //! #6 (0.16.15): cap the render at the NATIVE scan resolution. The proofing-scan page carries a raster at the scan's
+        //! own pixel size (the Audiveris sheet-image dims, map.pages[i].imageWidth/Height), so rendering to the full 4000px
+        //! budget just UPSCALES a ~3399px scan -- more work + memory for zero added detail (the scan is the detail ceiling).
+        //! Clamp the longest rendered side to min(MAGNIFIER_PAGE_MAX_SIDE, native longest side). When the map carries no
+        //! native size for this page, fall back to the full budget (keeps an unmapped page displayable, as before).
+        const int32_t nativeLongest = std::max(sheetW, sheetH);
+        const int32_t sideCap = (nativeLongest > 0) ? std::min(MAGNIFIER_PAGE_MAX_SIDE, nativeLongest) : MAGNIFIER_PAGE_MAX_SIDE;
+
+        //! Fit the page into a sideCap box, preserving aspect, and render straight to that pixel size.
         const double aspect = pts.width() / pts.height();
-        int32_t h = MAGNIFIER_PAGE_MAX_SIDE;
+        int32_t h = sideCap;
         int32_t w = static_cast<int32_t>(std::lround(static_cast<double>(h) * aspect));
-        if (w > MAGNIFIER_PAGE_MAX_SIDE)
+        if (w > sideCap)
         {
-            w = MAGNIFIER_PAGE_MAX_SIDE;
+            w = sideCap;
             h = static_cast<int32_t>(std::lround(static_cast<double>(w) / aspect));
         }
 
@@ -216,8 +253,6 @@ void ProofingMagnifierModel::renderPdfPages(const QString& sourcePath, const Pro
             continue;
         }
 
-        const int32_t sheetW = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageWidth : 0;
-        const int32_t sheetH = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageHeight : 0;
         appendPage(rendered, dir, i, sheetW, sheetH);
     }
 

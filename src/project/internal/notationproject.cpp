@@ -28,6 +28,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
+#include <QCursor>
 
 #include "global/concurrency/concurrent.h"
 #include "global/io/buffer.h"
@@ -315,6 +317,15 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
 {
     TRACEFUNC;
 
+    // A .repr open runs the whole bundle read + embedded score load + proofing render synchronously on the UI thread, so
+    // show the busy cursor for the duration. DEFER guarantees the restore on EVERY exit path (early returns + exceptions),
+    // since it fires on scope exit. The magnifier render is now deferred off this scope (see ProofingMagnifierModel), so by
+    // the time the cursor is restored the remaining synchronous work (score load + following-band render) is done.
+    QGuiApplication::setOverrideCursor(Qt::BusyCursor);
+    DEFER {
+        QGuiApplication::restoreOverrideCursor();
+    };
+
     // Read the whole bundle (manifest + score.mscz + original + proofingmap.json) off disk.
     ReprBundle bundle;
     Ret ret = readRepr(path, bundle);
@@ -354,11 +365,18 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
 
     const QString tempRoot = QDir::tempPath() + "/reprise-repr";
 
-    // Extract the original scan to a REAL temp path -- the proofing band + magnifier render it by filesystem path
-    // (QPdfDocument::load / QImageReader), so a path inside the ZIP would never render. Retain that path so Save can
-    // re-bundle the LITERAL original verbatim. Best-effort: a missing/failed original just opens the score with no view.
+    // The original scan. When a deskewed proofing-scan is present (extracted below), the band + magnifier render THAT, not
+    // the original -- the original is needed only to re-bundle on a future Save. So in that case DEFER its temp extraction:
+    // record the source bundle path and let doSaveRepr extract the original on demand (readReprOriginal), keeping a
+    // potentially-large temp write off the .repr open path. When there is NO proofing-scan, the original IS the proofing/
+    // display source and must be on disk now, so it is still extracted to a REAL temp path (QPdfDocument::load / QImageReader
+    // render by filesystem path -- a path inside the ZIP would never render). Best-effort: a missing/failed original just
+    // opens the score with no proofing view.
     QString proofingSourceQ;
-    if (!bundle.original.empty()) {
+    if (bundle.hasProofingScan && !bundle.original.empty()) {
+        // Deferred: the deskewed render (extracted below) is the display source; remember where to get the original at save.
+        m_reprSourceBundlePath = path;
+    } else if (!bundle.original.empty()) {
         const QString baseName = bundle.originalFileName.empty()
                                  ? (QStringLiteral("original.")
                                     + QString::fromStdString(bundle.originalSuffix.empty() ? std::string("dat") : bundle.originalSuffix))
@@ -396,6 +414,29 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
             proofingSourceQ = psQ;   // deskewed render becomes the proofing source
         } else {
             LOGW() << "Reprise .repr: failed to extract deskewed render to temp: " << psQ;
+        }
+    }
+
+    // Deferred-original safety net: if we deferred the original (deskewed bundle) but the deskewed render could NOT be
+    // extracted, there is no display source. Extract the original now as the fallback source so proofing still works, and
+    // retain its temp path so Save reads from it (no longer the deferred source). Rare -- only on a temp write failure above.
+    if (proofingSourceQ.isEmpty() && m_reprOriginalPath.empty() && !bundle.original.empty()) {
+        const QString baseName = bundle.originalFileName.empty()
+                                 ? (QStringLiteral("original.")
+                                    + QString::fromStdString(bundle.originalSuffix.empty() ? std::string("dat") : bundle.originalSuffix))
+                                 : QString::fromStdString(bundle.originalFileName);
+
+        QDir().mkpath(tempRoot);
+        const QString extractedQ = tempRoot + "/" + QString::number(QDateTime::currentMSecsSinceEpoch()) + "-" + baseName;
+        const muse::io::path_t extracted(extractedQ);
+
+        Ret wret = fileSystem()->writeFile(extracted, bundle.original);
+        if (wret) {
+            m_reprOriginalPath = extracted;
+            m_reprSourceBundlePath = muse::io::path_t();   // temp now present -> no longer the deferred extract-on-demand source
+            proofingSourceQ = extractedQ;
+        } else {
+            LOGW() << "Reprise .repr: deferred-original fallback extraction also failed: " << extractedQ;
         }
     }
 
@@ -457,8 +498,11 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
     }
 
     // The original scan bytes, from the retained source path (the real scan at import time, or the extracted scan after
-    // opening a .repr). A missing original is non-fatal -- the score still round-trips, only the proofing view is lost.
+    // opening a non-deskewed .repr). A missing original is non-fatal -- the score still round-trips, only the proofing view
+    // is lost. The suffix/name are tracked alongside so the deferred path can backfill them from the source bundle.
     ByteArray originalBytes;
+    std::string savedOriginalName = m_reprOriginalFileName;
+    std::string savedOriginalSuffix = m_reprOriginalSuffix;
     if (!m_reprOriginalPath.empty() && fileSystem()->exists(m_reprOriginalPath)) {
         RetVal<ByteArray> rv = fileSystem()->readFile(m_reprOriginalPath);
         if (rv.ret) {
@@ -466,13 +510,31 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
         } else {
             LOGW() << "Reprise .repr save: cannot read original scan: " << m_reprOriginalPath;
         }
+    } else if (!m_reprSourceBundlePath.empty() && fileSystem()->exists(m_reprSourceBundlePath)) {
+        // Reprise 0.16.15: deferred-original path. Opening a deskewed .repr did not extract the original to temp, so read
+        // just the original entry straight from the source bundle, so the resaved .repr still carries the verbatim scan.
+        ByteArray ob;
+        std::string obSuffix;
+        std::string obName;
+        Ret rret = readReprOriginal(m_reprSourceBundlePath, ob, obSuffix, obName);
+        if (rret && !ob.empty()) {
+            originalBytes = ob;
+            if (savedOriginalSuffix.empty()) {
+                savedOriginalSuffix = obSuffix;
+            }
+            if (savedOriginalName.empty()) {
+                savedOriginalName = obName;
+            }
+        } else {
+            LOGW() << "Reprise .repr save: cannot extract original from source bundle: " << m_reprSourceBundlePath;
+        }
     } else {
         LOGW() << "Reprise .repr save: no readable original scan path retained; bundle will omit the scan";
     }
 
-    const std::string originalName = m_reprOriginalFileName.empty()
-                                     ? io::filename(m_reprOriginalPath).toStdString()
-                                     : m_reprOriginalFileName;
+    const std::string originalName = !savedOriginalName.empty()
+                                     ? savedOriginalName
+                                     : io::filename(m_reprOriginalPath).toStdString();
 
     // Reprise 0.16.5+: the deskewed render bytes, from the retained proofing-scan path (set only when a page was
     // straightened). Empty path / missing file -> no proofing-scan entry -> bundle is byte-identical to a straight import.
@@ -486,7 +548,7 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
         }
     }
 
-    const ByteArray bundle = assembleRepr(scoreBytes, originalBytes, originalName, m_reprOriginalSuffix,
+    const ByteArray bundle = assembleRepr(scoreBytes, originalBytes, originalName, savedOriginalSuffix,
                                           m_reprManifestImport, map,
                                           proofingScanBytes, m_reprProofingScanSuffix, m_reprSkewAnglesDeg);
 
@@ -511,6 +573,13 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
 
     QFile::setPermissions(normalizedPath.toQString(),
                           QFile::ReadOwner | QFile::WriteOwner | QFile::ReadUser | QFile::ReadGroup | QFile::ReadOther);
+
+    // Reprise 0.16.15: on the deferred-original path (no temp was extracted), the bundle we just wrote is self-contained
+    // (it carries the verbatim original). Point the extract-on-demand source at this saved file so a later Save still finds
+    // the scan even if the originally-opened bundle has since moved or been removed.
+    if (m_reprOriginalPath.empty() && !originalBytes.empty()) {
+        m_reprSourceBundlePath = normalizedPath;
+    }
 
     LOGI() << "Reprise: saved .repr bundle: " << normalizedPath;
     return make_ret(Ret::Code::Ok);

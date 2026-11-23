@@ -186,6 +186,10 @@ private:
     muse::io::path_t m_reprProofingScanPath; // on-disk path to read the deskewed render bytes from when saving the bundle
     std::string m_reprProofingScanSuffix;    // e.g. "pdf"
     std::vector<double> m_reprSkewAnglesDeg; // optional per-page deskew angles (provenance only)
+    // Reprise .repr (0.16.15+): when a deskewed .repr is opened, the verbatim original is NOT extracted to temp (the band +
+    // magnifier render the deskewed proofing-scan, not the original). This holds the source bundle path so doSaveRepr can
+    // extract-on-demand the original straight from it; empty unless the deferred-original path was taken.
+    muse::io::path_t m_reprSourceBundlePath;
 
     bool m_isNewlyCreated = false; /// true if the file has never been saved yet
     bool m_isImported = false;

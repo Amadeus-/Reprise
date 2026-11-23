@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.15] — 2026-11-22
+
+### Changed
+- **Opening a Reprise project no longer freezes for several seconds.** The scan rendering that used to block
+  opening a project (especially a multi-page one) now runs off the opening path and only as needed — so the
+  editor comes up quickly and the detail view fills in just after — and a busy cursor shows while a project loads.
+
 ## [0.16.14] — 2026-11-22
 
 ### Fixed
