@@ -100,103 +100,14 @@ void BadTimingNavigatorModel::rebuild()
 
     beginResetModel();
 
-    m_entries.clear();
+    //! ONE read-only walk shared with the dock controller (scanScoreForBadTiming), so the worklist rows below and the
+    //! panel's show/hide decision can never disagree. The walk mutates nothing.
+    m_entries = scanScoreForBadTiming(score);
     m_hasScore = (score != nullptr && score->firstMeasure() != nullptr);
-
-    if (score)
-    {
-        int32_t measureIndex0 = 0;
-        for (const mu::engraving::Measure* m = score->firstMeasure(); m; m = m->nextMeasure())
-        {
-            scanMeasure(m, measureIndex0);
-            ++measureIndex0;
-        }
-    }
 
     endResetModel();
 
     emit countChanged();
-
-    return;
-}
-
-void BadTimingNavigatorModel::scanMeasure(const mu::engraving::Measure* measure, int32_t measureIndex0)
-{
-    //! Replicates Score::sanityCheckLocal (check.cpp) READ-ONLY: sum each voice's actual ticks per staff and compare against
-    //! the measure length. NO mutation (the real check rewrites full-measure-rest ticks + corrupted flags -- forbidden here).
-    //! This MUST match sanityCheck exactly, because the navigator stands in for the corruption dialog it suppresses (Part F):
-    //! anything sanityCheck flags, the dialog would have reported, so the navigator has to surface it too or information is
-    //! lost. NO pickup/irregular (ticks != timesig) exclusion: sanityCheck does NOT exclude those, and it already passes a
-    //! correctly-filled pickup naturally (voices[0] == its own short ticks, so the Incomplete test below does not fire). A
-    //! blanket ticks-!=-timesig skip would instead HIDE real corruptions that live in irregular measures -- e.g. hardtimes-a4
-    //! measure 37, whose ticks (138/128) are irregular yet whose voice 3 overflows (1109/1024 > 1104/1024): a true problem.
-    const mu::engraving::Fraction mLen = measure->ticks();
-
-    const size_t endStaff = measure->score()->staves().size();
-    const int32_t measureNumber1 = measureIndex0 + 1;
-
-    for (size_t staffIdx = 0; staffIdx < endStaff; ++staffIdx)
-    {
-        mu::engraving::Fraction voices[mu::engraving::VOICES];
-
-        for (const mu::engraving::Segment* s = measure->first(mu::engraving::SegmentType::ChordRest); s;
-             s = s->next(mu::engraving::SegmentType::ChordRest))
-        {
-            for (mu::engraving::voice_idx_t v = 0; v < mu::engraving::VOICES; ++v)
-            {
-                mu::engraving::EngravingItem* element = s->element(staffIdx * mu::engraving::VOICES + v);
-                if (!element)
-                {
-                    continue;
-                }
-
-                voices[v] += mu::engraving::toChordRest(element)->actualTicks();
-            }
-        }
-
-        //! Corrupted measure-repeat group (the repeat element went missing) -- a genuine corruption worth surfacing.
-        if (measure->isMeasureRepeatGroup(staffIdx) && measure->measureRepeatElement(staffIdx) == nullptr)
-        {
-            BadTimingEntry e;
-            e.measureIndex0 = measureIndex0;
-            e.measureNumber1 = measureNumber1;
-            e.staffIdx = static_cast<int32_t>(staffIdx);
-            e.kind = Kind::CorruptedRepeat;
-            e.found = voices[0].toString().toQString();
-            e.expected = mLen.toString().toQString();
-            m_entries.push_back(e);
-        }
-
-        //! Incomplete: voice 1 does not fill the measure.
-        if (voices[0] != mLen)
-        {
-            BadTimingEntry e;
-            e.measureIndex0 = measureIndex0;
-            e.measureNumber1 = measureNumber1;
-            e.staffIdx = static_cast<int32_t>(staffIdx);
-            e.kind = Kind::Incomplete;
-            e.found = voices[0].toString().toQString();
-            e.expected = mLen.toString().toQString();
-            m_entries.push_back(e);
-        }
-
-        //! Voice too long: a voice beyond the first holds more than the measure length.
-        for (mu::engraving::voice_idx_t v = 1; v < mu::engraving::VOICES; ++v)
-        {
-            if (voices[v] > mLen)
-            {
-                BadTimingEntry e;
-                e.measureIndex0 = measureIndex0;
-                e.measureNumber1 = measureNumber1;
-                e.staffIdx = static_cast<int32_t>(staffIdx);
-                e.kind = Kind::VoiceTooLong;
-                e.voice = static_cast<int32_t>(v);
-                e.found = voices[v].toString().toQString();
-                e.expected = mLen.toString().toQString();
-                m_entries.push_back(e);
-            }
-        }
-    }
 
     return;
 }
@@ -208,7 +119,7 @@ void BadTimingNavigatorModel::jumpTo(int row)
         return;
     }
 
-    const BadTimingEntry& entry = m_entries[static_cast<size_t>(row)];
+    const BadTimingProblem& entry = m_entries[static_cast<size_t>(row)];
 
     const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
     if (!notation || !notation->interaction() || !notation->elements())
@@ -276,7 +187,7 @@ QVariant BadTimingNavigatorModel::data(const QModelIndex& index, int role) const
         return QVariant();
     }
 
-    const BadTimingEntry& e = m_entries[static_cast<size_t>(row)];
+    const BadTimingProblem& e = m_entries[static_cast<size_t>(row)];
 
     switch (role)
     {
@@ -289,9 +200,9 @@ QVariant BadTimingNavigatorModel::data(const QModelIndex& index, int role) const
     case KindRole:
         return kindLabel(e.kind);
     case FoundRole:
-        return e.found;
+        return e.found.toString().toQString();
     case ExpectedRole:
-        return e.expected;
+        return e.expected.toString().toQString();
     default:
         return QVariant();
     }
@@ -309,7 +220,7 @@ QHash<int, QByteArray> BadTimingNavigatorModel::roleNames() const
     };
 }
 
-QString BadTimingNavigatorModel::rowText(const BadTimingEntry& e) const
+QString BadTimingNavigatorModel::rowText(const BadTimingProblem& e) const
 {
     //: Bad-timing navigator row, e.g. "m. 5  staff 1  Incomplete  3/4 of 4/4" (%1 = measure number, %2 = staff number,
     //: %3 = problem kind, %4 = found duration, %5 = expected duration).
@@ -317,18 +228,18 @@ QString BadTimingNavigatorModel::rowText(const BadTimingEntry& e) const
            .arg(e.measureNumber1)
            .arg(e.staffIdx + 1)
            .arg(kindLabel(e.kind))
-           .arg(e.found, e.expected);
+           .arg(e.found.toString().toQString(), e.expected.toString().toQString());
 }
 
-QString BadTimingNavigatorModel::kindLabel(Kind kind) const
+QString BadTimingNavigatorModel::kindLabel(BadTimingKind kind) const
 {
     switch (kind)
     {
-    case Kind::Incomplete:
+    case BadTimingKind::Incomplete:
         return muse::qtrc("reprise", "Incomplete");
-    case Kind::VoiceTooLong:
+    case BadTimingKind::VoiceTooLong:
         return muse::qtrc("reprise", "Voice too long");
-    case Kind::CorruptedRepeat:
+    case BadTimingKind::CorruptedRepeat:
         return muse::qtrc("reprise", "Corrupted repeat");
     }
 

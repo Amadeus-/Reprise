@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-11-23
+
+### Changed
+- **The Timing problems list now lives in the detail-view panel and only appears when there's something to fix.**
+  Instead of its own separate panel, timing problems show as a section directly below the detail view, and that
+  section disappears entirely when a score has no timing problems — so a clean score stays uncluttered.
+
 ## [0.17.0] — 2026-11-23
 
 ### Added

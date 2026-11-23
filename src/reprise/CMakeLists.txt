@@ -54,6 +54,8 @@ target_sources(reprise PRIVATE
     internal/proofingviewcontrol.h
     internal/proofingmapbuilder.cpp
     internal/proofingmapbuilder.h
+    internal/badtimingcheck.cpp
+    internal/badtimingcheck.h
 )
 
 #! NOTE: Reprise's Import-PDF flow reaches into project (IProjectSession, PROJECT_OPEN_COMMAND) and into

@@ -405,5 +405,39 @@ Item {
                 zoomPercent: Math.round(magModel.userZoom * 100)
             }
         }
+
+        //! Reprise TIMING-PROBLEMS SECTION (0.17.1, Option C). The bad-timing worklist is hosted HERE, inside the
+        //! ALWAYS-OPEN "Full detail view" panel, as a collapsing section beneath the magnifier -- NOT as a separate
+        //! hideable KDDock dock. A dock that is fully closed reshows EMPTY (KDDock destroys the sole-widget group's QML
+        //! guest, and muse's pristine DockPanelView never recreates it), so across a score switch the worklist came back
+        //! blank. This panel is never closed -> its BadTimingNavigator (and the BadTimingNavigatorModel that navigator
+        //! owns) is never destroyed -> the model stays subscribed to currentNotationChanged + the undo stack's
+        //! stackChanged and keeps re-walking, so the list is always populated with the LIVE score. The model's lifetime
+        //! therefore equals this panel's -- airtight across every cross-switch.
+        //!
+        //! COLLAPSE when clean: problemCount == 0 -> visible:false, which excludes the section from the ColumnLayout so it
+        //! takes zero height and the magnifier fills the whole panel. count > 0 -> the section appears with a bottom slice
+        //! (its own list scroll) that grows with the row count, capped at ~45% of the panel so the magnifier keeps the top.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: ui.theme.strokeColor
+            visible: timingSection.problemCount > 0
+        }
+
+        BadTimingNavigator {
+            id: timingSection
+
+            Layout.fillWidth: true
+            Layout.fillHeight: false
+            Layout.preferredHeight: visible
+                                    ? Math.round(Math.min(root.height * 0.45, Math.max(120, 44 + problemCount * 28)))
+                                    : 0
+
+            //! Collapse (zero height, excluded from the layout) when the live score is clean, so the magnifier fills the panel.
+            visible: problemCount > 0
+
+            navigationSection: root.navigationSection
+        }
     }
 }

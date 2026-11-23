@@ -102,11 +102,6 @@ DockPage {
     readonly property string verticalPanelsGroup: "VERTICAL_PANELS"
     readonly property string horizontalPanelsGroup: "HORIZONTAL_PANELS"
 
-    //! Reprise: the Bad-timing navigator sits in its OWN dock group so it does NOT tab onto the magnifier (same group +
-    //! same Location.Right would make findPanelForTab tab them together). A distinct group makes it a separate right-column
-    //! panel the user can drag beneath the magnifier; see the Phase 1 note on the proofingBadTimingPanel below.
-    readonly property string repriseNavigatorGroup: "REPRISE_BAD_TIMING"
-
     readonly property var verticalPanelDropDestinations: [
         { "dock": root.centralDock, "dropLocation": Location.Left, "dropDistance": root.verticalPanelDefaultWidth },
         { "dock": root.centralDock, "dropLocation": Location.Right, "dropDistance": root.verticalPanelDefaultWidth }
@@ -429,37 +424,6 @@ DockPage {
 
             ProofingMagnifier {
                 navigationSection: proofingMagnifierPanel.navigationSection
-            }
-        },
-
-        //! NOTE: Reprise Two-Pane Proofing BAD-TIMING NAVIGATOR (Phase 1). A PhotoScore-style worklist of the problem
-        //! measures whose durations do not add up; clicking a row jumps the band + magnifier + editor to that measure. It
-        //! is in its OWN dock group (repriseNavigatorGroup) so it does NOT tab onto the magnifier -- it appears as a
-        //! separate right-column panel the user can drag BENEATH the magnifier (that position then persists in the saved
-        //! layout). Deterministic first-run stacking directly under the magnifier is PARKED (it would need a muse-side
-        //! loadPanels "relativeTo panel + Location.Bottom" hook, and the muse submodule stays pristine) -- see the report.
-        DockPanel {
-            id: proofingBadTimingPanel
-
-            objectName: "proofingBadTimingPanel"
-            title: qsTrc("reprise", "Timing problems")
-
-            navigationSection: root.navigationPanelSec(proofingBadTimingPanel.location)
-
-            width: 360
-            minimumWidth: 220
-            maximumWidth: 900
-
-            minimumHeight: root.panelMinDimension
-            maximumHeight: root.panelMaxDimension
-
-            groupName: root.repriseNavigatorGroup
-            location: Location.Right
-
-            dropDestinations: root.verticalPanelDropDestinations
-
-            BadTimingNavigator {
-                navigationSection: proofingBadTimingPanel.navigationSection
             }
         },
 

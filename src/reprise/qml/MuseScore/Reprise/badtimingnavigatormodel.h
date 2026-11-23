@@ -35,13 +35,17 @@
 
 #include "project/iprojectsession.h"
 
+#include "internal/badtimingcheck.h"
+
 namespace mu::engraving {
 class Measure;
 }
 
 namespace mu::reprise {
 //! View-model behind the Reprise Two-Pane Proofing BAD-TIMING NAVIGATOR (Phase 1) -- a PhotoScore-style worklist of the
-//! measures whose durations do not add up, docked beneath the magnifier in the right column. OMR regularly emits a measure
+//! measures whose durations do not add up, hosted as a collapsing section beneath the magnifier inside the always-open
+//! "Full detail view" right-column panel (so the model is never destroyed and stays live across score switches). OMR
+//! regularly emits a measure
 //! that is short or over-stuffed (a missed/extra beam, a dropped rest); MuseScore's own sanity check flags these but then
 //! pops a single modal "this file is corrupted" dialog and moves on. This panel instead SURFACES each problem measure as a
 //! clickable row so the user can jump to it and fix it, faithful-to-Audiveris: it never auto-corrects, only reports.
@@ -69,28 +73,9 @@ public:
     explicit BadTimingNavigatorModel(QObject* parent = nullptr);
     ~BadTimingNavigatorModel() override;
 
-    //! The kind of timing problem a row reports. Mirrors the branches of Score::sanityCheckLocal that this walk replicates.
-    enum class Kind : int32_t
-    {
-        Incomplete = 0,     //! voice 1 (voices[0]) does not fill the measure length
-        VoiceTooLong,       //! a voice > 1 holds more than the measure length
-        CorruptedRepeat     //! a measure-repeat group whose repeat element is missing
-    };
-    Q_ENUM(Kind)
-
-    //! One problem measure x staff, as surfaced to the worklist. measureIndex0 is the POSITIONAL 0-based index (pickup = 0),
-    //! matching the proofing map's globalMeasureIndex and the magnifier header, so a click lines the whole view up. found /
-    //! expected are rendered as fraction strings (e.g. "3/4", "4/4").
-    struct BadTimingEntry
-    {
-        int32_t measureIndex0 = 0;
-        int32_t measureNumber1 = 0;
-        int32_t staffIdx = 0;
-        Kind kind = Kind::Incomplete;
-        int32_t voice = 0;
-        QString found;
-        QString expected;
-    };
+    //! The problem row type and the problem-kind enum are defined once in internal/badtimingcheck.h and shared with the
+    //! dock controller, so this worklist's rows and the panel's visibility are driven by ONE read-only walk and can never
+    //! disagree (see scanScoreForBadTiming).
 
     enum Roles
     {
@@ -119,25 +104,23 @@ signals:
     void countChanged();
 
 private:
-    //! Re-walk the current notation's score read-only and reset the model rows. Safe with no score (clears to empty).
+    //! Re-walk the current notation's score read-only (via scanScoreForBadTiming) and reset the model rows. Safe with no
+    //! score (clears to empty).
     void rebuild();
-
-    //! Append the problem rows for one measure x staff (replicates the sanityCheckLocal branches, NO mutation).
-    void scanMeasure(const mu::engraving::Measure* measure, int32_t measureIndex0);
 
     //! Drop + rebind the undo-stack + selection subscriptions for the CURRENT notation (at load and on every switch), then
     //! re-walk. Mirrors the ProofingStripModel/magnifier resubscribe idiom so a previous score's edits never drive us.
     void resubscribe();
 
     //! Human row text: "m. {measureNumber1}  staff {staffIdx+1}  {kind}  {found}/{expected}".
-    QString rowText(const BadTimingEntry& e) const;
+    QString rowText(const BadTimingProblem& e) const;
 
     //! Localised short label for a kind ("Incomplete", "Voice too long", "Corrupted repeat").
-    QString kindLabel(Kind kind) const;
+    QString kindLabel(BadTimingKind kind) const;
 
     bool m_inited = false;
     bool m_hasScore = false;
-    std::vector<BadTimingEntry> m_entries;
+    std::vector<BadTimingProblem> m_entries;
 
     //! Receiver for the CURRENT notation's undo-stack + selection channels; destroyed+recreated on every notation switch so
     //! a previous notation's notifications never drive this model (the NotationSwitchListModel idiom the magnifier uses).

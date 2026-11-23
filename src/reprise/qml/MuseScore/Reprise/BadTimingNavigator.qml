@@ -39,9 +39,17 @@ import MuseScore.Reprise
 Item {
     id: root
 
-    //! Supplied by the host DockPanel (the dock content pattern). The navigator's rows are reached by mouse, not keyboard
-    //! navigation, so it simply holds the section; declared so the panel can bind it without a missing-property error.
+    //! Supplied by the host magnifier panel (ProofingMagnifier, the dock content pattern). The navigator's rows are reached
+    //! by mouse, not keyboard navigation, so it simply holds the section; declared so the host can bind it without a
+    //! missing-property error.
     property NavigationSection navigationSection: null
+
+    //! Live problem count, re-exposed to the host ProofingMagnifier panel so it can COLLAPSE the whole timing section (zero
+    //! height) when the score is clean and reveal it the instant a timing problem exists. navModel.count is refreshed on
+    //! every undo-stack change + score switch, so this stays current and the section shows/hides as edits clear or introduce
+    //! problems. Because this navigator (and navModel) live inside the always-open magnifier panel, the model is never
+    //! destroyed and the count is always live across score switches.
+    readonly property int problemCount: navModel.count
 
     //! THEME-AWARE read-only "original scan" surface tint, kept in sync by hand with ProofingStrip/ProofingMagnifier so the
     //! whole right proofing column reads as one cream reference surface. Light -> soft warm ivory; dark -> warm charcoal.
