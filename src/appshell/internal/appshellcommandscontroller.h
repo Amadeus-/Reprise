@@ -102,7 +102,8 @@ private:
         ProjectFile,
         SoundFont,
         Extension,
-        ConvertibleFile
+        ConvertibleFile,
+        ScanFile        // Reprise: a dropped scan (PDF/image) routed to the interactive OMR import
     };
 
     bool eventFilter(QObject* watched, QEvent* event) override;

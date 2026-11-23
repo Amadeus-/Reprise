@@ -681,15 +681,26 @@ void ImportPdfController::init()
 
 muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
 {
+    //! Three ways in, distinguished by two params:
+    //!   * New-Scan tile / "Import Scan…" menu: no "path"               -> show the picker, then the Options dialog.
+    //!   * File > Open / drag-and-drop of a scan: "path" + "interactive"=true -> skip the picker (file already chosen) but
+    //!     STILL show the Options dialog (exact parity with the tile).
+    //!   * Headless MCP reprise.import-pdf: "path" only (no "interactive") -> skip BOTH the picker and the Options dialog.
+    //! "headless" is true only for that last, GUI-less path, so the audiveris-missing / busy feedback below fails fast with
+    //! a Ret to a scripted caller but shows a modal to a real user (both interactive entry points).
+    const std::string givenPath = params.at("path").toString();
+    const bool wantInteractive = params.at("interactive", Val(false)).toBool();
+    const bool headless = !givenPath.empty() && !wantInteractive;
+
     //! FIX 1 (single-import guard, belt-and-suspenders): refuse a SECOND import while one recognition is already active.
     //! The New-Scan command is also greyed out while active (RepriseCommandsState), but this covers any edge path that
     //! still reaches importPdf -- a direct command dispatch, or an MCP reprise.import-pdf call (which bypasses the GUI
     //! action state entirely). snapshot().active is set by launchImport's reportStarted and cleared on finish / error /
-    //! cancel, so it is true for exactly the duration of a live run. MCP/headless caller (a "path" was given) -> a clean
-    //! busy error; interactive caller -> a warning, then cancel. Either way NO second popup / Audiveris run is launched.
+    //! cancel, so it is true for exactly the duration of a live run. MCP/headless caller -> a clean busy error;
+    //! interactive caller -> a warning, then cancel. Either way NO second popup / Audiveris run is launched.
     if (importProgressTracker()->snapshot().active)
     {
-        if (!params.at("path").toString().empty())
+        if (headless)
         {
             return make_ret(Ret::Code::NotSupported, "A recognition is already in progress");
         }
@@ -704,8 +715,8 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     //! Reprise has exactly one OMR path: local Audiveris. Verify it is present before asking for a file.
     if (m_audiverisRunner->findAudiveris().empty())
     {
-        //! Headless caller (a "path" was supplied): fail fast without a modal dialog that would block the thread.
-        if (!params.at("path").toString().empty())
+        //! Headless caller: fail fast without a modal dialog that would block the thread.
+        if (headless)
         {
             return make_ret(Ret::Code::NotSupported, "Audiveris was not found");
         }
@@ -717,15 +728,15 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
         return make_ret(Ret::Code::NotSupported);
     }
 
-    //! Headless / scripted path: a "path" arg skips the interactive picker and the options dialog entirely, so an
-    //! MCP/API caller can drive the whole import with no GUI clicks. "pages"/"dpi" default when omitted.
-    const std::string headlessPath = params.at("path").toString();
-    if (!headlessPath.empty())
+    //! Headless / scripted path: a "path" arg WITHOUT "interactive" skips the picker AND the options dialog entirely, so
+    //! an MCP/API caller can drive the whole import with no GUI clicks. "pages"/"dpi" default when omitted. (A "path" WITH
+    //! "interactive"=true falls through to the interactive section below, which shows the Options dialog for it.)
+    if (headless)
     {
-        const io::path_t pdfPath(headlessPath);
+        const io::path_t pdfPath(givenPath);
         if (!fileSystem()->exists(pdfPath))
         {
-            return make_ret(Ret::Code::UnknownError, "Scan not found: " + headlessPath);
+            return make_ret(Ret::Code::UnknownError, "Scan not found: " + givenPath);
         }
 
         //! Oversized-image pre-flight (image inputs only). Block up front so the MCP/API caller gets a clean error
@@ -797,14 +808,32 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
         return make_ok();
     }
 
-    const io::path_t pdfPath = interactive()->selectOpeningFileSync(muse::trc("reprise", "Import Scan"), defaultImportPdfDir(),
-                                                                    { muse::trc("reprise", "Scans") + " (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif)" });
-    if (pdfPath.empty())
+    //! The scan to import. An interactive File > Open / drag-and-drop pre-chose it ("interactive"=true with a "path"), so
+    //! skip the picker and use that path (verifying it still exists); otherwise (the New-Scan tile / "Import Scan…" menu)
+    //! show the picker now. Either way the Options dialog below is shown identically -- exact parity between the paths.
+    io::path_t pdfPath;
+    if (wantInteractive)
     {
-        return make_ret(Ret::Code::Cancel);
+        pdfPath = io::path_t(givenPath);
+        if (!fileSystem()->exists(pdfPath))
+        {
+            interactive()->warning(muse::trc("reprise", "Scan not found"),
+                                   muse::qtrc("reprise", "The file could not be found:\n%1").arg(pdfPath.toQString()).toStdString(),
+                                   { interactive()->buttonData(IInteractive::Button::Ok) });
+            return make_ret(Ret::Code::Cancel);
+        }
+    }
+    else
+    {
+        pdfPath = interactive()->selectOpeningFileSync(muse::trc("reprise", "Import Scan"), defaultImportPdfDir(),
+                                                       { muse::trc("reprise", "Scans") + " (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif)" });
+        if (pdfPath.empty())
+        {
+            return make_ret(Ret::Code::Cancel);
+        }
     }
 
-    //! Remember the folder on a real pick (never on cancel), independent of MuseScore's File > Open folder.
+    //! Remember the folder on a real pick / pre-chosen scan (never on cancel), independent of MuseScore's File > Open folder.
     rememberImportPdfDir(pdfPath);
 
     //! Auto-detect the PDF's native image resolution BEFORE the dialog opens so we can pre-select a matching quality

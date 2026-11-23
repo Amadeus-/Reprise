@@ -40,6 +40,7 @@
 #include "../appshellcommands.h"
 #include "project/projectcommands.h"
 #include "playback/playbackcommands.h"
+#include "reprise/reprisecommands.h"
 
 #include "log.h"
 
@@ -178,7 +179,12 @@ AppshellCommandsController::DragTarget AppshellCommandsController::dragTarget(co
         return DragTarget::ProjectFile;
     } else if (url.isLocalFile()) {
         muse::io::path_t filePath = url.toLocalFile();
-        if (muse::audio::synth::isSoundFont(filePath)) {
+        //! Reprise: a dropped scan (PDF/image) is not an openable project, soundfont, or extension -- route it to the
+        //! interactive OMR import (the same path File > Open of a scan takes). Checked early so a scan is never mistaken
+        //! for a convertible score file.
+        if (reprise::isRepriseScanSuffix(muse::io::suffix(filePath))) {
+            return DragTarget::ScanFile;
+        } else if (muse::audio::synth::isSoundFont(filePath)) {
             return DragTarget::SoundFont;
         } else if (extensionInstaller()->isFileSupported(filePath)) {
             return DragTarget::Extension;
@@ -256,6 +262,16 @@ bool AppshellCommandsController::onDropEvent(QDropEvent* event)
             }
             async::Async::call(this, [this, paths]() {
                     convertFileToScoreScenario()->convertFiles(paths);
+                });
+        } break;
+        case DragTarget::ScanFile: {
+            //! Reprise: route a dropped scan through the SAME interactive OMR import as the New-Scan tile and File > Open --
+            //! the file is pre-chosen ("path") and the Options dialog still shows ("interactive"=true). NOT the headless MCP
+            //! import path. The import controller owns its own success/error/notice windows, so they still fire.
+            muse::io::path_t filePath = url.toLocalFile();
+            async::Async::call(this, [this, filePath]() {
+                    commandDispatcher()->dispatch(reprise::REPRISE_IMPORT_PDF_COMMAND,
+                                                  { { "path", muse::Val(filePath.toStdString()) }, { "interactive", muse::Val(true) } });
                 });
         } break;
         case DragTarget::Unknown:

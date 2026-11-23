@@ -30,6 +30,7 @@
 
 #include "modularity/ioc.h"
 #include "async/asyncable.h"
+#include "rcommand/icommanddispatcher.h"
 #include "project/iprojectsession.h"
 #include "cloud/musescorecom/imusescorecomservice.h"
 #include "interactive/iinteractive.h"
@@ -62,6 +63,7 @@ public:
     muse::GlobalInject<INotationReadersRegister> readers;
     muse::GlobalInject<IMscMetaReader> mscMetaReader;
     muse::GlobalInject<muse::IPlatformInteractive> platformInteractive;
+    muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
     muse::ContextInject<IProjectAutoSaver> projectAutoSaver = { this };
     muse::ContextInject<IRecentFilesController> recentFilesController = { this };
     muse::ContextInject<muse::IInteractive> interactive = { this };

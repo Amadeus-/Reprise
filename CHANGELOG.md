@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.16] — 2026-11-22
+
+### Added
+- **Open a scan straight from File ▸ Open, or by drag-and-drop.** File ▸ Open now accepts PDFs and images and runs
+  them through the full Import Scan flow (with the options dialog), and you can drag a scan onto the window to
+  import it. The New Scan tile and the Import Scan… menu still work exactly as before.
+
 ## [0.16.15] — 2026-11-22
 
 ### Changed

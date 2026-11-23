@@ -31,6 +31,15 @@
 namespace mu::reprise {
 inline static const muse::rcommand::Command REPRISE_IMPORT_PDF_COMMAND("command://reprise/import-pdf");
 
+//! The scan file types Reprise's interactive OMR import accepts (PDF + the raster image formats Audiveris can read). The
+//! argument is a lower-cased suffix with no leading dot (io::suffix form). Kept here so every entry point tests the SAME
+//! set: the File > Open dispatch (OpenProjectScenario), the app-shell drag-and-drop handler, and the New-Scan picker.
+inline bool isRepriseScanSuffix(const std::string& suffix)
+{
+    return suffix == "pdf" || suffix == "png" || suffix == "jpg" || suffix == "jpeg"
+           || suffix == "tif" || suffix == "tiff" || suffix == "bmp" || suffix == "gif";
+}
+
 //! NOTE Reprise read-only MCP/API query: progress of the current/last Import-PDF (Audiveris OMR) run. Lets a
 //! headless agent poll a running import without any GUI interaction.
 struct GetImportProgressCommand {

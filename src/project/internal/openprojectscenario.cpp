@@ -39,6 +39,8 @@
 #include "notation/imasternotation.h"
 #include "notation/inotation.h"
 
+#include "reprise/reprisecommands.h"
+
 #include "inotationproject.h"
 #include "reprfile.h"
 #include "projecterrors.h"
@@ -289,6 +291,20 @@ Promise<Ret> OpenProjectScenario::openProject(const ProjectFile& file)
 
 Promise<Ret> OpenProjectScenario::openProject(const muse::io::path_t& givenPath, const QString& displayNameOverride)
 {
+    //! Reprise: a scan (PDF/image) reaching openProject -- via File > Open, the OS "open with", the recent-files list, or
+    //! any other openProject(path) caller -- is NOT a loadable project. Route it into the SAME interactive OMR import the
+    //! New-Scan tile / "Import Scan…" menu entry use: the file is already chosen, so the picker is skipped, but the import
+    //! Options dialog (text/lyrics/language) still shows (the "interactive" flag). This is NOT the headless MCP import path
+    //! (reprise.import-pdf with just a "path"). A normal project file (.repr/.mscz/.mxl/.musicxml/...) falls through to the
+    //! project loader below exactly as before.
+    if (reprise::isRepriseScanSuffix(io::suffix(givenPath))) {
+        muse::rcommand::Params importParams;
+        importParams.set("path", Val(givenPath.toStdString()));
+        importParams.set("interactive", Val(true));
+        commandDispatcher()->dispatch(reprise::REPRISE_IMPORT_PDF_COMMAND, importParams);
+        return resolvedPromise(make_ok());
+    }
+
     return runIfNotBusy(BusyStatus::Opening, [this, givenPath, displayNameOverride]() -> Promise<Ret> {
         // Reprise: normalize separators so any raw backslash open path is robust (the MCP open url is already '/'-normalized by QUrl).
         muse::io::path_t normalizedGivenPath = muse::io::Dir::fromNativeSeparators(givenPath);
@@ -980,10 +996,14 @@ void OpenProjectScenario::warnProjectCannotBeOpened(const Ret& ret, const muse::
 async::Promise<io::path_t> OpenProjectScenario::selectScoreOpeningFile() const
 {
     std::string allExt = "*.repr *.mscz *.mxl *.musicxml *.xml *.mid *.midi *.kar *.md *.mgu *.sgu *.cap *.capx "
-                         "*.ove *.scw *.bmw *.bww *.gtp *.gp3 *.gp4 *.gp5 *.gpx *.gp *.ptb *.mei *.mnx *.json *.tef *.mscx *.mscs *.mscz~";
+                         "*.ove *.scw *.bmw *.bww *.gtp *.gp3 *.gp4 *.gp5 *.gpx *.gp *.ptb *.mei *.mnx *.json *.tef *.mscx *.mscs *.mscz~ "
+                         //! Reprise: scans (PDF/image) are selectable in File > Open too; openProject routes them into the
+                         //! same interactive OMR import as the New-Scan tile (the Options dialog still shows).
+                         "*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif";
 
     std::vector<std::string> filter { muse::trc("project", "All supported files") + " (" + allExt + ")",
                                       muse::trc("project", "Reprise projects") + " (*.repr)",
+                                      muse::trc("project", "Scans") + " (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif)",
                                       muse::trc("project", "MuseScore files") + " (*.mscz)",
                                       muse::trc("project", "MusicXML files") + " (*.mxl *.musicxml *.xml)",
                                       muse::trc("project", "MIDI files") + " (*.mid *.midi *.kar)",
