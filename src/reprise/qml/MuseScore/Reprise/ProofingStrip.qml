@@ -181,6 +181,13 @@ Rectangle {
         //! viewport); scrollToCurrent centers the followed measure on X exactly as it does on Y.
         property real scrollOffsetX: 0
 
+        //! MANUAL pan nudge (on-screen px) ADDED ON TOP of the follow-centered scrollOffset/scrollOffsetX: a left-drag sets
+        //! these so the user can fine-tune the scan's placement AFTER follow auto-centers. Reset to 0 on every new follow
+        //! (onFollowChanged) so follow always lands clean, then re-clamped (clampPan) on a zoom/resize so a pan valid at one
+        //! size can't fling the page out of view after the page grows/shrinks.
+        property real userPanX: 0
+        property real userPanY: 0
+
         //! True while the containing window is minimized. A minimized / non-exposed window FREEZES Qt's QML
         //! animation driver, so an animated scrollOffset would stay stuck at its start value -- which is exactly
         //! what broke the earlier animated band under our minimized-window capture harness (the "band shows the
@@ -229,6 +236,42 @@ Rectangle {
             let targetX = (bandModel.rectX + bandModel.rectW / 2) * imgScale - viewport.width / 2
             let maxX = Math.max(0, pageDispW - viewport.width)
             scrollOffsetX = Math.max(0, Math.min(maxX, targetX))
+        }
+
+        //! Clamp a candidate horizontal pan so at least PAN_KEEP px of the page stay inside the viewport. The page's on-screen
+        //! left edge is (-scrollOffsetX + pan); keeping that in [keep - pageDispW, viewport.width - keep] (both shifted by
+        //! scrollOffsetX) guarantees at least `keep` px of overlap on whichever edge the user drags toward -> the scan can
+        //! never be dragged entirely out of view.
+        function clampPanX(pan) {
+            let keep = 40
+            let lo = keep - pageDispW + scrollOffsetX
+            let hi = viewport.width - keep + scrollOffsetX
+            if (lo > hi) {
+                return 0
+            }
+
+            return Math.max(lo, Math.min(hi, pan))
+        }
+
+        //! Vertical twin of clampPanX, against pageDispH / scrollOffset / viewport.height.
+        function clampPanY(pan) {
+            let keep = 40
+            let lo = keep - pageDispH + scrollOffset
+            let hi = viewport.height - keep + scrollOffset
+            if (lo > hi) {
+                return 0
+            }
+
+            return Math.max(lo, Math.min(hi, pan))
+        }
+
+        //! Re-clamp the existing pan against current geometry (called after a zoom/resize changes pageDispW/H) so a pan that
+        //! was valid at the old size can't leave the page off-view at the new one.
+        function clampPan() {
+            userPanX = clampPanX(userPanX)
+            userPanY = clampPanY(userPanY)
+
+            return
         }
 
         Rectangle {
@@ -303,8 +346,8 @@ Rectangle {
             Blend {
                 id: blendedPage
 
-                x: -bandArea.scrollOffsetX
-                y: -bandArea.scrollOffset
+                x: -bandArea.scrollOffsetX + bandArea.userPanX
+                y: -bandArea.scrollOffset + bandArea.userPanY
                 width: bandArea.pageDispW
                 height: bandArea.pageDispH
 
@@ -319,8 +362,8 @@ Rectangle {
 
                 visible: bandModel.hasCurrent && bandArea.imgScale > 0
 
-                x: bandModel.rectX * bandArea.imgScale - bandArea.scrollOffsetX
-                y: bandModel.rectY * bandArea.imgScale - bandArea.scrollOffset
+                x: bandModel.rectX * bandArea.imgScale - bandArea.scrollOffsetX + bandArea.userPanX
+                y: bandModel.rectY * bandArea.imgScale - bandArea.scrollOffset + bandArea.userPanY
                 width: bandModel.rectW * bandArea.imgScale
                 height: bandModel.rectH * bandArea.imgScale
 
@@ -334,25 +377,72 @@ Rectangle {
         Connections {
             target: bandModel
             function onFollowChanged() {
+                //! A new follow re-centers the band -> drop any manual pan nudge so the followed measure lands clean (the
+                //! user then drags to fine-tune from the centered position).
+                bandArea.userPanX = 0
+                bandArea.userPanY = 0
                 bandArea.scrollToCurrent()
             }
             //! After a wheel-zoom, re-center the followed measure so it stays put while the page grows/shrinks around it;
-            //! because imgScale folds in userZoom, the zoom persists across auto-follow for free.
+            //! because imgScale folds in userZoom, the zoom persists across auto-follow for free. The manual pan is KEPT
+            //! across a zoom (so fine-zoom while panned stays put), only re-clamped to the new page size.
             function onUserZoomChanged() {
                 bandArea.scrollToCurrent()
+                bandArea.clampPan()
             }
         }
 
-        onWidthChanged: scrollToCurrent()
-        onPageDispHChanged: scrollToCurrent()
+        onWidthChanged: {
+            scrollToCurrent()
+            clampPan()
+        }
+        onPageDispHChanged: {
+            scrollToCurrent()
+            clampPan()
+        }
 
-        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~8% (1 + angleDelta.y/1500), clamped in the model to
-        //! [0.5, 4.0]. Consumes the event so the notation editor behind never also scrolls. No drag-pan.
+        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~8% (1 + d/1500), clamped in the model to [0.5, 4.0].
+        //! SHIFT held = FINE zoom at ~1.3%/notch (divisor /9000) for precise adjustment. Windows gotcha: holding Shift while
+        //! scrolling makes Qt deliver the wheel on angleDelta.X instead of .Y, so take whichever axis is non-zero as the
+        //! effective delta. Consumes the event so the notation editor behind never also scrolls.
         WheelHandler {
             onWheel: function(wheel) {
-                let factor = 1 + wheel.angleDelta.y / 1500
+                let d = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+                let fine = (wheel.modifiers & Qt.ShiftModifier) !== 0
+                let factor = 1 + d / (fine ? 12000 : 2400)
                 bandModel.userZoom = Math.max(0.5, Math.min(4.0, bandModel.userZoom * factor))
                 wheel.accepted = true
+            }
+        }
+
+        //! Left-DRAG pan: an ADDITIVE fine-tune on top of follow-centering. target: null means the handler never moves an
+        //! item -- it only reports the drag, which we fold into userPanX/userPanY (clamped). It coexists with the WheelHandler
+        //! (wheel vs drag are different event types) and never selects score items (these panels are view-only). centroid
+        //! (position - pressPosition) is the drag delta since press -- the same idiom LayoutPanelTree uses.
+        DragHandler {
+            id: panHandler
+
+            target: null
+            acceptedButtons: Qt.LeftButton
+
+            //! Pan value when THIS drag began, so the delta accumulates across successive drags instead of snapping to 0.
+            property real startPanX: 0
+            property real startPanY: 0
+
+            onActiveChanged: {
+                if (active) {
+                    startPanX = bandArea.userPanX
+                    startPanY = bandArea.userPanY
+                }
+            }
+
+            onCentroidChanged: {
+                if (!active) {
+                    return
+                }
+
+                bandArea.userPanX = bandArea.clampPanX(startPanX + centroid.position.x - centroid.pressPosition.x)
+                bandArea.userPanY = bandArea.clampPanY(startPanY + centroid.position.y - centroid.pressPosition.y)
             }
         }
 

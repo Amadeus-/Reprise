@@ -168,8 +168,33 @@ Item {
             //! and scaling crop->viewport works out to exactly `zoom` screen px per sheet px -- matching the overlays.
             readonly property real clipW: zoom > 0 ? (detailArea.width / zoom) * sheetToRendered : renderedW
             readonly property real clipH: zoom > 0 ? (detailArea.height / zoom) * sheetToRendered : renderedH
-            readonly property real clipX: boxCx * sheetToRendered - clipW / 2
-            readonly property real clipY: boxCy * sheetToRendered - clipH / 2
+
+            //! MANUAL pan nudge (on-screen px) ADDED ON TOP of the auto-centered crop: a left-drag sets these so the user can
+            //! fine-tune which part of the magnified spot is centered AFTER follow auto-centers on the note. Reset to 0 on
+            //! every new follow (onFollowChanged) so follow lands clean. Kept across a zoom (the clip shift divides by zoom, so
+            //! the same screen-px nudge tracks the spot as magnification changes).
+            property real userPanX: 0
+            property real userPanY: 0
+
+            //! The crop is centred on the box, then shifted by the pan: moving the content RIGHT by panX screen px means
+            //! revealing content further LEFT, i.e. the clip window slides left by panX worth of rendered px (panX *
+            //! sheetToRendered / zoom). Subtracting it here makes the overlays' (+userPan) move and the crop shift agree.
+            readonly property real clipX: boxCx * sheetToRendered - clipW / 2 - (zoom > 0 ? userPanX * sheetToRendered / zoom : 0)
+            readonly property real clipY: boxCy * sheetToRendered - clipH / 2 - (zoom > 0 ? userPanY * sheetToRendered / zoom : 0)
+
+            //! Keep the followed box's centre inside the viewport: clamp each pan axis to half the detail area minus a small
+            //! margin, so a drag can never carry the magnified note entirely out of view.
+            function clampPanX(pan) {
+                let limit = Math.max(0, detailArea.width / 2 - 20)
+
+                return Math.max(-limit, Math.min(limit, pan))
+            }
+
+            function clampPanY(pan) {
+                let limit = Math.max(0, detailArea.height / 2 - 20)
+
+                return Math.max(-limit, Math.min(limit, pan))
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -257,8 +282,8 @@ Item {
 
                     width: Math.max(3, magModel.boxW * view.zoom)
                     height: Math.max(3, magModel.boxH * view.zoom)
-                    x: (parent.width - width) / 2
-                    y: (parent.height - height) / 2
+                    x: (parent.width - width) / 2 + view.userPanX
+                    y: (parent.height - height) / 2 + view.userPanY
 
                     color: Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
                     border.color: ui.theme.accentColor
@@ -277,8 +302,8 @@ Item {
 
                     width: Math.max(3, magModel.boxW * view.zoom)
                     height: Math.max(3, magModel.boxH * view.zoom)
-                    x: (parent.width - width) / 2
-                    y: (parent.height - height) / 2
+                    x: (parent.width - width) / 2 + view.userPanX
+                    y: (parent.height - height) / 2 + view.userPanY
 
                     onPaint: {
                         let ctx = getContext("2d")
@@ -316,20 +341,59 @@ Item {
             Connections {
                 target: magModel
                 function onFollowChanged() {
+                    //! A new follow re-centers the magnifier on the note/measure -> drop any manual pan nudge so the followed
+                    //! spot lands clean (the user then drags to fine-tune from the centered position).
+                    view.userPanX = 0
+                    view.userPanY = 0
                     if (fallbackMarker.visible) {
                         fallbackMarker.requestPaint()
                     }
                 }
             }
 
-            //! Mouse-wheel zoom: each notch (~120) steps the magnifier zoom by ~8% (1 + angleDelta.y/1500), clamped in the
-            //! model to [0.5, 4.0]. The crop recenters on the followed box automatically, so no scroll bookkeeping is needed.
-            //! Consumes the event so nothing behind the panel scrolls. No drag-pan.
+            //! Mouse-wheel zoom: each notch (~120) steps the magnifier zoom by ~8% (1 + d/1500), clamped in the model to
+            //! [0.5, 4.0]. SHIFT held = FINE zoom at ~1.3%/notch (divisor /9000) for precise adjustment. Windows gotcha:
+            //! holding Shift while scrolling makes Qt deliver the wheel on angleDelta.X instead of .Y, so take whichever axis
+            //! is non-zero as the effective delta. The crop recenters on the followed box automatically, so no scroll
+            //! bookkeeping is needed. Consumes the event so nothing behind the panel scrolls.
             WheelHandler {
                 onWheel: function(wheel) {
-                    let factor = 1 + wheel.angleDelta.y / 1500
+                    let d = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+                    let fine = (wheel.modifiers & Qt.ShiftModifier) !== 0
+                    let factor = 1 + d / (fine ? 12000 : 2400)
                     magModel.userZoom = Math.max(0.5, Math.min(4.0, magModel.userZoom * factor))
                     wheel.accepted = true
+                }
+            }
+
+            //! Left-DRAG pan: an ADDITIVE fine-tune on top of the auto-centered crop. target: null means the handler never
+            //! moves an item -- it only reports the drag, which we fold into view.userPanX/userPanY (clamped). It coexists with
+            //! the WheelHandler (wheel vs drag) and never selects score items (this panel is view-only). centroid (position -
+            //! pressPosition) is the drag delta since press -- the same idiom LayoutPanelTree uses.
+            DragHandler {
+                id: panHandler
+
+                target: null
+                acceptedButtons: Qt.LeftButton
+
+                //! Pan value when THIS drag began, so the delta accumulates across successive drags instead of snapping to 0.
+                property real startPanX: 0
+                property real startPanY: 0
+
+                onActiveChanged: {
+                    if (active) {
+                        startPanX = view.userPanX
+                        startPanY = view.userPanY
+                    }
+                }
+
+                onCentroidChanged: {
+                    if (!active) {
+                        return
+                    }
+
+                    view.userPanX = view.clampPanX(startPanX + centroid.position.x - centroid.pressPosition.x)
+                    view.userPanY = view.clampPanY(startPanY + centroid.position.y - centroid.pressPosition.y)
                 }
             }
 

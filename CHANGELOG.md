@@ -8,6 +8,16 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.13] — 2026-11-22
+
+### Added
+- **Fine zoom and drag-to-pan in the proofing panels.** Hold **Shift** while mouse-wheeling over the original-scan
+  band or the detail view for fine (1% per notch) zoom, and **left-click-drag** inside either panel to reposition
+  the scan where you want it. Your pan is kept as you zoom and resets when you move to a new measure.
+
+### Changed
+- **The normal wheel-zoom step in the proofing panels is now 5% per notch** (was 8%), for smoother control.
+
 ## [0.16.12] — 2026-11-22
 
 ### Fixed
