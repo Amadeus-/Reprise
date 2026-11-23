@@ -50,7 +50,7 @@ qt_add_qml_module(reprise_qml
 fixup_qml_module_dependencies(reprise_qml)
 
 #! NOTE: ImportProgressModel reaches into project (ICommandDispatcher, IProjectSession, PROJECT_OPEN_COMMAND) and
-#! notation/engraving (instruments repository + Part/Instrument API) for the async import + Grand-Piano override.
+#! notation/engraving (IMasterNotation + the engraving Score API) for the async import + Done-line measure count.
 target_link_libraries(reprise_qml PRIVATE
     muse::uicomponents_qml
     project

@@ -57,7 +57,8 @@ target_sources(reprise PRIVATE
 )
 
 #! NOTE: Reprise's Import-PDF flow reaches into project (IProjectSession, PROJECT_OPEN_COMMAND) and into
-#! notation/engraving (instruments repository + Part/Instrument API) to default imported parts to Grand Piano.
+#! notation/engraving (IMasterNotation + the engraving Score/MeasureBase API) for the proofing coordinate map,
+#! the scan-geometry strip and the Done-line measure count.
 target_link_libraries(reprise PRIVATE project notation engraving)
 
 #! NOTE: reprise.capture-screenshot grabs the main QQuickWindow (QQuickWindow::grabWindow). muse_global links

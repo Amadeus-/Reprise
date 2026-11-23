@@ -949,8 +949,8 @@ void ImportPdfController::launchImport(const muse::io::path_t& pdfPath, const st
     //! active run (the popup's view-model takes over the detailed progress once it loads).
     importProgressTracker()->reportStarted(pdfPath.toStdString());
 
-    //! Launch the recognition progress popup (non-blocking). Its view-model owns the async Audiveris run, the
-    //! import of the produced MusicXML, and the temporary Grand-Piano override. Progress + Cancel live there. The
+    //! Launch the recognition progress popup (non-blocking). Its view-model owns the async Audiveris run and the
+    //! import of the produced MusicXML. Progress + Cancel live there. The
     //! recognition options ride along as query params -> the popup's root properties -> ImportProgressModel::load()
     //! -> AudiverisRunner::start(), which is the single place the '-constant' switches are built (DRY with headless).
     UriQuery progressQuery("musescore://reprise/importpdf/progress");

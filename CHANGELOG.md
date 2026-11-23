@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.18] — 2026-11-23
+
+### Changed
+- **Imported scores now keep their recognized instruments.** Reprise no longer forces every part to Grand Piano on
+  import — the instruments Audiveris identifies during recognition (and their transposition) are preserved, and you
+  can reassign any part in the **Layout** panel. (The all-Grand-Piano default was a temporary stopgap until the
+  recognized instruments could be trusted to stand.)
+
 ## [0.16.17] — 2026-11-23
 
 ### Changed

@@ -38,7 +38,6 @@
 #include "project/iopenprojectscenario.h"
 #include "project/iprojectconfiguration.h"
 #include "project/irecentfilescontroller.h"
-#include "notation/iinstrumentsrepository.h"
 
 #include "internal/irepriseconfiguration.h"
 #include "internal/iimportprogresstracker.h"
@@ -49,7 +48,7 @@ class AudiverisRunner;
 
 //! View-model behind the Reprise recognition progress popup. Owns the async Audiveris run: it starts the runner,
 //! streams its parsed progress into bindable properties, and on success performs the import (opens the recognised
-//! MusicXML) + the temporary Grand-Piano override, then flips to the Done state (and auto-closes if the user asked).
+//! MusicXML with its native template-matched instruments), then flips to the Done state (and auto-closes if the user asked).
 //! On failure it exposes the error state (message + a tail of Audiveris output). Cancel kills Audiveris and aborts.
 class ImportProgressModel : public QObject, public muse::Contextable, public muse::async::Asyncable
 {
@@ -80,7 +79,6 @@ class ImportProgressModel : public QObject, public muse::Contextable, public mus
     muse::ContextInject<mu::project::IOpenProjectScenario> openProjectScenario = { this };
     muse::ContextInject<mu::project::IRecentFilesController> recentFilesController = { this };
     muse::GlobalInject<mu::project::IProjectConfiguration> projectConfiguration;
-    muse::GlobalInject<mu::notation::IInstrumentsRepository> instrumentsRepository;
     muse::GlobalInject<mu::reprise::IRepriseConfiguration> repriseConfiguration;
     muse::GlobalInject<mu::reprise::IImportProgressTracker> importProgressTracker;
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
@@ -166,7 +164,7 @@ private:
 
     void setStatus(const QString& status);
 
-    //! Open the recognised MusicXML through MuseScore's native import, armed to default every part to Grand Piano.
+    //! Open the recognised MusicXML through MuseScore's native import (template-matched instruments + transposition stand).
     void openImported(const QString& outputPath);
 
     //! Reprise Phase C: once the imported score is open in THIS window, auto-save it as a .repr bundle in the Scores
@@ -187,8 +185,8 @@ private:
     //! so masterNotationChanged never fires in THIS instance and the imported score never becomes the current master
     //! here. Called off the resolved open-scenario promise (success) when a project was already open at import time, so
     //! the popup still reaches Done + auto-closes. Guarded by m_awaitingOpen so it fires at most once per import. Because
-    //! the imported score lives in another instance, the Grand-Piano override and the real measure count are NOT applied
-    //! here (the current master is the previously-open score and must never be touched) -- the Done line is plain "Done".
+    //! the imported score lives in another instance, the real measure count is NOT applied here (the current master is the
+    //! previously-open score and must never be touched) -- the Done line is plain "Done".
     void finalizeOpenedInNewWindow();
 
     //! Count the <score-part> declarations in the produced MusicXML (.mxl ZIP or plain .xml). Used to detect a
@@ -196,9 +194,6 @@ private:
     //! the engraving layout a zero-part / zero-visible-part score. Returns the part count, or -1 when the file
     //! cannot be read/parsed -- in which case the caller must NOT refuse (fail open: proceed with the normal open).
     int recognizedPartCount(const QString& outputPath) const;
-
-    //! TEMPORARY Reprise default: force every imported part to Grand Piano (applied on the next master-notation change).
-    void applyGrandPianoDefault();
 
     //! "Import finished" partial-import notice: if this import skipped any pages (m_skippedPages non-empty) or split the
     //! survivors into movements (m_multiMovement), build the blessed newline-joined per-page report (the interior "some pages
@@ -237,9 +232,6 @@ private:
     //! FIX 1: the recovery banner text. Set by onRunnerRetrying() when the #711 pad-retry begins; cleared per fresh
     //! import in load(). Persists through the (second) recovery pass so the user keeps seeing why the bar restarted.
     QString m_retryNotice;
-
-    //! Set just before the imported score is opened; consumed on the next master-notation change.
-    bool m_pendingGrandPianoReset = false;
 
     //! Set just before the imported score is opened; consumed to fill the Done line's measure + page counts.
     bool m_pendingDoneCounts = false;

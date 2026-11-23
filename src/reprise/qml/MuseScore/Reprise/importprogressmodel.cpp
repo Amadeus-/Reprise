@@ -42,11 +42,7 @@
 #include "async/notifylist.h"
 
 #include "notation/imasternotation.h"
-#include "notation/inotationparts.h"
-#include "notation/types/instrumentstypes.h"
 
-#include "engraving/dom/instrument.h"
-#include "engraving/dom/part.h"
 #include "engraving/dom/masterscore.h"
 
 #include "reprise/reprisecommands.h"
@@ -64,7 +60,7 @@ using namespace mu::reprise;
 using namespace muse;
 
 //! How long the Done state lingers before an auto-close (ms) -- enough to show the gold check, and to let the
-//! just-opened score's master-notation change fire so the Grand-Piano override lands before the model is gone.
+//! just-opened score's master-notation change fire (Done counts + .repr auto-save) before the model is gone.
 static constexpr int AUTO_CLOSE_DELAY_MS = 1400;
 
 //! Minimum time (ms) the deskew "Straightening..." banner must stay up so it is perceptible. On a single-page scan the
@@ -109,19 +105,13 @@ void ImportProgressModel::initContext()
     QObject::connect(m_runner.get(), &AudiverisRunner::retryingAfterError, this, &ImportProgressModel::onRunnerRetrying);
     QObject::connect(m_runner.get(), &AudiverisRunner::preprocessing, this, &ImportProgressModel::onRunnerPreprocessing);
 
-    //! Once the imported score becomes the current master (the open is async): apply the Grand-Piano override and
-    //! fill the Done line with the real measure count.
+    //! Once the imported score becomes the current master (the open is async): fill the Done line with the real
+    //! measure count.
     projectSession()->masterNotationChanged().onNotify(this, [this]()
     {
         if (!projectSession()->masterNotation())
         {
             return;
-        }
-
-        if (m_pendingGrandPianoReset)
-        {
-            m_pendingGrandPianoReset = false;
-            applyGrandPianoDefault();
         }
 
         if (m_pendingDoneCounts)
@@ -136,8 +126,8 @@ void ImportProgressModel::initContext()
         {
             m_awaitingOpen = false;
 
-            //! Reprise Phase C: the imported score is now open + current in THIS window (Grand-Piano override already
-            //! applied above) -- persist the whole session as a .repr bundle before flipping to Done.
+            //! Reprise Phase C: the imported score is now open + current in THIS window -- persist the whole session
+            //! as a .repr bundle before flipping to Done.
             autoSaveImportedAsRepr();
 
             setStatus("done");
@@ -210,7 +200,6 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_totalPages = -1;
     m_logText.clear();
     emit logTextChanged();
-    m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
     m_awaitingOpen = false;
     m_skippedPages.clear();
@@ -364,7 +353,6 @@ void ImportProgressModel::cancel()
     //! instead of processing another page or starting recognition.
     m_deskewAborted = true;
 
-    m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
     m_awaitingOpen = false;
 
@@ -644,9 +632,7 @@ void ImportProgressModel::openImported(const QString& outputPath)
     m_strippedOpenPath = pathToOpen;
 
     //! Hand the produced MusicXML to MuseScore's native open path; a .mxl/.xml routes through MusicXmlReader.
-    //! Arm the Grand-Piano override and the Done-line measure count for the score about to open, mark the open as
-    //! awaited, then open it.
-    m_pendingGrandPianoReset = true;
+    //! Arm the Done-line measure count for the score about to open, mark the open as awaited, then open it.
     m_pendingDoneCounts = true;
     m_awaitingOpen = true;
 
@@ -655,7 +641,7 @@ void ImportProgressModel::openImported(const QString& outputPath)
     //! never called here and masterNotationChanged never fires in this instance -- the only signal the in-window success
     //! path relies on. That case is finalized off the resolved promise below (finalizeOpenedInNewWindow). When no score was
     //! open, the import opens in-window, setProject() fires masterNotationChanged synchronously, and that handler finalizes
-    //! Done (Grand-Piano override + real counts) exactly as before -- so the promise path leaves it alone.
+    //! Done (real counts) exactly as before -- so the promise path leaves it alone.
     const bool hadProjectBefore = (projectSession()->project() != nullptr);
 
     //! Open through MuseScore's own open scenario and OWN the resulting promise, so the REAL open outcome is visible
@@ -665,7 +651,7 @@ void ImportProgressModel::openImported(const QString& outputPath)
     //! pad+retry alone is two Audiveris passes), so that 8s timer false-flagged slow-but-valid opens as failures. With
     //! the promise owned, a declined open (MusicXML too corrupt/incomplete for the reader to accept -> an error Ret, or
     //! the user declining the force-load prompt) reports its error the INSTANT it resolves -- no race -- while a
-    //! successful open is still finalized by masterNotationChanged (Grand-Piano override + Done counts). A slow open is
+    //! successful open is still finalized by masterNotationChanged (Done counts). A slow open is
     //! simply a promise that has not resolved yet, so it can never be mistaken for a failure however long it takes.
     const QUrl url = QUrl::fromLocalFile(pathToOpen);
     openProjectScenario()->openProject(muse::rcommand::Params{ { "url", muse::Val(url.toString()) } })
@@ -786,7 +772,6 @@ void ImportProgressModel::reportOpenFailed()
     //! Definitively no score opened -- refuse GRACEFULLY, consistent with the zero-part guard (status = error +
     //! reprise.get-import-errors), never a silent "Done".
     m_awaitingOpen = false;
-    m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
 
     //! FIX 2: the produced score never opened -> the dedicated error window, not a silent "Done" and not an in-place error.
@@ -806,10 +791,9 @@ void ImportProgressModel::finalizeOpenedInNewWindow()
     }
 
     //! The imported score opened in a SEPARATE instance (see finalizeOpenedInNewWindow's declaration). The current master
-    //! in THIS instance is still the previously-open score, so the armed Grand-Piano override and the measure-count read
-    //! must NOT run here -- they would mutate / report the wrong score. Drop both pending overrides and show a plain "Done".
+    //! in THIS instance is still the previously-open score, so the armed measure-count read must NOT run here -- it would
+    //! report the wrong score. Drop the pending count and show a plain "Done".
     m_awaitingOpen = false;
-    m_pendingGrandPianoReset = false;
     m_pendingDoneCounts = false;
     m_stageText = muse::qtrc("reprise", "Done");
     emit progressChanged();
@@ -915,57 +899,6 @@ void ImportProgressModel::setStatus(const QString& status)
 
     m_status = status;
     emit statusChanged();
-}
-
-void ImportProgressModel::applyGrandPianoDefault()
-{
-    //! TEMPORARY Reprise default. Audiveris assigns semi-random instruments to recognised parts; until an intake
-    //! step adds real instrument selection, force every imported part to Grand Piano. Mirrors the original
-    //! ImportPdfController implementation. Remove when real instrument choice lands.
-    static const muse::String GRAND_PIANO_ID(u"grand-piano");
-
-    const notation::InstrumentTemplate& templ = instrumentsRepository()->instrumentTemplate(GRAND_PIANO_ID);
-    if (templ.id.isEmpty())
-    {
-        LOGW() << "Reprise: 'grand-piano' instrument template not found; leaving imported instruments as-is";
-        return;
-    }
-
-    const notation::IMasterNotationPtr master = projectSession()->masterNotation();
-    if (!master)
-    {
-        return;
-    }
-
-    const notation::INotationPartsPtr parts = master->parts();
-    if (!parts)
-    {
-        return;
-    }
-
-    //! Snapshot the keys first: each replaceInstrument() mutates the score and notifies part changes.
-    std::vector<notation::InstrumentKey> keys;
-    for (const engraving::Part* part : parts->partList())
-    {
-        if (!part)
-        {
-            continue;
-        }
-
-        notation::InstrumentKey key;
-        key.partId = part->id();
-        key.instrumentId = part->instrumentId();
-        key.tick = engraving::Part::MAIN_INSTRUMENT_TICK;
-        keys.push_back(key);
-    }
-
-    const engraving::Instrument grandPiano = engraving::Instrument::fromTemplate(&templ);
-    for (const notation::InstrumentKey& key : keys)
-    {
-        parts->replaceInstrument(key, grandPiano);
-    }
-
-    LOGI() << "Reprise: defaulted " << keys.size() << " imported part(s) to Grand Piano";
 }
 
 void ImportProgressModel::surfacePartialImportNoticeIfAny()

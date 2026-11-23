@@ -51,8 +51,8 @@ class QQuickWindow;
 
 namespace mu::reprise {
 //! Orchestrates Reprise's "Import PDF" flow: pick a PDF -> intake dialog (pages + resolution) -> show the async
-//! recognition progress popup. The popup's view-model (ImportProgressModel) owns the Audiveris run, the import,
-//! and the Grand-Piano override; this controller only drives the picker + intake dialog and launches the popup.
+//! recognition progress popup. The popup's view-model (ImportProgressModel) owns the Audiveris run and the import;
+//! this controller only drives the picker + intake dialog and launches the popup.
 class ImportPdfController : public muse::Contextable, public muse::async::Asyncable, public muse::rcommand::Commandable
 {
     muse::ContextInject<muse::IInteractive> interactive = { this };
