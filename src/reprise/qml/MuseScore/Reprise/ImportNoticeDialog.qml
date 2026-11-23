@@ -43,6 +43,10 @@ StyledDialogView {
     //! PART 2 smart-deskew ladder: true when OCR was dropped by the notes-only retry (the text-role NPE recovery), so the
     //! notice explains that only the notes were imported. May be set with OR without any skipped pages.
     property bool textDropped: false
+    //! 0.17.2 generic-parts nudge: true when the imported score's instruments look like Audiveris placeholders rather than
+    //! recognised instruments, so the notice points the user to the Layout panel to correct them. May be set with OR without
+    //! any skipped pages.
+    property bool genericParts: false
 
     objectName: "ImportNoticeDialog"
 
@@ -258,6 +262,20 @@ StyledDialogView {
                     Layout.fillWidth: true
                     visible: root.textDropped
                     text: qsTrc("reprise", "The text and lyrics couldn't be read on this scan, so only the notes were imported.")
+                    color: root.inkStep
+                    font: ui.theme.bodyFont
+                    horizontalAlignment: Text.AlignLeft
+                    wrapMode: Text.Wrap
+                }
+
+                //! Generic-parts nudge: shown when the imported instruments look like Audiveris placeholders. Points the user to
+                //! the Layout panel (toggled by F7, confirmed live) to fix any wrong instruments -- fixing an instrument pulls
+                //! the correct transposition from the template. A distinct paragraph, like the text-and-lyrics note above. The
+                //! dash is a literal em-dash (U+2014), matching the brand em-dash used elsewhere in this notice.
+                StyledTextLabel {
+                    Layout.fillWidth: true
+                    visible: root.genericParts
+                    text: qsTrc("reprise", "The instruments are a best guess — open the Layout panel (press F7) to correct any that look wrong.")
                     color: root.inkStep
                     font: ui.theme.bodyFont
                     horizontalAlignment: Text.AlignLeft

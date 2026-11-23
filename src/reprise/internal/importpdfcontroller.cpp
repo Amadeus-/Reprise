@@ -1532,6 +1532,7 @@ void ImportPdfController::showImportNotice()
     query.addParam("skippedReport", Val(snap.partialSkippedReport));
     query.addParam("multiMovement", Val(snap.partialMultiMovement));
     query.addParam("textDropped", Val(snap.partialTextDropped));
+    query.addParam("genericParts", Val(snap.partialGenericParts));
 
     //! Harden against an edge re-entry: force any prior notice window of this URI closed + settled before opening again.
     forceCloseAndSettle(query, nullptr);

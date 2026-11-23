@@ -58,6 +58,12 @@ struct ImportProgressSnapshot {
     //! NPE recovery). Read back by ImportPdfController::showImportNotice so the "Import finished" notice shows the "couldn't
     //! read the text/lyrics -- imported the notes only" line. Set alongside the partial fields; auto-cleared by reportStarted().
     bool partialTextDropped = false;
+
+    //! 0.17.2 generic-parts nudge: true when the imported score's instruments look like Audiveris placeholders rather than
+    //! recognised instruments (a voice.oohs/voice.aahs placeholder id, or 2+ parts all sharing one identical musicXmlId).
+    //! Read back by ImportPdfController::showImportNotice so the "Import finished" notice shows the "instruments are a best
+    //! guess -- open the Layout panel" nudge. Set alongside the partial fields; auto-cleared by reportStarted().
+    bool partialGenericParts = false;
 };
 
 class IImportProgressTracker : MODULE_GLOBAL_INTERFACE
@@ -112,9 +118,11 @@ public:
     virtual muse::async::Notification errorWindowRequested() const = 0;
 
     //! Record the partial-import result into the snapshot (skippedReport = the newline-joined per-page list already built by
-    //! ImportProgressModel; multiMovement = survivors were non-contiguous). Called AFTER the success reportFinished(true,...),
-    //! so it does NOT touch active/status -- it only fills the two partial fields the notice window reads back.
-    virtual void reportPartialImport(const std::string& skippedReport, bool multiMovement, bool textDropped = false) = 0;
+    //! ImportProgressModel; multiMovement = survivors were non-contiguous; genericParts = the instruments look like Audiveris
+    //! placeholders). Called AFTER the success reportFinished(true,...), so it does NOT touch active/status -- it only fills the
+    //! partial fields the notice window reads back.
+    virtual void reportPartialImport(const std::string& skippedReport, bool multiMovement, bool textDropped = false,
+                                     bool genericParts = false) = 0;
 
     //! Some pages were skipped on an otherwise-successful import: ask the app-lifetime ImportPdfController to open the
     //! dedicated "Import finished" notice window. Fired by ImportProgressModel once the imported score is confirmed open,

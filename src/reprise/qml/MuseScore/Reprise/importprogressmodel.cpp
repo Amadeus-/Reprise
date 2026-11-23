@@ -42,8 +42,12 @@
 #include "async/notifylist.h"
 
 #include "notation/imasternotation.h"
+#include "notation/inotation.h"
+#include "notation/inotationparts.h"
 
 #include "engraving/dom/masterscore.h"
+#include "engraving/dom/part.h"
+#include "engraving/dom/instrument.h"
 
 #include "reprise/reprisecommands.h"
 #include "project/iopenprojectscenario.h"
@@ -133,8 +137,14 @@ void ImportProgressModel::initContext()
             setStatus("done");
             importProgressTracker()->reportFinished(true, std::string(), std::string());
 
-            //! "Import finished" notice (set AFTER the success reportFinished(true,...)): if any pages were skipped or the
-            //! survivors were split, open the separate gold notice window now that the score is confirmed open. No-op otherwise.
+            //! 0.17.2 generic-parts nudge: the imported score is now the current master in THIS window, so inspect its parts
+            //! for Audiveris placeholders (read-only, O(parts)). Must run BEFORE surfacePartialImportNoticeIfAny() and the
+            //! noticeWorthy test below, since a generic-parts result makes an otherwise-clean import notice-worthy on its own.
+            m_genericParts = detectGenericParts();
+
+            //! "Import finished" notice (set AFTER the success reportFinished(true,...)): if any pages were skipped, the
+            //! survivors were split, OCR was dropped, or the parts look generic, open the separate gold notice window now that
+            //! the score is confirmed open. No-op otherwise.
             surfacePartialImportNoticeIfAny();
 
             //! Only a CLEAN import (nothing skipped / not split) uses the checkbox-governed auto-close. When the import is
@@ -142,7 +152,7 @@ void ImportProgressModel::initContext()
             //! notice; a second auto-close scheduled here would be a RACING teardown of this same popup -- that race is
             //! exactly the ticked-checkbox bug where the notice and the auto-close tore each other down and the notice
             //! vanished. So skip the auto-close whenever the notice will take over closing this popup.
-            const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement || m_textDropped;
+            const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement || m_textDropped || m_genericParts;
             if (!noticeWorthy && closePopupOnComplete())
             {
                 //! Auto-close the popup after the Done dwell. CRITICAL: do NOT emit closeRequested() -> root.hide() here.
@@ -205,6 +215,7 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_skippedPages.clear();
     m_multiMovement = false;
     m_textDropped = false;
+    m_genericParts = false;
 
     //! PART 1 deskew: reset the chunk-loop state so each fresh import starts independent of any earlier one.
     m_deskewTotal = 0;
@@ -813,7 +824,9 @@ void ImportProgressModel::finalizeOpenedInNewWindow()
 
     //! Only a CLEAN import uses the checkbox-governed auto-close; a notice-worthy import is closed by the controller as
     //! part of showing the notice, so a second auto-close here would race that teardown (the ticked-path suppression bug).
-    const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement || m_textDropped;
+    //! m_genericParts is always false on this new-window path (the imported score is not the current master here, so it is
+    //! never inspected) -- included only to keep the two Done sites' noticeWorthy test identical.
+    const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement || m_textDropped || m_genericParts;
     if (!noticeWorthy && closePopupOnComplete())
     {
         //! Same settled auto-close as the in-window path: ask the app-lifetime controller to close + settle this popup's
@@ -910,8 +923,9 @@ void ImportProgressModel::setStatus(const QString& status)
 
 void ImportProgressModel::surfacePartialImportNoticeIfAny()
 {
-    //! Nothing skipped, survivors not split, and OCR was not dropped -> no notice (the ordinary silent success).
-    if (m_skippedPages.isEmpty() && !m_multiMovement && !m_textDropped)
+    //! Nothing skipped, survivors not split, OCR not dropped, and the parts do not look generic -> no notice (the ordinary
+    //! silent success).
+    if (m_skippedPages.isEmpty() && !m_multiMovement && !m_textDropped && !m_genericParts)
     {
         return;
     }
@@ -944,8 +958,104 @@ void ImportProgressModel::surfacePartialImportNoticeIfAny()
     const QString report = lines.join('\n');
     //! PART 2 smart-deskew ladder: m_textDropped carries the "OCR was dropped by the notes-only retry" state into the notice,
     //! so it can show the "couldn't read the text/lyrics -- imported the notes only" line (with or without any skipped pages).
-    importProgressTracker()->reportPartialImport(report.toStdString(), m_multiMovement, m_textDropped);
+    //! 0.17.2: m_genericParts carries the "instruments look like placeholders" state, so the notice can show the "best guess --
+    //! open the Layout panel" nudge (with or without any skipped pages).
+    importProgressTracker()->reportPartialImport(report.toStdString(), m_multiMovement, m_textDropped, m_genericParts);
     importProgressTracker()->requestNoticeWindow();
 
     return;
+}
+
+bool ImportProgressModel::detectGenericParts() const
+{
+    //! Read-only inspection of the just-opened score's parts (the current master in THIS window at the Done site). Never
+    //! mutates anything and is O(parts). Any missing link (no master / no notation / no parts) -> not generic (fail safe:
+    //! never surface the nudge on an uninspectable score).
+    const notation::IMasterNotationPtr master = projectSession()->masterNotation();
+    if (!master || !master->notation() || !master->notation()->parts())
+    {
+        return false;
+    }
+
+    const muse::async::NotifyList<const mu::engraving::Part*> parts = master->notation()->parts()->partList();
+
+    std::vector<std::string> ids;
+    std::vector<int32_t> programs;
+    ids.reserve(parts.size());
+    programs.reserve(parts.size());
+
+    for (const mu::engraving::Part* part : parts)
+    {
+        if (!part)
+        {
+            continue;
+        }
+
+        const mu::engraving::Instrument* instr = part->instrument();
+        if (!instr)
+        {
+            continue;
+        }
+
+        const std::string musicXmlId = instr->musicXmlId().toStdString();
+        ids.push_back(musicXmlId);
+
+        //! Record the channel[0] program alongside the id (kept aligned with `ids`), for rule 1b and the rule-2 piano
+        //! carve-out below. -1 means "no channel" (never a real GM program, so it never reads as piano/program-0).
+        const mu::engraving::InstrChannel* chan = instr->channel(0);
+        const int32_t program = chan ? static_cast<int32_t>(chan->program()) : -1;
+        programs.push_back(program);
+
+        //! RULE 1a: an Audiveris placeholder id -> generic. These two ids are what Audiveris emits (and the MusicXML importer
+        //! preserves) when it could not identify the instrument; they are not MuseScore template ids.
+        if (musicXmlId == "voice.oohs" || musicXmlId == "voice.aahs")
+        {
+            return true;
+        }
+
+        //! RULE 1b: the equivalent MIDI-program fallback for the same two placeholders (channel[0] program 53/54), in case the
+        //! id was normalised away but the program survived. program() is the raw 0-based GM program byte.
+        if (program == 53 || program == 54)
+        {
+            return true;
+        }
+    }
+
+    //! RULE 2: 2+ parts that ALL share one identical, non-empty musicXmlId -> Audiveris fell back to a single generic
+    //! instrument for every part. A single part is never flagged here (partCount >= 2 required); an all-empty-id set is not
+    //! flagged either (empty is not a recognisable "same generic instrument" signal).
+    if (ids.size() >= 2)
+    {
+        const std::string& first = ids.front();
+        if (!first.empty())
+        {
+            bool allSame = true;
+            for (const std::string& id : ids)
+            {
+                if (id != first)
+                {
+                    allSame = false;
+                    break;
+                }
+            }
+
+            if (allSame)
+            {
+                //! PIANO CARVE-OUT (0.17.2): a legitimate 2+-part piano piece (a duet / four-hands / two-piano score) has
+                //! every part sharing the keyboard.piano id (GM program 0) -- that is a REAL, correctly recognised instrument,
+                //! not an Audiveris generic collapse, so rule 2 must NOT fire for it. A genuine fallback to one identical OTHER
+                //! real instrument for every part still fires. Rules 1a/1b are unaffected: a part that is actually a
+                //! voice.oohs/voice.aahs or program 53/54 placeholder already tripped rule 1 above and returned true before we
+                //! got here (e.g. the Saint-Saens two-piano scan where both ids are keyboard.piano but one part carries
+                //! program 53 -> caught by rule 1b, never reaching this carve-out).
+                const bool sharedIsPiano = (first == "keyboard.piano") || (!programs.empty() && programs.front() == 0);
+                if (!sharedIsPiano)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }

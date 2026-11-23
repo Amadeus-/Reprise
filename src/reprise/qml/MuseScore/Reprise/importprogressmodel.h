@@ -202,6 +202,13 @@ private:
     //! right before the popup auto-close is scheduled, so the notice opens only after the score is confirmed open.
     void surfacePartialImportNoticeIfAny();
 
+    //! 0.17.2 generic-parts nudge: inspect the just-opened score's parts and return true when they look like Audiveris
+    //! placeholders rather than recognised instruments -- (1) ANY part whose instrument musicXmlId is a placeholder
+    //! ("voice.oohs"/"voice.aahs", equivalently channel[0] MIDI program 53/54), OR (2) 2+ parts that ALL share one identical
+    //! musicXmlId (Audiveris fell back to a single generic instrument for every part). Read-only and O(parts). Computed at the
+    //! in-window Done site (the current master is the imported score there); a single part is never flagged by rule 2.
+    bool detectGenericParts() const;
+
     std::shared_ptr<AudiverisRunner> m_runner;
 
     QString m_title;
@@ -252,6 +259,13 @@ private:
     //! succeeded only after the notes-only retry dropped OCR. Drives the "imported the notes only" line in the Import-finished
     //! notice (and makes the import notice-worthy even with no skipped pages). Reset per import in load().
     bool m_textDropped = false;
+
+    //! 0.17.2 generic-parts nudge: computed by detectGenericParts() at the in-window Done site -- true when the imported
+    //! score's instruments look like Audiveris placeholders rather than recognised instruments. Drives the "instruments are a
+    //! best guess -- open the Layout panel" nudge in the Import-finished notice (and makes the import notice-worthy on its own,
+    //! so the gold notice opens even on an otherwise-clean import). Only meaningful for the in-window open (a new-window import
+    //! lives in a separate instance whose score is not current here, so it stays false there). Reset per import in load().
+    bool m_genericParts = false;
 
     //! PART 1 deskew chunk-loop state. m_deskewTotal is the selected page count beginDeskew() armed; m_deskewNext is the
     //! next page stepDeskew() will process; m_deskewAborted is set by cancel() so a pending step aborts instead of starting

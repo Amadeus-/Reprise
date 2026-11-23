@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.2] — 2026-11-23
+
+### Added
+- **A heads-up when the recognized instruments look like a guess.** When import can't confidently identify the
+  instruments — for example when the parts all collapse to one placeholder voice — the **Import finished** window now
+  suggests opening the **Layout** panel (press **F7**) to set them. Confidently-recognized scores, including a plain
+  piano duet, don't show the note.
+
 ## [0.17.1] — 2026-11-23
 
 ### Changed

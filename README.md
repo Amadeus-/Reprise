@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.17.1) — work in progress.** Reprise is early software under
+> **Pre-release (0.17.2) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -88,6 +88,7 @@ compatibility.
   local file (no cloud/computer save-location chooser).
 - **Recognized instruments are kept** — the instruments Audiveris identifies during recognition, and their
   transposition, are preserved rather than forced to piano, and you can reassign any part in the **Layout** panel.
+  If the recognition looks like a guess, the import summary points you to the Layout panel to set them.
 - **Built on MuseScore's editor** — full score editing, **MusicXML / MIDI import and
   export**, and **playback**.
 

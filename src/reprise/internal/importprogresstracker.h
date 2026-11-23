@@ -122,13 +122,15 @@ public:
         return m_errorWindowRequested;
     }
 
-    void reportPartialImport(const std::string& skippedReport, bool multiMovement, bool textDropped = false) override
+    void reportPartialImport(const std::string& skippedReport, bool multiMovement, bool textDropped = false,
+                             bool genericParts = false) override
     {
         //! Set AFTER the success reportFinished(true,...); deliberately does NOT touch active/status. The fields auto-clear
         //! on the next reportStarted()'s fresh snapshot.
         m_snapshot.partialSkippedReport = skippedReport;
         m_snapshot.partialMultiMovement = multiMovement;
         m_snapshot.partialTextDropped = textDropped;
+        m_snapshot.partialGenericParts = genericParts;
     }
 
     void requestNoticeWindow() override
