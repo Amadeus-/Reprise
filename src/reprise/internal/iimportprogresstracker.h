@@ -53,6 +53,11 @@ struct ImportProgressSnapshot {
     //! the notice window. Auto-cleared by reportStarted()'s fresh snapshot; NOT cleared by reportFinished (set after it).
     std::string partialSkippedReport;
     bool partialMultiMovement = false;
+
+    //! PART 2 smart-deskew ladder: true when the import succeeded only after the notes-only retry dropped OCR (the text-role
+    //! NPE recovery). Read back by ImportPdfController::showImportNotice so the "Import finished" notice shows the "couldn't
+    //! read the text/lyrics -- imported the notes only" line. Set alongside the partial fields; auto-cleared by reportStarted().
+    bool partialTextDropped = false;
 };
 
 class IImportProgressTracker : MODULE_GLOBAL_INTERFACE
@@ -109,7 +114,7 @@ public:
     //! Record the partial-import result into the snapshot (skippedReport = the newline-joined per-page list already built by
     //! ImportProgressModel; multiMovement = survivors were non-contiguous). Called AFTER the success reportFinished(true,...),
     //! so it does NOT touch active/status -- it only fills the two partial fields the notice window reads back.
-    virtual void reportPartialImport(const std::string& skippedReport, bool multiMovement) = 0;
+    virtual void reportPartialImport(const std::string& skippedReport, bool multiMovement, bool textDropped = false) = 0;
 
     //! Some pages were skipped on an otherwise-successful import: ask the app-lifetime ImportPdfController to open the
     //! dedicated "Import finished" notice window. Fired by ImportProgressModel once the imported score is confirmed open,

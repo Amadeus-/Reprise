@@ -152,7 +152,7 @@ void ImportProgressModel::initContext()
             //! notice; a second auto-close scheduled here would be a RACING teardown of this same popup -- that race is
             //! exactly the ticked-checkbox bug where the notice and the auto-close tore each other down and the notice
             //! vanished. So skip the auto-close whenever the notice will take over closing this popup.
-            const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement;
+            const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement || m_textDropped;
             if (!noticeWorthy && closePopupOnComplete())
             {
                 //! Auto-close the popup after the Done dwell. CRITICAL: do NOT emit closeRequested() -> root.hide() here.
@@ -215,6 +215,7 @@ void ImportProgressModel::load(const QString& pdfPath, const QString& pages, int
     m_awaitingOpen = false;
     m_skippedPages.clear();
     m_multiMovement = false;
+    m_textDropped = false;
 
     //! PART 1 deskew: reset the chunk-loop state so each fresh import starts independent of any earlier one.
     m_deskewTotal = 0;
@@ -259,6 +260,12 @@ void ImportProgressModel::startRecognition(const QString& inputPath)
     options.language = m_language.trimmed().isEmpty() ? QString("eng") : m_language.trimmed();
     options.chordSymbols = m_chordSymbols;
     options.lyricsAboveStaff = m_lyricsAboveStaff;
+
+    //! PART 2 smart-deskew ladder: tell the runner the RAW original scan + whether THIS input is the pre-deskewed render, so a
+    //! deskewed-input failure can retry on the raw original (which Audiveris self-deskews). inputPath differs from m_sourcePath
+    //! exactly when the deskew loop produced a straightened PDF (finishDeskew returned non-empty); for a no-op deskew or an
+    //! image import inputPath == m_sourcePath, so inputWasDeskewed is correctly false.
+    m_runner->setRetryContext(io::path_t(m_sourcePath), inputPath != m_sourcePath);
 
     const bool started = m_runner->start(io::path_t(inputPath), m_pages, m_dpi, options);
     if (!started)
@@ -548,6 +555,9 @@ void ImportProgressModel::onRunnerFinished(bool ok, const QString& outputPath, c
     {
         m_skippedPages = m_runner->skippedPages();
         m_multiMovement = m_runner->producedMultipleMovements();
+        //! PART 2 smart-deskew ladder: capture whether OCR was dropped by the notes-only retry, so the Done site surfaces the
+        //! "imported the notes only" notice.
+        m_textDropped = m_runner->droppedTextOnRetry();
     }
 
     //! Recognition succeeded: show a full determinate bar and open the score. The score is NOT "Done" until it actually
@@ -812,7 +822,7 @@ void ImportProgressModel::finalizeOpenedInNewWindow()
 
     //! Only a CLEAN import uses the checkbox-governed auto-close; a notice-worthy import is closed by the controller as
     //! part of showing the notice, so a second auto-close here would race that teardown (the ticked-path suppression bug).
-    const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement;
+    const bool noticeWorthy = !m_skippedPages.isEmpty() || m_multiMovement || m_textDropped;
     if (!noticeWorthy && closePopupOnComplete())
     {
         //! Same settled auto-close as the in-window path: ask the app-lifetime controller to close + settle this popup's
@@ -960,8 +970,8 @@ void ImportProgressModel::applyGrandPianoDefault()
 
 void ImportProgressModel::surfacePartialImportNoticeIfAny()
 {
-    //! Nothing skipped and the survivors were not split -> no notice (the ordinary silent success).
-    if (m_skippedPages.isEmpty() && !m_multiMovement)
+    //! Nothing skipped, survivors not split, and OCR was not dropped -> no notice (the ordinary silent success).
+    if (m_skippedPages.isEmpty() && !m_multiMovement && !m_textDropped)
     {
         return;
     }
@@ -992,7 +1002,9 @@ void ImportProgressModel::surfacePartialImportNoticeIfAny()
     }
 
     const QString report = lines.join('\n');
-    importProgressTracker()->reportPartialImport(report.toStdString(), m_multiMovement);
+    //! PART 2 smart-deskew ladder: m_textDropped carries the "OCR was dropped by the notes-only retry" state into the notice,
+    //! so it can show the "couldn't read the text/lyrics -- imported the notes only" line (with or without any skipped pages).
+    importProgressTracker()->reportPartialImport(report.toStdString(), m_multiMovement, m_textDropped);
     importProgressTracker()->requestNoticeWindow();
 
     return;

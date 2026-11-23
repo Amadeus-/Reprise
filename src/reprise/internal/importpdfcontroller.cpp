@@ -1531,6 +1531,7 @@ void ImportPdfController::showImportNotice()
     UriQuery query("musescore://reprise/importpdf/notice");
     query.addParam("skippedReport", Val(snap.partialSkippedReport));
     query.addParam("multiMovement", Val(snap.partialMultiMovement));
+    query.addParam("textDropped", Val(snap.partialTextDropped));
 
     //! Harden against an edge re-entry: force any prior notice window of this URI closed + settled before opening again.
     forceCloseAndSettle(query, nullptr);

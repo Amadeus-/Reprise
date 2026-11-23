@@ -97,20 +97,33 @@ public:
     //! back to the raw code. Empty when the shipped tessdata folder is missing or holds no language packs.
     std::vector<std::pair<std::string, std::string> > installedOcrLanguages() const;
 
+    //! PART 2 smart-deskew ladder: tell the runner the user's RAW original scan + whether THIS run's input is the
+    //! pre-deskewed render, so onFinished()'s retry-raw ladder (LADDER A) can re-run on the raw original (which Audiveris
+    //! self-deskews) after a deskewed-input failure. Called by the model before each recognition run; the internal ladder
+    //! retries manage the deskewed flag themselves. A no-op for the #711 pad re-entry (which preserves this context).
+    void setRetryContext(const muse::io::path_t& rawOriginal, bool inputIsDeskewed);
+
+    //! True when the import succeeded only after the ladder (LADDER B) dropped OCR and re-ran notes-only -- so the model
+    //! surfaces the "couldn't read the text/lyrics -- imported the notes only" notice. Valid after a successful finished(ok=true).
+    bool droppedTextOnRetry() const { return m_droppedTextOnRetry; }
+
     //! Kill the running Audiveris process and abandon the run. finished() is NOT emitted after a cancel().
     void cancel();
 
-    //! === PART 1: per-page DESKEW (pre-Audiveris) ============================================================
+    //! === PART 1: per-DOCUMENT DESKEW (pre-Audiveris) ========================================================
     //! A projection-profile skew ENGINE plus a CHUNKED pipeline the progress model drives one page per event-loop turn,
-    //! so the popup stays responsive and Cancel works mid-straighten. Each SELECTED page is rasterized at the run DPI, its
-    //! own skew measured, and (only past the threshold) rotated onto a white canvas; the straightened pages are re-emitted
-    //! as ONE multi-page PDF fed to start(). Regression-gated: a page inside the dead-band is left untouched, and when NO
-    //! page needs correction finishDeskew() returns empty so the ORIGINAL is fed to Audiveris byte-identical.
+    //! so the popup stays responsive and Cancel works mid-straighten. The gate is per-DOCUMENT all-or-nothing: the chunked
+    //! detect pass (deskewStep) rasterizes each SELECTED page at the run DPI and measures its OWN raw skew; finishDeskew then
+    //! looks at the document's MAX page angle and either straightens EVERY page (each by its own angle, with a small apply
+    //! floor so near-straight pages are harmless no-ops) or feeds EVERY page RAW. A multi-page scan is therefore never left
+    //! half-straightened. When the document is not tilted enough finishDeskew() returns empty so the ORIGINAL is fed byte-
+    //! identical; the straightened pages are otherwise re-emitted as ONE multi-page PDF fed to start().
 
     //! Estimate a single page's skew (degrees) by projection-profile variance: downsample to <=~1000 px, binarize to an
     //! ink mask, and for theta in [-6,+6] deg (0.2 deg steps) project the ink onto the rotated vertical axis and take the
-    //! row-sum VARIANCE -- staff lines peak (max variance) when level. Returns 0.0 inside the +-0.2 deg dead-band (no-op)
-    //! and 0.0 for an out-of-range |best|>6 deg result (never apply a wild angle). Sign matches deskewImage()/QTransform.
+    //! row-sum VARIANCE -- staff lines peak (max variance) when level. A pure MEASUREMENT primitive: returns the RAW measured
+    //! angle (the per-document trigger + per-page apply floor are decided by finishDeskew, NOT here), except it returns 0.0 for
+    //! an out-of-range |best| beyond kSkewMaxDeg (never apply a wild angle). Sign matches deskewImage()/QTransform.
     static double detectSkewAngle(const QImage& gray);
 
     //! Rotate a page by angleDeg (QTransform().rotate, smooth) composited onto a WHITE canvas (no black corners) plus the
@@ -126,17 +139,20 @@ public:
     //! Number of SELECTED pages beginDeskew() armed (what the chunk loop iterates).
     int deskewPageCount() const { return static_cast<int>(m_deskewPages.size()); }
 
-    //! Process the i-th SELECTED page: render -> detectSkewAngle -> rotate if |angle|>=0.2 deg (recorded as rotated) else
-    //! keep as-is (still rasterized). Accumulates the resulting QImage + its angle, and emits preprocessing(i+1,total,...).
+    //! DETECT PASS for the i-th SELECTED page: render it at the run DPI, measure its OWN raw skew (detectSkewAngle), store the
+    //! raw render + its raw angle, and emit preprocessing(...). Does NOT rotate -- the apply is deferred to finishDeskew so the
+    //! per-document max-angle decision can be made once every page has been measured.
     void deskewStep(int i);
 
-    //! Assemble the accumulated straightened pages into ONE multi-page PDF (page sized px*72/dpi, order preserved), set it
-    //! as the consumed input, and return its path. Returns EMPTY when NO page needed correction (caller feeds the original
-    //! untouched -- the byte-identical no-op). PART 2 will read the per-page angles (deskewAnglesDeg) for .repr provenance.
+    //! Make the per-DOCUMENT decision, then assemble. If the document's MAX measured page angle is below
+    //! kSkewPreDeskewThresholdDeg, return EMPTY so the caller feeds the ORIGINAL untouched (regression no-op). Otherwise
+    //! straighten EVERY page -- each by its own measured angle, a page below kSkewApplyFloorDeg carried as a padded no-op --
+    //! assemble them into ONE multi-page PDF (page sized px*72/dpi, order preserved), and return its path. m_deskewAngles is
+    //! rewritten to the angle actually APPLIED per page (0.0 where none) for PART 2's .repr provenance.
     muse::io::path_t finishDeskew();
 
-    //! Per-SELECTED-page skew angles (degrees; 0.0 where left untouched), in page order. Retained after finishDeskew()
-    //! for PART 2's .repr provenance.
+    //! Per-SELECTED-page skew angles (degrees) ACTUALLY APPLIED, in page order: 0.0 for a page left untouched and 0.0 for every
+    //! page when the document was fed raw. Valid only after finishDeskew(); used for PART 2's .repr provenance.
     std::vector<double> deskewAnglesDeg() const { return m_deskewAngles; }
 
     //! The input Audiveris actually recognized after any preprocessing (deskew + #711 pad) -- i.e. m_pdfPath. The
@@ -307,6 +323,32 @@ private:
     //! per runner -- same discipline as m_retriedWithPad.
     bool m_reExportedOmr = false;
 
+    //! === PART 2 smart-deskew ladder state ===================================================================
+    //! The user's ORIGINAL scan (never a deskewed or padded copy), set by the model via setRetryContext() before the first
+    //! recognition run. LADDER A retries on this so Audiveris self-deskews the raw raster when a pre-deskewed-input run failed.
+    muse::io::path_t m_rawOriginalPath;
+
+    //! Whether the CURRENT run's input is the pre-deskewed render (set by the model via setRetryContext; cleared by LADDER A
+    //! before the raw retry so a further failure routes to LADDER B). Deliberately NOT reset in start() -- the ladder retries
+    //! re-enter start() and must preserve this (same discipline as the one-shot guards).
+    bool m_inputWasDeskewed = false;
+
+    //! Set once the fatal Audiveris text-role NPE signature (a null TextRole on a lyric/sentence inter -> createSystemInters /
+    //! TextRole.ordinal() / because "role" is null) is seen anywhere in this run's output. The rotated+padded deskew render can
+    //! trigger it, crashing the whole import. Reset per fresh run in start() (a per-run signature, like m_sawArrayIndexCrash);
+    //! drives LADDER B's notes-only retry.
+    bool m_sawTextRoleCrash = false;
+
+    //! One-shot guards for the smart-deskew ladder, each firing at most once per import. Deliberately NOT reset in start() (the
+    //! ladder retries re-enter start()), only default-initialised per runner -- same discipline as m_retriedWithPad. LADDER A's
+    //! retry on the raw original, and LADDER B's notes-only (OCR off) retry.
+    bool m_retriedRaw = false;
+    bool m_retriedNotesOnly = false;
+
+    //! Set when LADDER B launched a notes-only retry (OCR dropped to clear the text-role NPE). Read by the model after a
+    //! successful finish (droppedTextOnRetry()) to surface the "imported the notes only" notice. NOT reset in start().
+    bool m_droppedTextOnRetry = false;
+
     //! Per-sheet failure reasons recorded during the FIRST pass (1-based sheet number -> "no-music" / "low-res" / "too-large"),
     //! in ascending key order (QMap). Drives both the skip-invalid re-export (which pages to drop) and the "Import finished"
     //! notice's skipped-page list. Reset per fresh run in start(); PRESERVED across the re-export re-launch.
@@ -332,9 +374,10 @@ private:
 
     //! === PART 1 deskew state ================================================================================
     //! Armed by beginDeskew(), consumed by deskewStep()/finishDeskew(). The source is held open across the chunked steps
-    //! (the PDF document, or the pre-decoded image frames) so each step renders without reparsing. m_deskewImages
-    //! accumulates the per-page results in order; m_deskewAngles the matching angles; m_deskewRotatedAny gates the
-    //! byte-identical no-op (finishDeskew returns empty unless at least one page was actually rotated).
+    //! (the PDF document, or the pre-decoded image frames) so each step renders without reparsing. During the DETECT pass
+    //! m_deskewImages holds the RAW per-page renders and m_deskewAngles their RAW measured angles; finishDeskew() then makes
+    //! the per-document decision, rewrites m_deskewImages in place to the straightened (or padded no-op) pages and m_deskewAngles
+    //! to the angle actually applied, and sets m_deskewRotatedAny true only when the document triggered (a page was straightened).
     std::unique_ptr<QPdfDocument> m_deskewPdf;
     std::vector<QImage> m_deskewSourceFrames;
     bool m_deskewIsPdf = false;

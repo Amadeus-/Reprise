@@ -8,6 +8,23 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.17] — 2026-11-23
+
+### Changed
+- **Straightening a tilted scan is now decided per scan, not per page.** If any page of a scan is noticeably
+  tilted, Reprise straightens the whole scan before recognition; if the scan is straight (or only very slightly
+  tilted) it is handed to recognition untouched and the engine handles minor skew itself. This avoids needless
+  image resampling on straight scans, and fixes a problem where straightening only some pages of a multi-page
+  scan could crash recognition and fall back to a lower-quality result.
+
+### Fixed
+- **Skew detection now measures the scan correctly.** PDFs were being measured against a blank background, so even
+  a perfectly straight page could read as tilted and get needlessly straightened; Reprise now flattens each page
+  onto white before measuring, so straight scans are correctly left alone and tilted scans get a true angle.
+- **A failed recognition on a straightened scan now recovers automatically.** If recognition errors out on a
+  straightened scan, Reprise retries with the original un-straightened scan (and its existing padding recovery)
+  rather than giving up on the import.
+
 ## [0.16.16] — 2026-11-22
 
 ### Added

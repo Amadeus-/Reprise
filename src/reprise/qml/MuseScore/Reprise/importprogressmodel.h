@@ -256,6 +256,11 @@ private:
     QList<QPair<int, QString> > m_skippedPages;
     bool m_multiMovement = false;
 
+    //! PART 2 smart-deskew ladder: captured from the runner (droppedTextOnRetry) on the success path -- true when the import
+    //! succeeded only after the notes-only retry dropped OCR. Drives the "imported the notes only" line in the Import-finished
+    //! notice (and makes the import notice-worthy even with no skipped pages). Reset per import in load().
+    bool m_textDropped = false;
+
     //! PART 1 deskew chunk-loop state. m_deskewTotal is the selected page count beginDeskew() armed; m_deskewNext is the
     //! next page stepDeskew() will process; m_deskewAborted is set by cancel() so a pending step aborts instead of starting
     //! recognition. Reset per import in load().

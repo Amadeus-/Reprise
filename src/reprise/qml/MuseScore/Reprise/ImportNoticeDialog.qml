@@ -40,6 +40,9 @@ StyledDialogView {
     //! per-page list ("Page N: ... -- skipped"); multiMovement is true when the survivor pages were non-contiguous.
     property string skippedReport: ""
     property bool multiMovement: false
+    //! PART 2 smart-deskew ladder: true when OCR was dropped by the notes-only retry (the text-role NPE recovery), so the
+    //! notice explains that only the notes were imported. May be set with OR without any skipped pages.
+    property bool textDropped: false
 
     objectName: "ImportNoticeDialog"
 
@@ -238,9 +241,25 @@ StyledDialogView {
                 //! error dialog's lead treatment).
                 StyledTextLabel {
                     Layout.fillWidth: true
-                    text: qsTrc("reprise", "Some pages were skipped, but the rest of your music was imported.")
+                    //! Lead adapts to what happened: a skipped-pages import keeps the original reassurance; an import where only
+                    //! the OCR was dropped (no skipped pages) uses a neutral lead, with the text-and-lyrics note just below.
+                    text: root.skippedLines.length > 0
+                          ? qsTrc("reprise", "Some pages were skipped, but the rest of your music was imported.")
+                          : qsTrc("reprise", "Your music was imported.")
                     color: root.inkStep
                     font: ui.theme.largeBodyFont
+                    horizontalAlignment: Text.AlignLeft
+                    wrapMode: Text.Wrap
+                }
+
+                //! Text-and-lyrics explanation: shown when the notes-only retry dropped OCR (the text-role NPE recovery), so the
+                //! user learns the notes imported on their own. A distinct paragraph, like the interior-pages explanation above.
+                StyledTextLabel {
+                    Layout.fillWidth: true
+                    visible: root.textDropped
+                    text: qsTrc("reprise", "The text and lyrics couldn't be read on this scan, so only the notes were imported.")
+                    color: root.inkStep
+                    font: ui.theme.bodyFont
                     horizontalAlignment: Text.AlignLeft
                     wrapMode: Text.Wrap
                 }

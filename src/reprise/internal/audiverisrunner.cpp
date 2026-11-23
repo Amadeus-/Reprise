@@ -96,6 +96,34 @@ static constexpr int32_t kPadMargin = 100;
 //! margin rounding slop that deskew adds AFTER the projection can never push the final straightened sheet back over the cap.
 static constexpr int64_t kDeskewSafetyPixels = 19500000;
 
+//! PART 1 smart-deskew DOCUMENT TRIGGER (degrees). The deskew decision is PER-DOCUMENT all-or-nothing, NOT per-page: every
+//! selected page's raw skew is measured first (detectSkewAngle), then the MAX page angle across the whole document is compared
+//! to this trigger. If the max is below it, the document is treated as level and EVERY page is fed to Audiveris RAW (Audiveris
+//! self-deskews it) -- pre-deskew is reserved for documents tilted clearly beyond Audiveris's own filament detector. If ANY page
+//! reaches the trigger, the document is tilted and EVERY page is deskewed, each rotated by ITS OWN measured angle (so a
+//! multi-page scan is never left half-straightened -- the mixed state that made Audiveris exit-1 and fall through the ladder to
+//! a worse padded-raw result). Audiveris retrieves its global skew as the mean slope of the longest staff-line filaments (grid
+//! step, LinesRetriever.retrieveGlobalSlope) with no upper clamp, and applies it as a pure COORDINATE transform (Skew.deskewed
+//! = AffineTransform.getRotateInstance(-angle) on points -- NO pixel resample), so it self-corrects any skew its detector can
+//! see. Its detector degrades only past maxFilamentRotation = 0.1 rad (~5.73 deg): a staff-line filament whose central rotation
+//! exceeds that cannot be assembled, so staff detection (hence self-deskew) breaks down beyond ~5.7 deg -- the regime where our
+//! pixel pre-deskew genuinely helps. Our own pre-deskew bilinear-RESAMPLES the raster (softening staff lines -> silent OMR
+//! loss), so applying it to a document whose worst page is below the trigger is net-harmful. VALIDATED empirically to sit above
+//! hardtimes-a4 and below the Pastoral fixture; any residual crash is caught by the PART 2 retry-raw ladder.
+static constexpr double kSkewPreDeskewThresholdDeg = 2.0;
+
+//! PER-PAGE apply floor (degrees) used ONLY once the document trigger has fired. With the document decided tilted, each page is
+//! straightened by its own angle; a page whose own measured |angle| is below this floor is essentially straight and rotating it
+//! would only resample (soften) it for nothing, so it is carried through as a harmless no-op (white-margin padded for uniform
+//! #711 edge protection, but NOT rotated/resampled). 0.2 deg == the detector's own 0.2-deg search step, so this floors out
+//! exactly the angles the detector cannot distinguish from level.
+static constexpr double kSkewApplyFloorDeg = 0.2;
+
+//! Wild-result clamp kept from the original detector: a measured |angle| beyond this is treated as a mis-detection and reported
+//! as 0.0 by detectSkewAngle(), so a spurious large angle can never rotate a page NOR trip the document trigger. Audiveris then
+//! handles such a page raw and the PART 2 retry-raw ladder catches any residual crash.
+static constexpr double kSkewMaxDeg = 6.0;
+
 AudiverisRunner::~AudiverisRunner() = default;
 
 muse::io::path_t AudiverisRunner::findAudiveris() const
@@ -516,7 +544,23 @@ double AudiverisRunner::detectSkewAngle(const QImage& input)
                                             : img.scaledToHeight(1000, Qt::FastTransformation);
     }
 
-    img = img.convertToFormat(QImage::Format_Grayscale8);
+    //! FLATTEN ONTO WHITE before grayscale. QtPdf returns a PDF page render as Format_ARGB32 with the page content carried in
+    //! the ALPHA channel and RGB left at 0 -- i.e. a TRANSPARENT-black background, opaque-black ink. A direct grayscale
+    //! conversion (qGray of RGB=0) collapses the WHOLE page toward black, so the <threshold ink test then selects the
+    //! background instead of the notation and the projection profile is meaningless (observed: a perfectly straight page
+    //! mis-measured as ~5 deg, which the always-on deskew then rotated by that phantom angle). Composite onto an opaque WHITE
+    //! canvas first -- exactly as deskewImage()/the pads do via QPainter, which honours the alpha -- so the analyzed grayscale
+    //! has a white background and black ink. A raster-image source (QImageReader) has no such alpha and is unaffected; this
+    //! also makes a genuinely semi-transparent scan behave sanely.
+    {
+        QImage flattened(img.size(), QImage::Format_RGB32);
+        flattened.fill(Qt::white);
+        QPainter painter(&flattened);
+        painter.drawImage(0, 0, img);
+        painter.end();
+        img = flattened.convertToFormat(QImage::Format_Grayscale8);
+    }
+
     const int32_t w = img.width();
     const int32_t h = img.height();
     if (w < 8 || h < 8)
@@ -609,12 +653,17 @@ double AudiverisRunner::detectSkewAngle(const QImage& input)
         }
     }
 
-    //! Dead-band no-op, and clamp away a wild result (never apply a wild angle).
-    if (std::fabs(bestAngle) < 0.2)
-    {
-        return 0.0;
-    }
-    if (std::fabs(bestAngle) > 6.0)
+    //! Log the RAW measured angle, so the detected skew of every page is observable for tuning. One sparse INFO line per page.
+    //! NOTE: this is now a pure MEASUREMENT primitive -- it returns the raw per-page angle and does NOT apply the deskew
+    //! decision. The per-document trigger (max page angle vs kSkewPreDeskewThresholdDeg) and the per-page apply floor
+    //! (kSkewApplyFloorDeg) are decided by the caller (finishDeskew), so a page below the old per-page threshold still reports
+    //! its true angle and can contribute to the document-level max.
+    LOGI() << "Reprise: detectSkewAngle: raw best angle " << bestAngle << " deg (document trigger "
+           << kSkewPreDeskewThresholdDeg << ", apply floor " << kSkewApplyFloorDeg << ", wild-angle clamp " << kSkewMaxDeg << ")";
+
+    //! Beyond the clamp -> treat as a mis-detection and report level (never apply a wild angle, and never let one trip the
+    //! document trigger); the page is fed raw and the PART 2 ladder catches any residual crash. Otherwise return the raw angle.
+    if (std::fabs(bestAngle) > kSkewMaxDeg)
     {
         return 0.0;
     }
@@ -809,56 +858,17 @@ void AudiverisRunner::deskewStep(int i)
         }
     }
 
-    //! Measure this page's own skew; rotate only past the dead-band, else keep the page as rasterized (angle 0.0). The
-    //! kept page is still carried into the assembly so page count/order is preserved whenever ANY page was rotated.
+    //! DETECT PASS (per-document all-or-nothing). This step only MEASURES: it stores the raw rendered page and its own raw
+    //! measured skew angle. The deskew decision is deferred to finishDeskew(), which -- once EVERY page's angle is known --
+    //! compares the document's MAX angle to the trigger and then either straightens every page by its own angle or feeds them
+    //! all raw. Deferring the apply is what makes the gate per-document instead of per-page (no half-straightened scan).
     double angle = 0.0;
-    QImage result = rendered;
     if (!rendered.isNull())
     {
         angle = detectSkewAngle(rendered);
-        if (std::fabs(angle) >= 0.2)
-        {
-            //! DESKEW OVERSIZE CLAMP. deskewImage() rotates the page (which GROWS its bounding box) and then adds a fixed
-            //! kPadMargin-px white border on EACH side (the #711 edge-crash margin). On a borderline scan that rotated+padded
-            //! sheet can tip past Audiveris's 20 MP per-sheet cap (kSheetMaxPixels) and the page is rejected "Too large image"
-            //! -- even though the SAME page imports fine WITHOUT deskew (observed: hardtimes-a4.pdf, ~15.5 MP flat at 400 dpi,
-            //! deskewed to 3916x5155 = 20.19 MP). The rotation growth is the LARGER contributor, so project AFTER the angle is
-            //! known: take the rotated bounding box PLUS the 2*kPadMargin border, and only when that exceeds the safety target
-            //! (kDeskewSafetyPixels, held below the cap so the fixed-margin rounding slop that scaling leaves can't push the
-            //! final sheet back over) scale the render DOWN by sqrt(target / projected) -- i.e. a lower effective render DPI
-            //! for THIS page only. A page whose rotated+padded size is already under the target keeps its full resolution (no
-            //! regression). finishDeskew() sizes the straightened PDF page from the resulting pixel grid at m_deskewDpi, so the
-            //! clamped grid still maps 1:1 for both the Audiveris run and the PART 2 proofing render.
-            constexpr double kPi = 3.14159265358979323846;
-            const double rad = std::fabs(angle) * kPi / 180.0;
-            const double cosA = std::cos(rad);
-            const double sinA = std::sin(rad);
-            const double rotW = rendered.width() * cosA + rendered.height() * sinA;
-            const double rotH = rendered.width() * sinA + rendered.height() * cosA;
-            const int64_t projected = static_cast<int64_t>(std::llround(rotW + 2 * kPadMargin))
-                                      * static_cast<int64_t>(std::llround(rotH + 2 * kPadMargin));
-            if (projected > kDeskewSafetyPixels)
-            {
-                const double factor = std::sqrt(static_cast<double>(kDeskewSafetyPixels) / static_cast<double>(projected));
-                const int32_t newW = std::max<int32_t>(1, static_cast<int32_t>(std::floor(rendered.width() * factor)));
-                const int32_t effectiveDpi = std::max<int32_t>(1, static_cast<int32_t>(std::lround(m_deskewDpi * factor)));
-                LOGI() << "Reprise: deskew oversize clamp: page " << (i + 1) << " rotated+padded projects " << projected
-                       << " px (> " << kDeskewSafetyPixels << " target); scaling the " << m_deskewDpi
-                       << " dpi render down to width " << newW << " px (effective ~" << effectiveDpi
-                       << " dpi) to stay under the 20 MP cap.";
-                rendered = rendered.scaledToWidth(newW, Qt::SmoothTransformation);
-            }
-
-            result = deskewImage(rendered, angle);
-            m_deskewRotatedAny = true;
-        }
-        else
-        {
-            angle = 0.0;
-        }
     }
 
-    m_deskewImages.push_back(result);
+    m_deskewImages.push_back(rendered);
     m_deskewAngles.push_back(angle);
 
     //! Single-page scan -> no "page N of M" makes sense, so say "Straightening the scan..."; multi-page keeps the
@@ -871,23 +881,111 @@ void AudiverisRunner::deskewStep(int i)
 
 muse::io::path_t AudiverisRunner::finishDeskew()
 {
-    //! Regression gate: if NO page was actually rotated, feed Audiveris the ORIGINAL untouched (byte-identical no-op).
-    //! Angles are retained for PART 2; only the heavy source/page buffers are released here.
-    if (!m_deskewRotatedAny)
+    //! Nothing to assemble (no page rendered, or no output dir armed) -> feed the ORIGINAL untouched.
+    if (m_deskewImages.empty() || m_deskewOutDir.isEmpty())
     {
+        m_deskewRotatedAny = false;
         m_deskewPdf.reset();
         m_deskewSourceFrames.clear();
         m_deskewImages.clear();
         return io::path_t();
     }
 
-    if (m_deskewImages.empty() || m_deskewOutDir.isEmpty())
+    //! PER-DOCUMENT DECISION (all-or-nothing). The detect pass recorded every selected page's RAW measured angle in
+    //! m_deskewAngles. Find the document's MAX |angle|: if it is below the trigger, NO page is tilted enough to need our pixel
+    //! pre-deskew, so feed EVERY page RAW (Audiveris self-deskews) -- return empty so the caller uses the original byte-for-byte.
+    //! This is the regression no-op. Crucially the gate is on the WHOLE document, so a multi-page scan is never left with some
+    //! pages straightened and others raw (the mixed state that crashed Audiveris exit-1 and fell through the ladder).
+    double maxAngle = 0.0;
+    for (const double a : m_deskewAngles)
     {
+        maxAngle = std::max(maxAngle, std::fabs(a));
+    }
+
+    if (maxAngle < kSkewPreDeskewThresholdDeg)
+    {
+        LOGI() << "Reprise: deskew: document max angle " << maxAngle << " deg < trigger " << kSkewPreDeskewThresholdDeg
+               << " deg -> feeding all " << m_deskewImages.size() << " page(s) RAW (Audiveris self-deskews).";
+        //! No page was straightened: zero the provenance angles (the original scan is what Audiveris and PART 2 consume).
+        std::fill(m_deskewAngles.begin(), m_deskewAngles.end(), 0.0);
+        m_deskewRotatedAny = false;
         m_deskewPdf.reset();
         m_deskewSourceFrames.clear();
         m_deskewImages.clear();
         return io::path_t();
     }
+
+    //! The document IS tilted -> APPLY PASS: straighten EVERY page, each by ITS OWN measured angle. A page whose own |angle| is
+    //! below the per-page apply floor is essentially straight and is carried through as a harmless no-op -- white-margin padded
+    //! (uniform #711 edge protection) but NOT rotated/resampled. m_deskewAngles is rewritten to the angle actually APPLIED to
+    //! each page (0.0 for a no-op) so PART 2's .repr provenance matches the deskewed render it stores.
+    LOGI() << "Reprise: deskew: document max angle " << maxAngle << " deg >= trigger " << kSkewPreDeskewThresholdDeg
+           << " deg -> deskewing all " << m_deskewImages.size() << " page(s), each by its own angle (apply floor "
+           << kSkewApplyFloorDeg << " deg).";
+
+    for (size_t idx = 0; idx < m_deskewImages.size(); ++idx)
+    {
+        QImage rendered = m_deskewImages[idx];
+        const double rawAngle = m_deskewAngles[idx];
+        double applied = 0.0;
+
+        if (rendered.isNull())
+        {
+            //! A page that failed to render: leave it null here; the assembly loop below substitutes a blank page so the page
+            //! count/order is preserved. Applied angle stays 0.0.
+            m_deskewAngles[idx] = 0.0;
+            continue;
+        }
+
+        if (std::fabs(rawAngle) >= kSkewApplyFloorDeg)
+        {
+            //! DESKEW OVERSIZE CLAMP. deskewImage() rotates the page (which GROWS its bounding box) and then adds a fixed
+            //! kPadMargin-px white border on EACH side (the #711 edge-crash margin). On a borderline scan that rotated+padded
+            //! sheet can tip past Audiveris's 20 MP per-sheet cap (kSheetMaxPixels) and the page is rejected "Too large image"
+            //! -- even though the SAME page imports fine WITHOUT deskew (observed: hardtimes-a4.pdf, ~15.5 MP flat at 400 dpi,
+            //! deskewed to 3916x5155 = 20.19 MP). The rotation growth is the LARGER contributor, so project AFTER the angle is
+            //! known: take the rotated bounding box PLUS the 2*kPadMargin border, and only when that exceeds the safety target
+            //! (kDeskewSafetyPixels, held below the cap so the fixed-margin rounding slop that scaling leaves can't push the
+            //! final sheet back over) scale the render DOWN by sqrt(target / projected) -- i.e. a lower effective render DPI
+            //! for THIS page only. A page whose rotated+padded size is already under the target keeps its full resolution (no
+            //! regression). The straightened PDF page is sized from the resulting pixel grid at m_deskewDpi, so the clamped
+            //! grid still maps 1:1 for both the Audiveris run and the PART 2 proofing render.
+            constexpr double kPi = 3.14159265358979323846;
+            const double rad = std::fabs(rawAngle) * kPi / 180.0;
+            const double cosA = std::cos(rad);
+            const double sinA = std::sin(rad);
+            const double rotW = rendered.width() * cosA + rendered.height() * sinA;
+            const double rotH = rendered.width() * sinA + rendered.height() * cosA;
+            const int64_t projected = static_cast<int64_t>(std::llround(rotW + 2 * kPadMargin))
+                                      * static_cast<int64_t>(std::llround(rotH + 2 * kPadMargin));
+            if (projected > kDeskewSafetyPixels)
+            {
+                const double factor = std::sqrt(static_cast<double>(kDeskewSafetyPixels) / static_cast<double>(projected));
+                const int32_t newW = std::max<int32_t>(1, static_cast<int32_t>(std::floor(rendered.width() * factor)));
+                const int32_t effectiveDpi = std::max<int32_t>(1, static_cast<int32_t>(std::lround(m_deskewDpi * factor)));
+                LOGI() << "Reprise: deskew oversize clamp: page " << (idx + 1) << " rotated+padded projects " << projected
+                       << " px (> " << kDeskewSafetyPixels << " target); scaling the " << m_deskewDpi
+                       << " dpi render down to width " << newW << " px (effective ~" << effectiveDpi
+                       << " dpi) to stay under the 20 MP cap.";
+                rendered = rendered.scaledToWidth(newW, Qt::SmoothTransformation);
+            }
+
+            m_deskewImages[idx] = deskewImage(rendered, rawAngle);
+            applied = rawAngle;
+        }
+        else
+        {
+            //! Essentially-straight page in a tilted document: pad with the SAME white margin as its deskewed neighbours (so the
+            //! #711 edge protection is uniform across the assembled PDF) but do NOT rotate -- deskewImage(.,0) is a pure pad,
+            //! no geometric resample, so the raster is not softened.
+            m_deskewImages[idx] = deskewImage(rendered, 0.0);
+            applied = 0.0;
+        }
+
+        m_deskewAngles[idx] = applied;
+    }
+
+    m_deskewRotatedAny = true;
 
     const int32_t dpi = m_deskewDpi > 0 ? m_deskewDpi : 300;
     const QString base = QFileInfo(m_deskewInputPath).completeBaseName();
@@ -1054,6 +1152,17 @@ std::vector<std::string> AudiverisRunner::buildTextConstants(const RecognitionOp
     return constants;
 }
 
+void AudiverisRunner::setRetryContext(const muse::io::path_t& rawOriginal, bool inputIsDeskewed)
+{
+    //! PART 2 smart-deskew ladder context, set by the model before each recognition run (see startRecognition). The raw
+    //! original is retained so LADDER A can re-run on it; the deskewed flag says whether THIS run's input is the straightened
+    //! render. The internal ladder retries manage m_inputWasDeskewed themselves, so they never call this.
+    m_rawOriginalPath = rawOriginal;
+    m_inputWasDeskewed = inputIsDeskewed;
+
+    return;
+}
+
 bool AudiverisRunner::isRunning() const
 {
     return m_process != nullptr;
@@ -1073,6 +1182,7 @@ bool AudiverisRunner::start(const muse::io::path_t& pdfPath, const QString& page
     m_options = options;
     m_cancelled = false;
     m_sawArrayIndexCrash = false;
+    m_sawTextRoleCrash = false;
     m_sawNoStaves = false;
     m_sawLowInterline = false;
     m_sawTooLarge = false;
@@ -1516,6 +1626,17 @@ void AudiverisRunner::pushTail(const QString& line)
         m_sawArrayIndexCrash = true;
     }
 
+    //! PART 2 smart-deskew ladder: the fatal Audiveris text-role NPE (a null TextRole while building sentence/lyric inters).
+    //! The rotated+padded deskew render can trigger it on lyric lines, crashing the whole import. Sticky like the #711 flag
+    //! (the tail ring can scroll the signature out before exit), scanned on every stdout+stderr line; drives LADDER B.
+    if (!m_sawTextRoleCrash
+        && (line.contains("createSystemInters")
+            || line.contains("TextRole.ordinal()")
+            || line.contains("because \"role\" is null")))
+    {
+        m_sawTextRoleCrash = true;
+    }
+
     //! Audiveris's own failure signatures, scanned once each over every line, so a non-zero exit can be turned into a
     //! specific, user-friendly message (no staves -> cover/title page; too-low interline / too-large image -> DPI advice).
     //! The global m_saw* flags still drive the all-invalid failure message; the per-sheet reason map (recorded below) drives
@@ -1655,6 +1776,45 @@ void AudiverisRunner::onFinished(int exitCode)
 
     if (exitCode != 0)
     {
+        //! PART 2 smart-deskew LADDER A -- a PRE-DESKEWED input run failed: re-run on the RAW original and let Audiveris
+        //! self-deskew it (reliable below ~5.7 deg; our pre-deskew only fired because the scan measured above the threshold,
+        //! but its rotated+padded render can trip the upstream text-role NPE and resamples the raster). Generalized to ANY
+        //! non-zero exit on a deskewed-input run, so a non-NPE deskew failure is recovered too; m_sawTextRoleCrash is captured
+        //! only to log WHY. OCR stays ON. One-shot (m_retriedRaw, NOT reset in start(), like m_retriedWithPad); clearing
+        //! m_inputWasDeskewed routes a further failure on the raw run to LADDER B, never back here. Ordered FIRST so a deskewed
+        //! PDF that crashed goes back to raw rather than padding the straightened render (buildPaddedPdf would not fix the NPE).
+        if (m_inputWasDeskewed && !m_retriedRaw && !m_rawOriginalPath.empty())
+        {
+            m_retriedRaw = true;
+            m_inputWasDeskewed = false;
+            LOGW() << "Reprise: deskewed-input run failed (exit " << exitCode << ", text-role NPE="
+                   << (m_sawTextRoleCrash ? "yes" : "no") << "); retrying on the raw original "
+                   << m_rawOriginalPath.toQString() << " so Audiveris self-deskews it.";
+            emit retryingAfterError();
+            start(m_rawOriginalPath, m_pages, m_dpi, m_options);
+            return;
+        }
+
+        //! PART 2 smart-deskew LADDER B -- an OCR-ON run crashed in the OCR/TEXTS stage (the text-role NPE), whether it was the
+        //! raw retry from LADDER A or a below-threshold scan fed raw that Audiveris self-deskewed into the same NPE. Drop OCR
+        //! and retry notes-only ONCE (m_retriedNotesOnly). Keyed on the specific NPE signature so a #711 edge crash still takes
+        //! the pad retry below, and a no-staves/too-large/other failure still reaches its graceful message (LADDER C). On
+        //! success the model surfaces the "imported the notes only" notice via droppedTextOnRetry(). m_options.recognizeText
+        //! guards against re-firing after the notes-only run (start() sets m_options to the notes-only options).
+        if (!m_retriedNotesOnly && m_options.recognizeText && m_sawTextRoleCrash)
+        {
+            m_retriedNotesOnly = true;
+            m_droppedTextOnRetry = true;
+            const io::path_t rawForNotes = m_rawOriginalPath.empty() ? m_pdfPath : m_rawOriginalPath;
+            RecognitionOptions notesOnly = m_options;
+            notesOnly.recognizeText = false;
+            LOGW() << "Reprise: OCR-stage text-role NPE on " << m_pdfPath.toQString()
+                   << "; retrying notes-only (OCR off) on " << rawForNotes.toQString() << ".";
+            emit retryingAfterError();
+            start(rawForNotes, m_pages, m_dpi, notesOnly);
+            return;
+        }
+
         //! PDF retry-on-crash for Audiveris #711: when a PDF run crashes with the edge-probe signature
         //! (ArrayIndexOutOfBoundsException) and we have not padded yet, re-rasterize the PDF to padded pages and re-run
         //! ONCE on the padded copy. Guarded by m_retriedWithPad so a padded re-run that still fails is reported, never
