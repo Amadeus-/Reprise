@@ -653,8 +653,15 @@ void ImportProgressModel::openImported(const QString& outputPath)
     //! the user declining the force-load prompt) reports its error the INSTANT it resolves -- no race -- while a
     //! successful open is still finalized by masterNotationChanged (Done counts). A slow open is
     //! simply a promise that has not resolved yet, so it can never be mistaken for a failure however long it takes.
+    //! Reprise Phase 1: suppress the "file is corrupted" dialog for THIS scan-import open. OMR routinely produces
+    //! incomplete / over-long measures, and the Bad-timing navigator now surfaces every one of them as a clickable
+    //! worklist row -- so the modal corruption dialog on open would be a duplicate notification. One-shot, honoured only
+    //! by this open (ordinary File > Open of a .repr/.mscz still shows the dialog). See OpenProjectScenario::loadWithFallback.
     const QUrl url = QUrl::fromLocalFile(pathToOpen);
-    openProjectScenario()->openProject(muse::rcommand::Params{ { "url", muse::Val(url.toString()) } })
+    openProjectScenario()->openProject(muse::rcommand::Params{
+        { "url", muse::Val(url.toString()) },
+        { "reprise_suppress_corruption_prompt", muse::Val(true) }
+    })
     .onResolve(this, [this, hadProjectBefore](const muse::Ret& ret)
     {
         //! A genuine open failure: reportOpenFailed() (it re-checks master-presence, so an ok-looking resolve can never

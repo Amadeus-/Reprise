@@ -248,6 +248,13 @@ Promise<Ret> OpenProjectScenario::openProject(const muse::rcommand::Params& para
     const QString url = params.at("url").toQString();
     const QString displayNameOverride = params.at("display_name").toQString();
 
+    //! Reprise: a scan import passes "reprise_suppress_corruption_prompt" so the imported score's incomplete/corrupt measures
+    //! do NOT raise the "file is corrupted" dialog -- the Bad-timing navigator already surfaces them, so the dialog would be a
+    //! duplicate notification. One-shot: consumed by the next loadWithFallback (ordinary opens are unaffected).
+    if (params.at("reprise_suppress_corruption_prompt", Val(false)).toBool()) {
+        m_suppressCorruptionPromptOnce = true;
+    }
+
     return openProject(ProjectFile(QUrl(url), displayNameOverride))
            .then<Ret>(this, [](const Ret& ret, auto resolve) {
         if (!ret) {
@@ -305,7 +312,17 @@ Promise<Ret> OpenProjectScenario::openProject(const muse::io::path_t& givenPath,
         return resolvedPromise(make_ok());
     }
 
-    return runIfNotBusy(BusyStatus::Opening, [this, givenPath, displayNameOverride]() -> Promise<Ret> {
+    //! Reprise: take the one-shot scan-import corruption-suppression flag now and clear the member, so the non-load paths
+    //! below (already open / in another window / new window / cloud) never leave it set to leak onto a later ordinary open.
+    //! Only the in-window load path (step 6) re-arms it for loadWithFallback to consume. Reprise's OWN .repr proofing
+    //! projects ALSO suppress the dialog unconditionally: they are OMR output that is EXPECTED to carry incomplete measures,
+    //! and the Bad-timing navigator surfaces those on open -- so the modal corruption dialog would be a duplicate on every
+    //! reopen. Ordinary .mscz / .mxl / .musicxml opens are untouched and still prompt.
+    const bool suppressCorruptionPrompt = m_suppressCorruptionPromptOnce
+                                          || (io::suffix(givenPath) == REPRISE_PROJECT_SUFFIX);
+    m_suppressCorruptionPromptOnce = false;
+
+    return runIfNotBusy(BusyStatus::Opening, [this, givenPath, displayNameOverride, suppressCorruptionPrompt]() -> Promise<Ret> {
         // Reprise: normalize separators so any raw backslash open path is robust (the MCP open url is already '/'-normalized by QUrl).
         muse::io::path_t normalizedGivenPath = muse::io::Dir::fromNativeSeparators(givenPath);
 
@@ -369,6 +386,11 @@ Promise<Ret> OpenProjectScenario::openProject(const muse::io::path_t& givenPath,
         }
 
         //! Step 6. Open project in the current window
+        //! Reprise: re-arm the scan-import corruption suppression for exactly this in-window load; loadWithFallback consumes
+        //! it synchronously (no event-loop yield between here and there), so it applies only to this open.
+        if (suppressCorruptionPrompt) {
+            m_suppressCorruptionPromptOnce = true;
+        }
         return doOpenProject(actualPath);
     });
 }
@@ -412,8 +434,13 @@ Promise<Ret> OpenProjectScenario::loadWithFallback(const std::shared_ptr<INotati
                                                    const muse::io::path_t& loadPath,
                                                    const std::string& format)
 {
+    //! Reprise: consume the one-shot scan-import suppression flag HERE, synchronously, before the async load -- so it applies
+    //! to exactly this open and is cleared whether or not the load reports corruption (it never leaks to a later open).
+    const bool suppressCorruptionPrompt = m_suppressCorruptionPromptOnce;
+    m_suppressCorruptionPromptOnce = false;
+
     return askAboutMigrationIfNeed(loadPath)
-           .then<Ret>(this, [this, project, loadPath, format](const Ret& answered, auto resolve) {
+           .then<Ret>(this, [this, project, loadPath, format, suppressCorruptionPrompt](const Ret& answered, auto resolve) {
         if (!answered) {
             return resolve(answered);
         }
@@ -422,6 +449,15 @@ Promise<Ret> OpenProjectScenario::loadWithFallback(const std::shared_ptr<INotati
 
         if (result || result.code() == static_cast<int>(Ret::Code::Cancel)) {
             return resolve(result);
+        }
+
+        //! Reprise: on a scan import, force-open silently when the only problem is FileCorrupted (incomplete/over-long
+        //! measures) -- the Bad-timing navigator already surfaces those, so the "file is corrupted" dialog would be a
+        //! duplicate notification. Any other error (critically corrupted, too-new, incompatible version) still prompts.
+        if (suppressCorruptionPrompt && result.code() == static_cast<int>(engraving::Err::FileCorrupted)) {
+            OpenParams params;
+            params.forceMode = true;
+            return resolve(project->load(loadPath, params, format));
         }
 
         shouldRetryLoadAfterError(result, loadPath)

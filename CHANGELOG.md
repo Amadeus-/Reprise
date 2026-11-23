@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-11-23
+
+### Added
+- **A "Timing problems" panel.** Reprise now lists measures whose recognized rhythm doesn't add up — a voice too
+  long for its bar, or an incomplete / corrupted measure — showing the measure, the staff, and what was found vs
+  what was expected. Click a row to jump straight to that measure in the score, the original-scan band, and the
+  detail view. A clean score shows "No timing problems found," and the list refreshes as you edit.
+
+### Changed
+- **No more generic "this score is corrupted" pop-up on scan import or project reopen.** Scanned music routinely has
+  incomplete or irregular measures, so that dialog was just noise on an import; the new Timing problems panel
+  surfaces the genuine issues instead. (Ordinary MuseScore / MusicXML files you open still warn as before.)
+
 ## [0.16.18] — 2026-11-23
 
 ### Changed

@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.16.18) — work in progress.** Reprise is early software under
+> **Pre-release (0.17.0) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -71,6 +71,11 @@ compatibility.
   close-up of the exact note you're on, so you can check each recognized note against the
   original at a readable size. You can zoom either panel in or out with the mouse wheel. Your work saves as a **Reprise project (`.repr`)** that reopens
   with the original scan and this whole proofing view intact.
+- **Spot timing problems at a glance** — a **Timing problems** panel lists measures whose recognized rhythm doesn't
+  add up (a voice too long for its bar, or an incomplete / corrupted measure), with the measure, staff, and what was
+  found vs expected; click a row to jump straight to that measure. A clean score shows "No timing problems found."
+  Because scanned music routinely has irregular measures, Reprise no longer interrupts a scan import or project
+  reopen with a generic "this score is corrupted" dialog — those issues show up in the panel instead.
 - **Easy setup** — Preferences auto-detects your Audiveris install on first run, with
   manual override. There is no separate Tesseract to install or configure — its OCR engine
   ships **inside Audiveris**.
@@ -89,7 +94,7 @@ compatibility.
 **Planned**
 - Registering the `.repr` file type with Windows at install time — double-click a `.repr`
   to open it in Reprise, with its own icon in Explorer.
-- A **bad-timing navigator** and a correction-focused keypad for fast fixes.
+- A correction-focused keypad for fast fixes, and richer navigation of flagged measures.
 - Richer import/OMR options.
 
 ## Known limitations

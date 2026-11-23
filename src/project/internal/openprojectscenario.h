@@ -151,6 +151,13 @@ private:
     ProjectBeingDownloaded m_projectBeingDownloaded;
     muse::async::Notification m_projectBeingDownloadedChanged;
 
+    //! Reprise: one-shot flag set by openProject(params) when the open carries "reprise_suppress_corruption_prompt" (a scan
+    //! import). It makes the NEXT load force-open silently on Err::FileCorrupted instead of showing the "file is corrupted"
+    //! dialog, because the Bad-timing navigator already surfaces those measures -- so the dialog would be a double-notify.
+    //! Consumed (read + cleared) synchronously at the top of loadWithFallback, so it applies to exactly one open and never
+    //! leaks to a later ordinary project open.
+    bool m_suppressCorruptionPromptOnce = false;
+
     //! NOTE The context of the timers, so that they do not outlive the scenario
     QObject m_timersContext;
 };

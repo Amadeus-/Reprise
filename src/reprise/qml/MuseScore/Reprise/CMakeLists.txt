@@ -32,6 +32,8 @@ qt_add_qml_module(reprise_qml
         proofingstripmodel.h
         proofingmagnifiermodel.cpp
         proofingmagnifiermodel.h
+        badtimingnavigatormodel.cpp
+        badtimingnavigatormodel.h
     QML_FILES
         ImportPdfOptionsDialog.qml
         ImportProgressDialog.qml
@@ -40,6 +42,7 @@ qt_add_qml_module(reprise_qml
         ProofingStrip.qml
         ProofingMagnifier.qml
         ProofingZoomReadout.qml
+        BadTimingNavigator.qml
     RESOURCES
         resources/titlebar-mark.svg
     IMPORTS
