@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.16.12] — 2026-11-22
+
+### Fixed
+- **Deskewed projects no longer crash on open.** A deskewed Reprise project (`.repr`) saved without recorded skew
+  angles could crash the app instantly when reopened; Reprise now reads that optional data defensively. All
+  previously-deskewed projects are openable again.
+
 ## [0.16.11] — 2026-11-22
 
 ### Fixed

@@ -332,10 +332,18 @@ Ret readRepr(const path_t& path, ReprBundle& out)
         const JsonObject psObj = manifest.value("proofingScan").toObject();
         out.proofingScanSuffix = psObj.value("suffix").toStdString();
 
-        const JsonArray angles = psObj.value("skewAnglesDeg").toArray();
-        for (size_t i = 0; i < angles.size(); ++i)
+        //! skewAnglesDeg is OPTIONAL: assembleRepr emits it only when the angle vector is non-empty, so a deskewed bundle
+        //! saved with no recorded angles has no such key. JsonObject::value() then returns a null JsonValue, and calling
+        //! .toArray().size() on a non-array value dereferences a null picojson array pointer -> SIGSEGV. Guard with isArray()
+        //! so a missing/non-array key is tolerated (leaves skewAnglesDeg empty), matching the "absence tolerated" contract.
+        const JsonValue anglesVal = psObj.value("skewAnglesDeg");
+        if (anglesVal.isArray())
         {
-            out.skewAnglesDeg.push_back(angles.at(i).toDouble());
+            const JsonArray angles = anglesVal.toArray();
+            for (size_t i = 0; i < angles.size(); ++i)
+            {
+                out.skewAnglesDeg.push_back(angles.at(i).toDouble());
+            }
         }
     }
 
