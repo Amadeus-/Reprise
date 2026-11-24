@@ -106,6 +106,11 @@ compatibility.
   count (and every bar number after it) shift, so an imported part may not line up with a conductor score or
   rehearsal numbers. This is a limitation of the recognition engine (Audiveris); a fix is already in its
   development branch and will be picked up in a future Reprise update.
+- **The time signature may not be recognized on dense or multi-staff scores.** On complex layouts — an organ score
+  with several staves per system is a known case — the recognition engine (Audiveris) can fail to read the printed
+  time signature, and the score then falls back to a default meter. When that happens, many measures can be flagged
+  in the **Timing problems** panel even though the music itself is fine; setting the correct time signature in the
+  score resolves both the meter and those flags. This is a limitation of the recognition engine.
 
 ## License
 
