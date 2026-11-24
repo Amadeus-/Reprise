@@ -91,6 +91,13 @@ void RecentScoresModel::reloadRecentScores()
     items.push_back(noResultsFoundItem);
 
     for (const RecentFile& file : recentScores) {
+        // Reprise: the Scans list shows .repr projects ONLY. Raw import fixtures / temps / .musicxml / .pdf opened during
+        // use can still get registered as recent files, but they must never appear as scan cards. Filter on the suffix here
+        // (robust even if junk already got registered) rather than relying on open-time registration being clean.
+        if (io::suffix(file.path) != REPRISE_PROJECT_SUFFIX) {
+            continue;
+        }
+
         items.push_back(makeItem(file));
     }
 
@@ -110,6 +117,11 @@ void RecentScoresModel::setRecentScores(const std::vector<QVariantMap>& items)
 
 void RecentScoresModel::prependItem(const RecentFile& file)
 {
+    // Reprise: Scans list is .repr ONLY (see reloadRecentScores). A non-.repr recent-file prepend never becomes a scan card.
+    if (io::suffix(file.path) != REPRISE_PROJECT_SUFFIX) {
+        return;
+    }
+
     const int row = findRow(file.path);
     if (row >= 0) {
         beginRemoveRows(QModelIndex(), row, row);
@@ -127,6 +139,15 @@ void RecentScoresModel::updateItem(const muse::io::path_t& oldPath, const Recent
     const int row = findRow(oldPath);
     if (row < 0) {
         reloadRecentScores();
+        return;
+    }
+
+    // Reprise: Scans list is .repr ONLY. If an existing scan card's path changed to a non-.repr path, drop it rather than
+    // keeping a non-scan entry on the list.
+    if (io::suffix(file.path) != REPRISE_PROJECT_SUFFIX) {
+        beginRemoveRows(QModelIndex(), row, row);
+        m_items.erase(m_items.begin() + row);
+        endRemoveRows();
         return;
     }
 

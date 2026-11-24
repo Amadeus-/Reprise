@@ -133,6 +133,15 @@ public:
     //! Drop the current map (e.g. an import that produced no usable geometry).
     virtual void clear() = 0;
 
+    //! Reprise: tell the service which document just became the loaded project, so a stale map from a PREVIOUS document is
+    //! never shown over a newly-opened one. Called at the end of every successful project load. Ownership model: each
+    //! setMap() arms a one-shot "claim" -- the FIRST onDocumentLoaded() after it binds the held map to that document
+    //! (so an OMR import, which sets the map just before opening its MusicXML, and a .repr reopen both keep their map).
+    //! A later onDocumentLoaded() for a DIFFERENT document finds no pending claim and a foreign owner, so it drops the
+    //! map (fires mapChanged -> the band + magnifier reset to the empty "import a scan" state). Opening a plain score, a
+    //! non-OMR import, or a .repr with no map therefore clears the previous document's scan instead of leaving it on screen.
+    virtual void onDocumentLoaded(const std::string& documentPath) = 0;
+
     //! Fires whenever the held map is replaced (setMap) or dropped (clear). The Two-Pane Proofing top strip
     //! (Phase A2) subscribes so it renders/refreshes/hides the moment a fresh import's map arrives, with no
     //! dependency on notation-change timing.

@@ -8,6 +8,16 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.8] — 2026-11-24
+
+### Fixed
+- **The resize divider between the original-scan band and the score no longer drags on hover.** It now moves only
+  while you hold the mouse button down, as expected.
+- **The Scans list shows only Reprise projects (`.repr`).** Other files you may have opened no longer appear as scan
+  entries.
+- **Opening a project that has no scan clears the detail view** instead of leaving the previous scan's band and
+  detail view showing.
+
 ## [0.17.7] — 2026-11-24
 
 ### Changed

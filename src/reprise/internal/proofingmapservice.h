@@ -41,6 +41,11 @@ public:
         m_map = map;
         m_map.valid = true;
         rebuildNoteIndex();
+
+        //! Arm the one-shot ownership claim: the next onDocumentLoaded() binds this map to the document that is opening.
+        m_claimPending = true;
+        m_ownerPath.clear();
+
         m_mapChanged.notify();
     }
 
@@ -58,7 +63,30 @@ public:
     {
         m_map = ProofingMap();
         m_noteIndex.clear();
+        m_claimPending = false;
+        m_ownerPath.clear();
         m_mapChanged.notify();
+    }
+
+    void onDocumentLoaded(const std::string& documentPath) override
+    {
+        //! A map set just before this load (OMR import / .repr reopen) claims ownership of the document now loading.
+        if (m_claimPending)
+        {
+            m_ownerPath = documentPath;
+            m_claimPending = false;
+
+            return;
+        }
+
+        //! No fresh map for this load: if a map is still held from a DIFFERENT document, it is stale -> drop it so the
+        //! band + magnifier reset to the empty state rather than showing the previous document's scan.
+        if (m_map.valid && m_ownerPath != documentPath)
+        {
+            clear();
+        }
+
+        return;
     }
 
     muse::async::Notification mapChanged() const override
@@ -108,5 +136,10 @@ private:
     ProofingMap m_map;
     std::unordered_map<uint64_t, int32_t> m_noteIndex;
     muse::async::Notification m_mapChanged;
+
+    //! Document-ownership for the held map (see onDocumentLoaded): m_claimPending is armed by setMap() and consumed by the
+    //! first following load, which records that document's path in m_ownerPath. A later load of any other document drops it.
+    bool m_claimPending = false;
+    std::string m_ownerPath;
 };
 }

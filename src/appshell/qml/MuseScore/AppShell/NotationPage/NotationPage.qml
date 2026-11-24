@@ -653,6 +653,12 @@ DockPage {
                 cursorShape: Qt.SizeVerCursor
 
                 onPositionChanged: function(mouse) {
+                    //! NOTE: hoverEnabled is on (for the cursor + hover highlight), so onPositionChanged also fires on bare
+                    //! hover with no button down. Resize ONLY while actually pressed, else a hover would drag the divider.
+                    if (!pressed) {
+                        return
+                    }
+
                     let pt = mapToItem(centralWrapper, mouse.x, mouse.y)
                     let minH = proofingStrip.headerHeight + 40
                     let maxH = centralWrapper.height - 160

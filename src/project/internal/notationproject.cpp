@@ -148,6 +148,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
         m_isNewlyCreated = false;
         m_isImported = false;
 
+        // Reprise: a .repr with a usable map set it above (doLoadRepr); a .repr with no map leaves the previous document's
+        // map stale -> onDocumentLoaded drops it so the band/magnifier reset. See IProofingMapService::onDocumentLoaded.
+        if (auto svc = proofingMapService()) {
+            svc->onDocumentLoaded(path.toStdString());
+        }
+
         return ret;
     }
 
@@ -155,6 +161,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
         Ret ret = doImport(path, openParams);
         if (ret) {
             listenIfNeedSaveChanges();
+
+            // Reprise: an OMR import set its map just before opening this MusicXML (it claims ownership here); any other
+            // import has no map, so the previous document's stale map is dropped. See IProofingMapService::onDocumentLoaded.
+            if (auto svc = proofingMapService()) {
+                svc->onDocumentLoaded(path.toStdString());
+            }
         }
 
         return ret;
@@ -173,6 +185,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
 
     m_isNewlyCreated = treatAsImported;
     m_isImported = treatAsImported;
+
+    // Reprise: a plain score has no proofing map -> drop any stale map held from the previously-open document so the
+    // band/magnifier do not show the wrong scan. See IProofingMapService::onDocumentLoaded.
+    if (auto svc = proofingMapService()) {
+        svc->onDocumentLoaded(path.toStdString());
+    }
 
     return ret;
 }
