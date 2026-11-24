@@ -410,8 +410,8 @@ DockPage {
 
             navigationSection: root.navigationPanelSec(proofingMagnifierPanel.location)
 
-            width: 360
-            minimumWidth: 220
+            width: 180
+            minimumWidth: 160
             maximumWidth: 900
 
             minimumHeight: root.panelMinDimension

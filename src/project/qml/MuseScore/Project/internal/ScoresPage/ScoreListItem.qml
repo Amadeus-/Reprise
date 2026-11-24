@@ -151,7 +151,9 @@ ListItemBlank {
                     let label = (title.length > 0) ? title : (root.score.name ?? "")
                     const composer = root.score.composer ?? ""
                     if (composer.length > 0) {
-                        label += " (" + composer + ")"
+                        // Reprise: cap the parenthetical (composer/credit blob) at ~20 chars so a long credit line does not run the whole label.
+                        const composerShort = composer.length > 20 ? composer.slice(0, 20) + "…" : composer
+                        label += " (" + composerShort + ")"
                     }
                     const pages = root.score.pages ?? ""
                     if (pages.length > 0) {

@@ -8,6 +8,15 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.3] — 2026-11-23
+
+### Changed
+- **Recent-scan names no longer run off the line.** On the Scans page, the composer/credit text inside a recent
+  scan's name is now capped with an ellipsis so a long credit block doesn't fill the whole row (the title and page
+  range still show in full).
+- **The detail view opens narrower by default.** The right-hand detail (magnifier) column now starts at about half
+  its previous width, leaving more room for the score and the original-scan band. You can still drag it wider.
+
 ## [0.17.2] — 2026-11-23
 
 ### Added

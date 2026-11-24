@@ -324,7 +324,9 @@ FocusScope {
                 text: {
                     var label = (root.scoreTitle && root.scoreTitle.length > 0) ? root.scoreTitle : root.name
                     if (root.composer && root.composer.length > 0) {
-                        label += " (" + root.composer + ")"
+                        // Reprise: cap the parenthetical (composer/credit blob) at ~20 chars so a long credit line does not run the whole label.
+                        var composerShort = root.composer.length > 20 ? root.composer.slice(0, 20) + "…" : root.composer
+                        label += " (" + composerShort + ")"
                     }
                     if (root.pages && root.pages.length > 0) {
                         label += " " + root.pages
