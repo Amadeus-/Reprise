@@ -2420,7 +2420,7 @@ void TLayout::layoutFingering(const Fingering* item, Fingering::LayoutData* ldat
                     // force extra space above staff & chord (but not other fingerings)
                     double top = 0.0;
                     if (chord->up() && chord->beam() && stem) {
-                        top = stem->y() + stem->ldata()->bbox().top();
+                        top = std::min(0.0, stem->y() + stem->ldata()->bbox().top());
                     } else {
                         const Note* un = chord->upNote();
                         top = std::min(0.0, un->y() + un->ldata()->bbox().top());
@@ -2450,7 +2450,7 @@ void TLayout::layoutFingering(const Fingering* item, Fingering::LayoutData* ldat
                     // force extra space below staff & chord (but not other fingerings)
                     double bottom;
                     if (!chord->up() && chord->beam() && stem) {
-                        bottom = stem->y() + stem->ldata()->bbox().bottom();
+                        bottom = std::max(vStaff->staffHeight(item->tick()), stem->y() + stem->ldata()->bbox().bottom());
                     } else {
                         const Note* dn = chord->downNote();
                         bottom = std::max(vStaff->staffHeight(item->tick()), dn->y() + dn->ldata()->bbox().bottom());
@@ -3143,12 +3143,15 @@ void TLayout::manageHairpinSnapping(HairpinSegment* item, LayoutContext& ctx)
         ldata->connectItemSnappedAfter(possibleSnapAfterElement);
     }
 
-    // In case of dynamics/expressions before or after, make space for them horizontally
+    if (!item->autoplace()) {
+        return;
+    }
+
     double mag = item->staff()->staffMag(item);
     double hairpinDistToDynOrExpr = ctx.conf().style().styleAbsolute(Sid::autoplaceHairpinDynamicsDistance) * mag;
 
-    bool makeSpaceBefore = (doSnapBefore && possibleSnapBeforeElement->isTextBase())
-                           || (possibleSnapBeforeElement && possibleSnapBeforeElement->isDynamic());
+    bool makeSpaceBefore = possibleSnapBeforeElement && possibleSnapBeforeElement->isTextBase()
+                           && possibleSnapBeforeElement->autoplace();
 
     if (makeSpaceBefore && possibleSnapBeforeElement->findAncestor(ElementType::SYSTEM) == item->system()) {
         double xItemPos = possibleSnapBeforeElement->pageX() - item->system()->pageX();
@@ -3161,8 +3164,8 @@ void TLayout::manageHairpinSnapping(HairpinSegment* item, LayoutContext& ctx)
         }
     }
 
-    bool makeSpaceAfter = (doSnapAfter && possibleSnapAfterElement->isTextBase())
-                          || (possibleSnapAfterElement && possibleSnapAfterElement->isDynamic());
+    bool makeSpaceAfter = possibleSnapAfterElement && possibleSnapAfterElement->isTextBase()
+                          && possibleSnapAfterElement->autoplace();
 
     if (makeSpaceAfter && possibleSnapAfterElement->findAncestor(ElementType::SYSTEM) == item->system()) {
         double xItemPos = possibleSnapAfterElement->pageX() - item->system()->pageX();

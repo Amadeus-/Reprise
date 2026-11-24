@@ -89,6 +89,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/split_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/splitstaff_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/staffmove_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/stafftype_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/stavecentering_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/stavesharing_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/styledproperties_rw_tests.cpp
@@ -122,6 +123,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mocks/engravingconfigurationmock.h
 
     ${CMAKE_CURRENT_LIST_DIR}/lv_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/freeze_tests.cpp
 )
 
 if (MUE_BUILD_ENGRAVING_DEVTOOLS)

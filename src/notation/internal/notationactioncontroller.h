@@ -91,6 +91,7 @@ public:
     NoteInputMethod noteInputMethod() const override;
     engraving::DurationType currentDurationType() const override;
     int currentDotCount() const override;
+    bool tupletPending() const override;
     bool currentIsRest() const override;
     engraving::AccidentalType currentAccidentalType() const override;
     std::set<engraving::SymId> currentArticulations() const override;
@@ -129,6 +130,8 @@ public:
     muse::async::Notification currentMasterNotationChanged() const;
 
 private:
+    friend class NotationScene_NotationActionControllerTests;
+
     INotationPtr currentNotation() const;
     INotationElementsPtr currentNotationElements() const;
     INotationSelectionPtr currentNotationSelection() const;
@@ -164,6 +167,7 @@ private:
     muse::Ret toggleDots(uint dots);
 
     muse::Ret toggleRest();
+    muse::Ret putRestToSelection();
 
     muse::RetVal<RequestNoteInputStateCommand::Output> requestNoteInputState() const;
 
@@ -189,7 +193,10 @@ private:
     muse::Ret addText(const AddTextCommand& command);
     muse::Ret setBeamMode(const SetBeamCommand& command);
     muse::Ret addOrnament(const AddOrnamentCommand& command);
+    muse::Ret addOttava(const AddOttavaCommand& command);
     muse::Ret flipSelection();
+    muse::Ret flipSelectionHorizontally();
+    muse::Ret extendToNextNote();
 
     // Tab
     muse::Ret addFret(const AddFretCommand& command);
@@ -199,7 +206,7 @@ private:
 
     muse::Ret realtimeAdvance();
 
-    void toggleArticulation(SymbolId articulationSymbolId);
+    muse::Ret toggleArticulation(const ToggleArticulationCommand& command);
 
     muse::Ret moveWithRet(MoveDirection direction, bool quickly = false);
     void move(MoveDirection direction, bool quickly = false);
@@ -246,11 +253,12 @@ private:
     muse::Ret openMeasurePropertiesDialog();
     muse::Ret openEditGridSizeDialog();
     muse::Ret openRealizeChordSymbolsDialog();
-    muse::io::path_t selectStyleFile(bool forLoad);
-    void loadStyle();
-    void saveStyle();
+    muse::Ret loadStyle();
+    muse::Ret saveStyle();
 
-    void toggleScoreConfig(ScoreConfigType configType);
+    muse::async::Promise<muse::io::path_t> selectStyleFile(bool forLoad);
+
+    muse::Ret toggleScoreConfig(const ToggleScoreConfigCommand& command);
     void toggleConcertPitch();
 
     void seekAndPlaySelectedElement(bool playChord = true);
@@ -276,6 +284,9 @@ private:
     bool resolveTextNavigationAvailable(TextNavigationType type = TextNavigationType::NearNoteOrRest) const;
 
     muse::Ret navigateToText(const TextNavigateCommand& command);
+    muse::Ret navigateToLyrics(const LyricsNavigateCommand& command);
+    muse::Ret addMelisma();
+    muse::Ret addLyricsVerse();
     void navigateToTextElement(MoveDirection direction, bool nearNoteOrRest = false, bool moveOnly = true);
     muse::Ret toggleFontStyle(const EditTextFontStyleCommand& command);
     muse::Ret toggleValign(const EditTextValignCommand& command);

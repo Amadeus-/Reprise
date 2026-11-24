@@ -90,6 +90,14 @@ void NoteInputBarModel::init()
         emit isInputAllowedChanged();
     });
 
+    // the tuplet button is highlighted while a tuplet is pending; undo can bring one back
+    commandsController()->noteInputStateChanged().onNotify(this, [this]() {
+        updateTupletItemChecked();
+    });
+    commandsController()->stackChanged().onNotify(this, [this]() {
+        updateTupletItemChecked();
+    });
+
     load();
 }
 
@@ -136,10 +144,10 @@ const muse::ui::ToolConfig& NoteInputBarModel::defaultNoteInputConfig()
             { AddSlurCommand::id, true },
             { ToggleLaissezVibrerCommand::id, false },
             { ToolConfig::____________, true },
-            { TOGGLE_MARCATO_COMMAND, true },
-            { TOGGLE_SFORZATO_COMMAND, true },
-            { TOGGLE_TENUTO_COMMAND, true },
-            { TOGGLE_STACCATO_COMMAND, true },
+            { ToggleMarcatoCommand::id, true },
+            { ToggleSforzatoCommand::id, true },
+            { ToggleTenutoCommand::id, true },
+            { ToggleStaccatoCommand::id, true },
             { ToolConfig::____________, true },
             { CROSS_STAFF_BEAMING_SUBITEMS, true }, // service
             { TUPLET_SUBITEMS, true },              // service
@@ -157,6 +165,7 @@ const muse::ui::ToolConfig& NoteInputBarModel::defaultNoteInputConfig()
 void NoteInputBarModel::load()
 {
     MenuItemList items;
+    m_tupletItem = nullptr;
 
     ToolConfig noteInputConfig = uiState()->toolConfig(TOOLBAR_NAME, NoteInputBarModel::defaultNoteInputConfig());
 
@@ -178,6 +187,8 @@ void NoteInputBarModel::load()
         } else if (citem.intent == TUPLET_SUBITEMS) {
             MenuItem* item = makeServiceItem(TUPLET_SUBITEMS, QString::number(section));
             item->setSubitems(makeTupletItems());
+            m_tupletItem = item;
+            updateTupletItemChecked();
             items << item;
         } else {
             MenuItem* item = makeCommandItem(rcommand::Command(citem.intent), QString::number(section));
@@ -187,6 +198,13 @@ void NoteInputBarModel::load()
 
     items << makeAddItem(QString::number(++section));
     setItems(items);
+}
+
+void NoteInputBarModel::updateTupletItemChecked()
+{
+    if (m_tupletItem) {
+        m_tupletItem->setChecked(commandsController()->tupletPending());
+    }
 }
 
 bool NoteInputBarModel::isInputAllowed() const
@@ -396,8 +414,8 @@ MenuItemList NoteInputBarModel::makeLinesItems()
         makeMenuItem(AddSlurCommand::id),
         makeMenuItem(ADD_HAIRPIN_COMMAND),
         makeMenuItem(ADD_HAIRPIN_REVERSE_COMMAND),
-        makeMenuItem(ADD_OTTAVA_8VA_COMMAND),
-        makeMenuItem(ADD_OTTAVA_8VB_COMMAND),
+        makeMenuItem(AddOttava8vaCommand::id),
+        makeMenuItem(AddOttava8vbCommand::id),
         makeMenuItem(ADD_NOTELINE_COMMAND)
     };
 
