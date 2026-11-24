@@ -110,6 +110,10 @@ public:
     muse::PointF fromLogical(const muse::PointF& point) const override;
     muse::RectF fromLogical(const muse::RectF& rect) const override;
 
+    // Map a logical (canvas) rect to on-screen view px for a QML overlay (e.g. Reprise's problem-measure highlight). Reads
+    // the current matrix, so re-read it on matrixChanged to keep the overlay aligned while panning/zooming.
+    Q_INVOKABLE QRectF fromLogicalRect(const QRectF& logicalRect) const;
+
     Q_INVOKABLE bool moveCanvas(qreal dx, qreal dy) override;
     void moveCanvasVertical(qreal dy) override;
     void moveCanvasHorizontal(qreal dx) override;

@@ -34,6 +34,8 @@ qt_add_qml_module(reprise_qml
         proofingmagnifiermodel.h
         badtimingnavigatormodel.cpp
         badtimingnavigatormodel.h
+        problemmeasurehighlightmodel.cpp
+        problemmeasurehighlightmodel.h
     QML_FILES
         ImportPdfOptionsDialog.qml
         ImportProgressDialog.qml

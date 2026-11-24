@@ -51,14 +51,12 @@ Item {
     //! destroyed and the count is always live across score switches.
     readonly property int problemCount: navModel.count
 
-    //! THEME-AWARE read-only "original scan" surface tint, kept in sync by hand with ProofingStrip/ProofingMagnifier so the
-    //! whole right proofing column reads as one cream reference surface. Light -> soft warm ivory; dark -> warm charcoal.
-    readonly property color readOnlyCream: {
-        let bg = ui.theme.backgroundPrimaryColor
-        let lum = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b
-        return lum < 0.5 ? Qt.rgba(0.16, 0.145, 0.12, 1.0) : Qt.rgba(0.969, 0.945, 0.882, 1.0)
-    }
-
+    //! NON-CREAM, theme-aware section background. Reprise convention: CREAM == a READ-ONLY reference surface (the following
+    //! band + the magnifier crop are cream because they are view-only). This Timing-problems navigator is INTERACTIVE (its
+    //! rows respond to clicks), so it deliberately does NOT inherit the host magnifier panel's cream -- it uses the theme's
+    //! standard NEUTRAL panel tone instead (light grey in a light theme, the normal dark panel tone in a dark theme). The
+    //! result inside the "Full detail view" panel is a clear split: cream magnifier on top (read-only), neutral navigator
+    //! below (interactive).
     BadTimingNavigatorModel {
         id: navModel
     }
@@ -69,7 +67,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: root.readOnlyCream
+        color: ui.theme.backgroundSecondaryColor
     }
 
     ColumnLayout {
@@ -110,7 +108,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                color: root.readOnlyCream
+                color: ui.theme.backgroundSecondaryColor
                 border.color: ui.theme.strokeColor
                 border.width: 1
             }
@@ -131,11 +129,16 @@ Item {
                     required property int index
                     required property string display
                     required property string accentColor
+                    required property string detail
 
                     height: 28
                     width: ListView.view.width
 
                     isSelected: ListView.isCurrentItem
+
+                    //! Hover tooltip: the exact "<kind>  <found> of <expected>" ratio (DetailRole). ListItemBlank shows `hint`
+                    //! via ui.tooltip on hover, so the precise numbers stay one hover away while the row text stays plain.
+                    hint: item.detail
 
                     onClicked: {
                         listView.currentIndex = item.index

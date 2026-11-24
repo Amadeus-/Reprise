@@ -145,13 +145,23 @@ void BadTimingNavigatorModel::jumpTo(int row)
         return;
     }
 
-    //! A measure-level entry (WrongLength) carries staffIdx == -1; jump to staff 0 so a valid chord/rest is selected and
-    //! the band/magnifier/editor follow. Per-staff entries use their own staff.
-    const mu::engraving::staff_idx_t staffIdx
-        = entry.staffIdx < 0 ? 0 : static_cast<mu::engraving::staff_idx_t>(entry.staffIdx);
+    //! MEASURE-LEVEL entry (WrongLength carries staffIdx == -1): select the WHOLE MEASURE across EVERY staff, not just one
+    //! chord/rest. Passing the Measure* itself with SINGLE routes through Score::selectSingle, which for a Measure target
+    //! early-returns into doSelect(..., RANGE) over 0..nstaves() (engraving/dom/score.cpp) -- a full-measure range selection.
+    //! This is the exact path the reprise.proofing-debug-goto dev tool uses, verified to visibly select + scroll the whole
+    //! bar. showItem(measure) then scrolls the editor viewport to it.
+    if (entry.staffIdx < 0)
+    {
+        notation->interaction()->select({ measure }, mu::notation::SelectType::SINGLE);
+        notation->interaction()->showItem(measure);
 
-    //! Prefer the first chord/rest of the problem staff so the selection (and thus the magnifier's note follow) lands on
-    //! that staff; fall back to any chord/rest in the measure, then to the measure frame itself.
+        return;
+    }
+
+    //! PER-STAFF entry: select that staff's first chord/rest so the magnifier's note-follow lands on the right staff; fall
+    //! back to any chord/rest in the measure, then to the measure frame itself.
+    const mu::engraving::staff_idx_t staffIdx = static_cast<mu::engraving::staff_idx_t>(entry.staffIdx);
+
     mu::engraving::EngravingItem* target = measure->firstChordRest(staffIdx * mu::engraving::VOICES);
     if (!target)
     {
@@ -209,6 +219,8 @@ QVariant BadTimingNavigatorModel::data(const QModelIndex& index, int role) const
         return e.expected.toString().toQString();
     case AccentRole:
         return kindAccent(e.kind);
+    case DetailRole:
+        return detailText(e);
     default:
         return QVariant();
     }
@@ -223,30 +235,60 @@ QHash<int, QByteArray> BadTimingNavigatorModel::roleNames() const
         { KindRole, "kindLabel" },
         { FoundRole, "found" },
         { ExpectedRole, "expected" },
-        { AccentRole, "accentColor" }
+        { AccentRole, "accentColor" },
+        { DetailRole, "detail" }
     };
 }
 
 QString BadTimingNavigatorModel::rowText(const BadTimingProblem& e) const
 {
-    //! Measure-level entry (staffIdx < 0, e.g. WrongLength): no staff column -- length is a property of the whole bar.
+    //! Measure-level entry (staffIdx < 0, e.g. WrongLength): no staff column -- length is a property of the whole bar. The
+    //! visible row is PLAIN ("Too many/few beats"); the exact ratio is the hover tooltip (detailText), never on the row.
     if (e.staffIdx < 0)
     {
-        //: Measure-level bad-timing navigator row, e.g. "m. 37  —  Wrong length  138/128 of 4/4" (%1 = measure number,
-        //: %2 = problem kind, %3 = found duration, %4 = expected duration).
-        return muse::qtrc("reprise", "m. %1  \xE2\x80\x94  %2  %3 of %4")
+        //: Measure-level bad-timing navigator row, e.g. "m. 37  —  Too many beats" (%1 = measure number, %2 = plain problem).
+        return muse::qtrc("reprise", "m. %1  \xE2\x80\x94  %2")
                .arg(e.measureNumber1)
-               .arg(kindLabel(e.kind))
-               .arg(e.found.toString().toQString(), e.expected.toString().toQString());
+               .arg(plainKindLabel(e));
     }
 
-    //: Bad-timing navigator row, e.g. "m. 5  staff 1  Incomplete  3/4 of 4/4" (%1 = measure number, %2 = staff number,
-    //: %3 = problem kind, %4 = found duration, %5 = expected duration).
-    return muse::qtrc("reprise", "m. %1  staff %2  %3  %4 of %5")
+    //: Bad-timing navigator row, e.g. "m. 5  staff 1  —  Too few beats" (%1 = measure number, %2 = staff number,
+    //: %3 = plain problem).
+    return muse::qtrc("reprise", "m. %1  staff %2  \xE2\x80\x94  %3")
            .arg(e.measureNumber1)
            .arg(e.staffIdx + 1)
+           .arg(plainKindLabel(e));
+}
+
+QString BadTimingNavigatorModel::detailText(const BadTimingProblem& e) const
+{
+    //: Hover tooltip for a bad-timing row -- the exact technical kind + duration ratio, e.g. "Wrong length  138/128 of 4/4"
+    //: (%1 = problem kind, %2 = found duration, %3 = expected duration). Kept OFF the visible row (the nominal can be a wrong
+    //: OMR read), surfaced only on hover for a power user.
+    return muse::qtrc("reprise", "%1  %2 of %3")
            .arg(kindLabel(e.kind))
            .arg(e.found.toString().toQString(), e.expected.toString().toQString());
+}
+
+QString BadTimingNavigatorModel::plainKindLabel(const BadTimingProblem& e) const
+{
+    switch (e.kind)
+    {
+    case BadTimingKind::CorruptedRepeat:
+        return muse::qtrc("reprise", "Repeat problem");
+    case BadTimingKind::Incomplete:
+        //! voice 1 does not fill the bar -- underfull.
+        return muse::qtrc("reprise", "Too few beats");
+    case BadTimingKind::VoiceTooLong:
+        //! a voice runs past the bar -- overfull.
+        return muse::qtrc("reprise", "Too many beats");
+    case BadTimingKind::WrongLength:
+        //! The bar's actual length disagrees with its nominal: longer than nominal -> too many beats, shorter -> too few.
+        return e.found > e.expected ? muse::qtrc("reprise", "Too many beats")
+                                    : muse::qtrc("reprise", "Too few beats");
+    }
+
+    return muse::qtrc("reprise", "Timing problem");
 }
 
 QString BadTimingNavigatorModel::kindLabel(BadTimingKind kind) const

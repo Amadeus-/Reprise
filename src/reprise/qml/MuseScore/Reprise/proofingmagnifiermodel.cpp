@@ -40,12 +40,17 @@
 #include "notation/inotation.h"
 #include "notation/inotationinteraction.h"
 #include "notation/inotationselection.h"
+#include "notation/inotationelements.h"
+#include "notation/inotationundostack.h"
 
 #include "engraving/dom/chord.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/measurebase.h"
 #include "engraving/dom/note.h"
 #include "engraving/dom/pitchspelling.h"
+#include "engraving/dom/score.h"
+
+#include "internal/badtimingcheck.h"
 
 #include "log.h"
 
@@ -448,7 +453,21 @@ void ProofingMagnifierModel::resubscribeSelection()
         {
             scheduleHoverMeasure(static_cast<int32_t>(measure));
         });
+
+        //! Keep the problem-measure set (and thus the red marker) live: any edit / undo / redo re-walks the score, so a
+        //! measure the user has just fixed stops being drawn red the instant its timing resolves (and a newly-broken one
+        //! turns red). The walk is the cheap read-only scanScoreForBadTiming the navigator already uses.
+        if (notation->undoStack())
+        {
+            notation->undoStack()->stackChanged().onNotify(m_selectionReceiver.get(), [this]()
+            {
+                rebuildProblemSet();
+            });
+        }
     }
+
+    //! Build the problem set for the now-current notation BEFORE the first follow so the marker colour is right immediately.
+    rebuildProblemSet();
 
     updateFollow();
 
@@ -564,7 +583,41 @@ void ProofingMagnifierModel::applyFollow(bool found, bool fallback, int32_t page
         ensurePageRendered(newPage);
     }
 
+    //! Red-vs-blue: is the measure we are now following one the bad-timing walk flags? Decides the marker colour in QML.
+    updateCurrentProblemFlag();
+
     emit followChanged();
+
+    return;
+}
+
+void ProofingMagnifierModel::updateCurrentProblemFlag()
+{
+    m_currentMeasureIsProblem = (m_currentMeasure >= 0) && (m_problemMeasures.count(m_currentMeasure) > 0);
+
+    return;
+}
+
+void ProofingMagnifierModel::rebuildProblemSet()
+{
+    m_problemMeasures.clear();
+
+    const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    const mu::engraving::Score* score = (notation && notation->elements()) ? notation->elements()->msScore() : nullptr;
+
+    for (const BadTimingProblem& e : scanScoreForBadTiming(score))
+    {
+        m_problemMeasures.insert(e.measureIndex0);
+    }
+
+    //! A re-walk (undo/redo/edit) can flip the current measure's status without the follow itself changing, so recompute and
+    //! fire followChanged when it flips -- that is the signal the QML marker colour binds to.
+    const bool was = m_currentMeasureIsProblem;
+    updateCurrentProblemFlag();
+    if (was != m_currentMeasureIsProblem)
+    {
+        emit followChanged();
+    }
 
     return;
 }

@@ -367,8 +367,12 @@ Rectangle {
                 width: bandModel.rectW * bandArea.imgScale
                 height: bandModel.rectH * bandArea.imgScale
 
-                color: Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
-                border.color: ui.theme.accentColor
+                //! RED when the followed measure is a bad-timing PROBLEM measure (currentMeasureIsProblem, driven by the same
+                //! read-only walk as the navigator), normal accent blue otherwise -- so a problem bar is obvious while proofing.
+                color: bandModel.currentMeasureIsProblem
+                       ? Qt.rgba(0.82, 0.23, 0.18, 0.22)
+                       : Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
+                border.color: bandModel.currentMeasureIsProblem ? "#d23b2e" : ui.theme.accentColor
                 border.width: 2
                 radius: 2
             }

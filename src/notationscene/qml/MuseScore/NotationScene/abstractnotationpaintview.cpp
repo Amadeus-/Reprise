@@ -1560,6 +1560,11 @@ RectF AbstractNotationPaintView::fromLogical(const RectF& rect) const
     return m_matrix.map(rect);
 }
 
+QRectF AbstractNotationPaintView::fromLogicalRect(const QRectF& logicalRect) const
+{
+    return fromLogical(RectF::fromQRectF(logicalRect)).toQRectF();
+}
+
 bool AbstractNotationPaintView::isInited() const
 {
     if (qFuzzyIsNull(width()) || qFuzzyIsNull(height())) {

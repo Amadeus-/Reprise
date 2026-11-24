@@ -285,8 +285,11 @@ Item {
                     x: (parent.width - width) / 2 + view.userPanX
                     y: (parent.height - height) / 2 + view.userPanY
 
-                    color: Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
-                    border.color: ui.theme.accentColor
+                    //! RED when the followed measure is a bad-timing PROBLEM measure (same walk as the navigator), else accent.
+                    color: magModel.currentMeasureIsProblem
+                           ? Qt.rgba(0.82, 0.23, 0.18, 0.22)
+                           : Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.22)
+                    border.color: magModel.currentMeasureIsProblem ? "#d23b2e" : ui.theme.accentColor
                     border.width: 2
                     radius: 2
                 }
@@ -309,7 +312,9 @@ Item {
                         let ctx = getContext("2d")
                         ctx.reset()
                         ctx.clearRect(0, 0, width, height)
-                        ctx.strokeStyle = ui.theme.accentColor
+                        //! RED on a bad-timing PROBLEM measure (same walk as the navigator), else the normal accent -- the
+                        //! dashed measure-level fallback marker picks up the problem colour just like the solid note box.
+                        ctx.strokeStyle = magModel.currentMeasureIsProblem ? "#d23b2e" : ui.theme.accentColor
                         ctx.lineWidth = 2
                         ctx.setLineDash([10, 6])
                         ctx.strokeRect(1, 1, Math.max(0, width - 2), Math.max(0, height - 2))

@@ -1881,6 +1881,10 @@ muse::RetVal<ProofingDebugGotoCommand::Output> ImportPdfController::proofingDebu
     //! Select the measure. This fires the live selectionChanged the follow band observes, so the band scrolls to +
     //! highlights the matching original measure -- exactly the behaviour a headless capture then verifies.
     notation->interaction()->select({ m }, engraving::SelectType::SINGLE);
+
+    //! Scroll the EDITOR viewport to the measure too (as the navigator's jumpTo does), so this dev tool exercises the full
+    //! select + showItem path -- without this the on-screen notation canvas keeps a stale frame on a programmatic select.
+    notation->interaction()->showItem(m);
     out.ok = true;
 
     //! Report the map rect for this global index, so the returned geometry can be checked against the band capture AND

@@ -85,7 +85,8 @@ public:
         KindRole,
         FoundRole,
         ExpectedRole,
-        AccentRole          //! per-kind accent colour (hex string) so the QML keeps the kinds visually distinguishable
+        AccentRole,         //! per-kind accent colour (hex string) so the QML keeps the kinds visually distinguishable
+        DetailRole          //! hover-tooltip detail: the exact "<kind>  <found> of <expected>" ratio kept off the row text
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -113,11 +114,24 @@ private:
     //! re-walk. Mirrors the ProofingStripModel/magnifier resubscribe idiom so a previous score's edits never drive us.
     void resubscribe();
 
-    //! Human row text: "m. {measureNumber1}  staff {staffIdx+1}  {kind}  {found}/{expected}".
+    //! PLAIN-LANGUAGE row text the user reads at a glance: "m. {measureNumber1} [staff {staffIdx+1}] \xE2\x80\x94 {plainKind}",
+    //! where plainKind is "Too many beats" / "Too few beats" / "Repeat problem" -- deliberately NOT the raw time-signature
+    //! ratio, because on a fresh OMR scan the nominal (Audiveris's read of the time signature) is often itself WRONG, so
+    //! showing "11/4 of 4/4" on the row misleads. The exact ratio is preserved as the hover tooltip (detailText) instead.
     QString rowText(const BadTimingProblem& e) const;
 
-    //! Localised short label for a kind ("Incomplete", "Voice too long", "Corrupted repeat", "Wrong length").
+    //! Hover-tooltip detail (DetailRole): the exact technical "{kind}  {found} of {expected}" ratio moved OFF the row so the
+    //! visible row stays plain, but the precise numbers a power user wants are one hover away.
+    QString detailText(const BadTimingProblem& e) const;
+
+    //! Localised short label for a kind ("Incomplete", "Voice too long", "Corrupted repeat", "Wrong length"). Used by the
+    //! tooltip detail (the technical name); the row itself uses the plain over/under-full phrasing (plainKindLabel).
     QString kindLabel(BadTimingKind kind) const;
+
+    //! PLAIN over/under-full phrasing for the row: OVERFULL (found > expected: WrongLength-over, VoiceTooLong) -> "Too many
+    //! beats"; UNDERFULL (found < expected: WrongLength-under, Incomplete) -> "Too few beats"; CorruptedRepeat -> "Repeat
+    //! problem". This is what the user reads; it never cites the (possibly-wrong) nominal.
+    QString plainKindLabel(const BadTimingProblem& e) const;
 
     //! Fixed accent colour (hex string) for a kind, kept here so the kind -> colour map lives in one place and the QML
     //! delegate just binds it. Hues are chosen to read on both the light-ivory and dark-charcoal proofing surfaces.

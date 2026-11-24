@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.6] — 2026-11-24
+
+### Changed
+- **Timing problems read in plain language.** Each row now says "Too many beats" or "Too few beats" instead of a raw
+  time fraction; the exact counts are available on hover.
+- **Clicking a Timing problems row selects and scrolls to that whole measure** in the editor.
+- **A flagged measure is marked in red** — a red outline around it in the editor, and a red highlight in the
+  original-scan band and detail view — to set it apart from a normal (blue) selection.
+- **The Timing problems panel now has a neutral gray background**, distinct from the cream of the read-only
+  original-scan and detail views, so it reads as interactive.
+
 ## [0.17.5] — 2026-11-23
 
 ### Fixed

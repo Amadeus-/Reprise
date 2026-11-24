@@ -688,6 +688,52 @@ DockPage {
                 root.setDefaultNavigationControl(null)
             }
         }
+
+        //! NOTE: Reprise EDITOR problem-measure RED HIGHLIGHT. When the selection lands on a bad-timing problem measure
+        //! (the same read-only walk that drives the Timing-problems navigator and the proofing band/magnifier red), this
+        //! model exposes that measure's LOGICAL (canvas) rect; the overlay below maps it to view px via the paint view's
+        //! fromLogicalRect() and draws a translucent red box over the bar IN THE EDITOR. It is a pure QML scene-graph
+        //! overlay parented into the paint view, so it tracks pan/zoom (re-reads paintView.matrix) and -- unlike a
+        //! canvas-paint decoration -- renders the instant the selection changes. Clicking a navigator row (which selects
+        //! the whole measure) therefore shows that measure red here. Purely visual: no MouseArea, so editor input is
+        //! untouched. Appshell is the correct home (it already depends on Reprise); the notationscene module stays generic.
+        ProblemMeasureHighlightModel {
+            id: problemHighlightModel
+
+            Component.onCompleted: problemHighlightModel.load()
+        }
+
+        Rectangle {
+            id: problemMeasureOverlay
+
+            parent: notationView.paintView
+
+            //! View-px rect of the highlighted measure. References paintView.matrix so it RECOMPUTES on every pan/zoom
+            //! (matrixChanged) and on model.changed (selection / undo re-walk), keeping the box glued to the bar.
+            readonly property rect viewRect: {
+                let _m = parent ? parent.matrix : null
+                if (!problemHighlightModel.active || !parent) {
+                    return Qt.rect(0, 0, 0, 0)
+                }
+
+                return parent.fromLogicalRect(Qt.rect(problemHighlightModel.logicalX, problemHighlightModel.logicalY,
+                                                       problemHighlightModel.logicalW, problemHighlightModel.logicalH))
+            }
+
+            visible: problemHighlightModel.active && Boolean(parent)
+            x: viewRect.x
+            y: viewRect.y
+            width: viewRect.width
+            height: viewRect.height
+            z: 1000
+
+            //! OUTLINE-ONLY: transparent fill so the measure's white editing background stays clear (a tinted fill made the
+            //! bar hard to edit); the solid red 2px border marks the problem measure without obscuring the notes underneath.
+            color: "transparent"
+            border.color: "#d23b2e"
+            border.width: 2
+            radius: 2
+        }
     }
 
     statusBar: DockStatusBar {

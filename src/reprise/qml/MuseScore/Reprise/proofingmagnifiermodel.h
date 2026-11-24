@@ -24,6 +24,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 
 #include <QObject>
 #include <QString>
@@ -39,6 +40,7 @@
 
 #include "internal/iproofingmapservice.h"
 #include "internal/iproofingviewcontrol.h"
+#include "internal/badtimingcheck.h"
 
 class QImage;
 class QTimer;
@@ -89,6 +91,11 @@ class ProofingMagnifierModel : public QObject, public muse::Contextable, public 
     //! A short human-readable pitch label for the followed note (e.g. "C4"), empty on a measure-level fallback. Header.
     Q_PROPERTY(QString currentNoteName READ currentNoteName NOTIFY followChanged)
 
+    //! true when the currently-followed measure is a bad-timing PROBLEM measure (it appears in scanScoreForBadTiming, the
+    //! SAME read-only walk that feeds the navigator) -> the magnifier draws its note/measure marker RED instead of the normal
+    //! accent blue, so a problem measure is visually distinct while proofing. Refreshed on every follow + undo-stack change.
+    Q_PROPERTY(bool currentMeasureIsProblem READ currentMeasureIsProblem NOTIFY followChanged)
+
     //! User-driven zoom factor (mouse-wheel), multiplied onto the magnifier's effective zoom. 1.0 = the auto-chosen
     //! note/measure zoom; the setter clamps to [0.5, 4.0]. A Q_PROPERTY (not a plain QML property) so it survives a model
     //! rebuild and can later be driven by a dev tool; the crop + overlays already derive from `zoom`, so this just scales.
@@ -116,6 +123,7 @@ public:
     int boxH() const { return m_boxH; }
     int currentMeasure() const { return m_currentMeasure; }
     QString currentNoteName() const { return m_currentNoteName; }
+    bool currentMeasureIsProblem() const { return m_currentMeasureIsProblem; }
     double userZoom() const { return m_userZoom; }
 
     //! Clamp zoom to [0.5, 4.0] and, if it changed, store it + emit userZoomChanged (the QML multiplies it onto the
@@ -182,6 +190,14 @@ private:
     void applyFollow(bool found, bool fallback, int32_t page, int32_t gm,
                      int32_t bx, int32_t by, int32_t bw, int32_t bh, const QString& noteName);
 
+    //! Re-walk the current score read-only (scanScoreForBadTiming -- the SAME source the navigator uses) into the problem-
+    //! measure set, then recompute the current-measure problem flag and emit followChanged if it flipped. Called on notation
+    //! switch + on every undo-stack change, so fixing a measure drops its red marker the instant the walk no longer flags it.
+    void rebuildProblemSet();
+
+    //! Recompute m_currentMeasureIsProblem from m_currentMeasure against the cached problem set (no emit; the caller emits).
+    void updateCurrentProblemFlag();
+
     //! Drive the magnifier from a NOTE key (the B1 positional key): look up its head box and, if found, magnify it (solid);
     //! on a box MISS fall back to the note's MEASURE rect (dashed). Shared by the selection path and the hover path.
     void followNoteKey(int32_t gm, int32_t staffIdx, int32_t tickInMeasure, int32_t step, int32_t octave,
@@ -227,6 +243,12 @@ private:
     int32_t m_boxH = 0;
     int32_t m_currentMeasure = -1;
     QString m_currentNoteName;
+
+    //! POSITIONAL indices (pickup = 0) of every measure the bad-timing walk currently flags, so applyFollow can colour a
+    //! followed problem measure red in O(log n). Rebuilt by rebuildProblemSet on notation switch + undo-stack change.
+    std::set<int32_t> m_problemMeasures;
+    //! true when m_currentMeasure is in m_problemMeasures (the QML binds currentMeasureIsProblem to pick red vs accent blue).
+    bool m_currentMeasureIsProblem = false;
 
     //! User-driven magnifier zoom (mouse-wheel). 1.0 = the auto-chosen note/measure zoom; clamped to [0.5, 4.0].
     double m_userZoom = 1.0;
