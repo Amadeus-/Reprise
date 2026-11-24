@@ -410,8 +410,11 @@ DockPage {
 
             navigationSection: root.navigationPanelSec(proofingMagnifierPanel.location)
 
-            width: 180
-            minimumWidth: 160
+            //! Default set to the width the user manually dragged to and confirmed as ideal for reading the bad-timing
+            //! navigator rows (recovered as 257 logical px from the persisted KDDock state); the worklist rows are now the
+            //! binding constraint on this dock, and this width shows them in full.
+            width: 257
+            minimumWidth: 240
             maximumWidth: 900
 
             minimumHeight: root.panelMinDimension

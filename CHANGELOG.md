@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.4] — 2026-11-23
+
+### Added
+- **The Timing problems list now flags wrong-length measures.** A measure whose actual length doesn't match its time
+  signature — a common sign of a recognition rhythm mis-read — is now listed (e.g. "m. 38 — Wrong length 7/8 of
+  3/4"), with click-to-jump like the other entries. Pickup/anacrusis bars and a matching completing final bar are
+  excluded so they aren't flagged.
+
+### Changed
+- **The Full detail view opens a bit wider by default** so the Timing problems rows read fully.
+
 ## [0.17.3] — 2026-11-23
 
 ### Changed

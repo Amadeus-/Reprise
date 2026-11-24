@@ -84,7 +84,8 @@ public:
         StaffRole,
         KindRole,
         FoundRole,
-        ExpectedRole
+        ExpectedRole,
+        AccentRole          //! per-kind accent colour (hex string) so the QML keeps the kinds visually distinguishable
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -115,8 +116,12 @@ private:
     //! Human row text: "m. {measureNumber1}  staff {staffIdx+1}  {kind}  {found}/{expected}".
     QString rowText(const BadTimingProblem& e) const;
 
-    //! Localised short label for a kind ("Incomplete", "Voice too long", "Corrupted repeat").
+    //! Localised short label for a kind ("Incomplete", "Voice too long", "Corrupted repeat", "Wrong length").
     QString kindLabel(BadTimingKind kind) const;
+
+    //! Fixed accent colour (hex string) for a kind, kept here so the kind -> colour map lives in one place and the QML
+    //! delegate just binds it. Hues are chosen to read on both the light-ivory and dark-charcoal proofing surfaces.
+    QString kindAccent(BadTimingKind kind) const;
 
     bool m_inited = false;
     bool m_hasScore = false;

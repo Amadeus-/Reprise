@@ -130,6 +130,7 @@ Item {
 
                     required property int index
                     required property string display
+                    required property string accentColor
 
                     height: 28
                     width: ListView.view.width
@@ -141,9 +142,20 @@ Item {
                         navModel.jumpTo(item.index)
                     }
 
+                    //! Per-kind coloured accent down the left edge so the problem kinds stay visually distinct at a glance
+                    //! (violet = wrong length, amber = incomplete, orange = voice too long, red = corrupted repeat). The
+                    //! colour comes from the model (accentColor role) so the kind -> colour map lives in one place.
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 4
+                        color: item.accentColor
+                    }
+
                     StyledTextLabel {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
+                        anchors.leftMargin: 14
                         anchors.rightMargin: 10
                         horizontalAlignment: Text.AlignLeft
                         text: item.display

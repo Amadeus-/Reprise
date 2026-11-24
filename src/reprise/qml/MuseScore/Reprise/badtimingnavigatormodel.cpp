@@ -145,7 +145,10 @@ void BadTimingNavigatorModel::jumpTo(int row)
         return;
     }
 
-    const mu::engraving::staff_idx_t staffIdx = static_cast<mu::engraving::staff_idx_t>(entry.staffIdx);
+    //! A measure-level entry (WrongLength) carries staffIdx == -1; jump to staff 0 so a valid chord/rest is selected and
+    //! the band/magnifier/editor follow. Per-staff entries use their own staff.
+    const mu::engraving::staff_idx_t staffIdx
+        = entry.staffIdx < 0 ? 0 : static_cast<mu::engraving::staff_idx_t>(entry.staffIdx);
 
     //! Prefer the first chord/rest of the problem staff so the selection (and thus the magnifier's note follow) lands on
     //! that staff; fall back to any chord/rest in the measure, then to the measure frame itself.
@@ -196,13 +199,16 @@ QVariant BadTimingNavigatorModel::data(const QModelIndex& index, int role) const
     case MeasureNumberRole:
         return e.measureNumber1;
     case StaffRole:
-        return e.staffIdx + 1;
+        //! staffIdx < 0 marks a measure-level entry (WrongLength) -> show the staff cell as an em dash.
+        return e.staffIdx < 0 ? QVariant(QString::fromUtf8("\xE2\x80\x94")) : QVariant(e.staffIdx + 1);
     case KindRole:
         return kindLabel(e.kind);
     case FoundRole:
         return e.found.toString().toQString();
     case ExpectedRole:
         return e.expected.toString().toQString();
+    case AccentRole:
+        return kindAccent(e.kind);
     default:
         return QVariant();
     }
@@ -216,12 +222,24 @@ QHash<int, QByteArray> BadTimingNavigatorModel::roleNames() const
         { StaffRole, "staffNumber" },
         { KindRole, "kindLabel" },
         { FoundRole, "found" },
-        { ExpectedRole, "expected" }
+        { ExpectedRole, "expected" },
+        { AccentRole, "accentColor" }
     };
 }
 
 QString BadTimingNavigatorModel::rowText(const BadTimingProblem& e) const
 {
+    //! Measure-level entry (staffIdx < 0, e.g. WrongLength): no staff column -- length is a property of the whole bar.
+    if (e.staffIdx < 0)
+    {
+        //: Measure-level bad-timing navigator row, e.g. "m. 37  —  Wrong length  138/128 of 4/4" (%1 = measure number,
+        //: %2 = problem kind, %3 = found duration, %4 = expected duration).
+        return muse::qtrc("reprise", "m. %1  \xE2\x80\x94  %2  %3 of %4")
+               .arg(e.measureNumber1)
+               .arg(kindLabel(e.kind))
+               .arg(e.found.toString().toQString(), e.expected.toString().toQString());
+    }
+
     //: Bad-timing navigator row, e.g. "m. 5  staff 1  Incomplete  3/4 of 4/4" (%1 = measure number, %2 = staff number,
     //: %3 = problem kind, %4 = found duration, %5 = expected duration).
     return muse::qtrc("reprise", "m. %1  staff %2  %3  %4 of %5")
@@ -241,7 +259,26 @@ QString BadTimingNavigatorModel::kindLabel(BadTimingKind kind) const
         return muse::qtrc("reprise", "Voice too long");
     case BadTimingKind::CorruptedRepeat:
         return muse::qtrc("reprise", "Corrupted repeat");
+    case BadTimingKind::WrongLength:
+        return muse::qtrc("reprise", "Wrong length");
     }
 
     return QString();
+}
+
+QString BadTimingNavigatorModel::kindAccent(BadTimingKind kind) const
+{
+    switch (kind)
+    {
+    case BadTimingKind::Incomplete:
+        return QStringLiteral("#d08b1f");       //! amber -- a bar that is short
+    case BadTimingKind::VoiceTooLong:
+        return QStringLiteral("#e06c2e");       //! orange -- a voice runs past the bar
+    case BadTimingKind::CorruptedRepeat:
+        return QStringLiteral("#c0392b");       //! red -- a structural corruption
+    case BadTimingKind::WrongLength:
+        return QStringLiteral("#7a52c7");       //! violet -- the bar length itself disagrees with the time signature
+    }
+
+    return QStringLiteral("#d08b1f");
 }

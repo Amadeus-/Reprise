@@ -38,12 +38,15 @@ enum class BadTimingKind : int32_t
 {
     Incomplete = 0,     //! voice 1 (voices[0]) does not fill the measure length
     VoiceTooLong,       //! a voice > 1 holds more than the measure length
-    CorruptedRepeat     //! a measure-repeat group whose repeat element is missing
+    CorruptedRepeat,    //! a measure-repeat group whose repeat element is missing
+    WrongLength         //! the measure's actual length (ticks) != its time-signature nominal (an "irregular" bar)
 };
 
 //! One problem measure x staff. measureIndex0 is the POSITIONAL 0-based index (pickup = 0), matching the proofing
 //! map's globalMeasureIndex and the magnifier header, so a click lines the whole proofing view up. found / expected
-//! are the measured vs. expected durations (rendered as fraction strings by the navigator model).
+//! are the measured vs. expected durations (rendered as fraction strings by the navigator model). staffIdx == -1 marks
+//! a MEASURE-LEVEL entry (the WrongLength kind, since a measure's length is a measure property, not per-staff): the row
+//! shows the staff as "—" and the click jumps to the measure's first chord/rest on staff 0.
 struct BadTimingProblem
 {
     int32_t measureIndex0 = 0;
