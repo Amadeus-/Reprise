@@ -131,8 +131,15 @@ void ProofingStripModel::load()
 
 void ProofingStripModel::rebuild()
 {
+    m_inRebuild = true;
+
     clearRendered();
     m_pages.clear();
+    m_pdfDoc.reset();
+    m_sourcePath.clear();
+    m_renderDir.clear();
+    m_sourceIsPdf = false;
+    m_pageCount = 0;
 
     const auto svc = proofingMapService();
     if (svc && svc->hasMap())
@@ -140,28 +147,35 @@ void ProofingStripModel::rebuild()
         const ProofingMap& map = svc->map();
         ++m_generation;
 
-        const QString dir = renderDir();
-        QDir().mkpath(dir);
+        m_renderDir = renderDir();
+        QDir().mkpath(m_renderDir);
 
-        const QString source = QString::fromStdString(map.sourcePath);
-        if (source.endsWith(".pdf", Qt::CaseInsensitive))
-        {
-            renderPdfPages(source, map, dir);
-        }
-        else
-        {
-            renderImagePages(source, map, dir);
-        }
+        m_sourcePath = QString::fromStdString(map.sourcePath);
+        m_sourceIsPdf = m_sourcePath.endsWith(".pdf", Qt::CaseInsensitive);
+
+        //! Open the source + size placeholders only; the page pixels render lazily (ensurePageRendered) one page at a time.
+        prepareLazyPages(map);
     }
 
-    //! Only advertise the band once at least one page actually rendered -- an unreadable source should not leave an empty
-    //! band hanging above the score.
-    m_hasMap = !m_pages.isEmpty();
+    //! Render ONLY the first page now so the band shows immediately; the rest render on demand as the follow reaches them.
+    //! Gate hasMap on that first page actually rendering -- an unreadable source should not leave an empty band hanging
+    //! above the score (preserves the pre-lazy "advertise once at least one page rendered" contract).
+    const bool firstOk = (m_pageCount > 0) && ensurePageRendered(0);
+    if (!firstOk)
+    {
+        m_pages.clear();
+        m_pageCount = 0;
+        m_pdfDoc.reset();
+    }
+
+    m_hasMap = m_pageCount > 0;
 
     //! Default the band to the first page until a selection drives the follow; -1 when there is nothing to show.
-    m_currentPageIndex = m_pages.isEmpty() ? -1 : 0;
+    m_currentPageIndex = (m_pageCount > 0) ? 0 : -1;
     m_hasCurrent = false;
     m_currentMeasure = -1;
+
+    m_inRebuild = false;
 
     emit changed();
 
@@ -176,35 +190,126 @@ void ProofingStripModel::rebuild()
     return;
 }
 
-void ProofingStripModel::renderPdfPages(const QString& sourcePath, const ProofingMap& map, const QString& dir)
+void ProofingStripModel::prepareLazyPages(const ProofingMap& map)
 {
-    QPdfDocument doc;
-    if (doc.load(sourcePath) != QPdfDocument::Error::None || doc.status() != QPdfDocument::Status::Ready)
+    int32_t pageCount = 0;
+
+    if (m_sourceIsPdf)
     {
-        LOGW() << "Reprise: proofing band: cannot load source PDF " << sourcePath;
-        return;
+        m_pdfDoc = std::make_unique<QPdfDocument>();
+        if (m_pdfDoc->load(m_sourcePath) != QPdfDocument::Error::None || m_pdfDoc->status() != QPdfDocument::Status::Ready)
+        {
+            LOGW() << "Reprise: proofing band: cannot load source PDF " << m_sourcePath;
+            m_pdfDoc.reset();
+
+            return;
+        }
+
+        const int32_t docPages = m_pdfDoc->pageCount();
+        if (docPages <= 0)
+        {
+            m_pdfDoc.reset();
+
+            return;
+        }
+
+        //! Recognised page count (map sheets), taken as the leading pages -- correct for an "all pages" / from-page-1
+        //! import; fall back to every page when the map has no page list.
+        pageCount = map.pages.empty() ? docPages : static_cast<int32_t>(map.pages.size());
+        pageCount = std::min(pageCount, docPages);
+    }
+    else
+    {
+        QImageReader reader(m_sourcePath);
+
+        //! imageCount() FIRST: it primes qtiff's directory count so jumpToNextImage() walks a multi-frame TIFF (see the
+        //! multi-frame TIFF idiom in reference_musescore_build_gotchas). For a plain single-frame image it returns 1.
+        int32_t frameCount = reader.imageCount();
+        if (frameCount <= 0)
+        {
+            frameCount = 1;
+        }
+
+        pageCount = map.pages.empty() ? frameCount : static_cast<int32_t>(map.pages.size());
+        pageCount = std::min(pageCount, frameCount);
     }
 
-    const int32_t docPages = doc.pageCount();
-    if (docPages <= 0)
-    {
-        return;
-    }
-
-    //! Render exactly the recognised page count (map sheets), taken as the leading pages of the document -- correct for
-    //! an "all pages" / from-page-1 import. A non-leading page subrange is a known Phase A simplification (the map does
-    //! not record which original page each sheet came from); fall back to every page when the map has no page list.
-    int32_t pageCount = map.pages.empty() ? docPages : static_cast<int32_t>(map.pages.size());
-    pageCount = std::min(pageCount, docPages);
-
-    QPdfDocumentRenderOptions options;
-
+    //! One placeholder per page: the Audiveris sheet-image dims are known from the map now; the rendered PNG url + pixel
+    //! size are filled lazily by ensurePageRendered the first time the band actually displays that page.
     for (int32_t i = 0; i < pageCount; ++i)
     {
-        const QSizeF pts = doc.pagePointSize(i);
+        const int32_t sheetW = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageWidth : 0;
+        const int32_t sheetH = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageHeight : 0;
+
+        QVariantMap entry;
+        entry["url"] = QString();
+        entry["width"] = 0;
+        entry["height"] = 0;
+        entry["sheetWidth"] = sheetW;
+        entry["sheetHeight"] = sheetH;
+        m_pages.append(entry);
+    }
+
+    m_pageCount = pageCount;
+
+    return;
+}
+
+bool ProofingStripModel::ensurePageRendered(int32_t index)
+{
+    if (index < 0 || index >= m_pageCount || index >= static_cast<int32_t>(m_pages.size()))
+    {
+        return false;
+    }
+
+    QVariantMap entry = m_pages.at(index).toMap();
+    if (!entry.value("url").toString().isEmpty())
+    {
+        return true;   //! already rendered (cached)
+    }
+
+    const QImage img = renderPageImage(index);
+    if (img.isNull())
+    {
+        return false;
+    }
+
+    const QVariantMap filled = savePageEntry(img, index, entry.value("sheetWidth").toInt(), entry.value("sheetHeight").toInt());
+    if (filled.isEmpty())
+    {
+        return false;
+    }
+
+    m_pages[index] = filled;
+
+    //! Filling a placeholder changes the pages list; a bound QML Image must re-read. During rebuild the single emit at the
+    //! end covers it (avoids a mid-rebuild emit against half-set state); on the on-demand (follow) path, emit now.
+    if (!m_inRebuild)
+    {
+        emit changed();
+    }
+
+    return true;
+}
+
+QImage ProofingStripModel::renderPageImage(int32_t index) const
+{
+    if (index < 0 || index >= m_pageCount)
+    {
+        return QImage();
+    }
+
+    if (m_sourceIsPdf)
+    {
+        if (!m_pdfDoc)
+        {
+            return QImage();
+        }
+
+        const QSizeF pts = m_pdfDoc->pagePointSize(index);
         if (pts.width() <= 0.0 || pts.height() <= 0.0)
         {
-            continue;
+            return QImage();
         }
 
         //! Fit the page into a BAND_PAGE_MAX_SIDE box, preserving aspect, and render straight to that pixel size.
@@ -217,60 +322,38 @@ void ProofingStripModel::renderPdfPages(const QString& sourcePath, const Proofin
             h = static_cast<int32_t>(std::lround(static_cast<double>(w) / aspect));
         }
 
-        const QImage rendered = doc.render(i, QSize(std::max<int32_t>(1, w), std::max<int32_t>(1, h)), options);
+        QPdfDocumentRenderOptions options;
+        const QImage rendered = m_pdfDoc->render(index, QSize(std::max<int32_t>(1, w), std::max<int32_t>(1, h)), options);
         if (rendered.isNull())
         {
-            LOGW() << "Reprise: proofing band: PDF page " << i << " rendered empty";
-            continue;
+            LOGW() << "Reprise: proofing band: PDF page " << index << " rendered empty";
         }
 
-        const int32_t sheetW = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageWidth : 0;
-        const int32_t sheetH = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageHeight : 0;
-        appendPage(rendered, dir, i, sheetW, sheetH);
+        return rendered;
     }
 
-    return;
+    //! Image source: re-open the reader and walk to frame `index` (single-frame files return frame 0). imageCount() first
+    //! primes qtiff's directory count so jumpToNextImage() walks a multi-frame TIFF (the multi-frame TIFF idiom).
+    QImageReader reader(m_sourcePath);
+    (void)reader.imageCount();
+    for (int32_t i = 0; i < index; ++i)
+    {
+        if (!reader.jumpToNextImage())
+        {
+            return QImage();
+        }
+    }
+
+    const QImage frame = reader.read();
+    if (frame.isNull())
+    {
+        LOGW() << "Reprise: proofing band: image frame " << index << " could not be read from " << m_sourcePath;
+    }
+
+    return frame;
 }
 
-void ProofingStripModel::renderImagePages(const QString& sourcePath, const ProofingMap& map, const QString& dir)
-{
-    QImageReader reader(sourcePath);
-
-    //! imageCount() FIRST: it primes qtiff's directory count so jumpToNextImage() walks a multi-frame TIFF (see the
-    //! multi-frame TIFF idiom in reference_musescore_build_gotchas). For a plain single-frame image it returns 1.
-    int32_t frameCount = reader.imageCount();
-    if (frameCount <= 0)
-    {
-        frameCount = 1;
-    }
-
-    //! Mirror the PDF branch: show the recognised sheet count, clamped to what the file actually holds.
-    int32_t pageCount = map.pages.empty() ? frameCount : static_cast<int32_t>(map.pages.size());
-    pageCount = std::min(pageCount, frameCount);
-
-    for (int32_t i = 0; i < pageCount; ++i)
-    {
-        if (i > 0 && !reader.jumpToNextImage())
-        {
-            break;
-        }
-
-        const QImage frame = reader.read();
-        if (frame.isNull())
-        {
-            LOGW() << "Reprise: proofing band: image frame " << i << " could not be read from " << sourcePath;
-            break;
-        }
-
-        const int32_t sheetW = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageWidth : 0;
-        const int32_t sheetH = (i < static_cast<int32_t>(map.pages.size())) ? map.pages[i].imageHeight : 0;
-        appendPage(frame, dir, i, sheetW, sheetH);
-    }
-
-    return;
-}
-
-void ProofingStripModel::appendPage(const QImage& image, const QString& dir, int32_t index, int32_t sheetW, int32_t sheetH)
+QVariantMap ProofingStripModel::savePageEntry(const QImage& image, int32_t index, int32_t sheetW, int32_t sheetH) const
 {
     QImage out = image;
     const int32_t longest = std::max(out.width(), out.height());
@@ -281,11 +364,12 @@ void ProofingStripModel::appendPage(const QImage& image, const QString& dir, int
               : out.scaledToHeight(BAND_PAGE_MAX_SIDE, Qt::SmoothTransformation);
     }
 
-    const QString path = dir + QString("/sheet%1_%2.png").arg(index).arg(m_generation);
+    const QString path = m_renderDir + QString("/sheet%1_%2.png").arg(index).arg(m_generation);
     if (!out.save(path, "PNG"))
     {
         LOGW() << "Reprise: proofing band: failed to write page png " << path;
-        return;
+
+        return QVariantMap();
     }
 
     //! Fall back to the rendered dims when the map carries no sheet-image size for this page: the band then scales the
@@ -299,9 +383,8 @@ void ProofingStripModel::appendPage(const QImage& image, const QString& dir, int
     entry["height"] = out.height();
     entry["sheetWidth"] = sw;
     entry["sheetHeight"] = sh;
-    m_pages.append(entry);
 
-    return;
+    return entry;
 }
 
 void ProofingStripModel::resubscribeSelection()
@@ -487,6 +570,13 @@ void ProofingStripModel::followMeasure(int32_t measure)
         m_rectY = ry;
         m_rectW = rw;
         m_rectH = rh;
+    }
+
+    //! LAZY: render the page we are about to show if it has not been rendered yet, so the bound QML Image has a url the
+    //! instant followChanged fires (ensurePageRendered emits changed() when it fills, so pages[newPage] is ready first).
+    if (newPage >= 0)
+    {
+        ensurePageRendered(newPage);
     }
 
     emit followChanged();

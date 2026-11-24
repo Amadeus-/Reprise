@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.5] — 2026-11-23
+
+### Fixed
+- **Opening a multi-page project no longer freezes for several seconds.** The original-scan band and detail view now
+  render each scanned page only when you first move to it, instead of rendering every page up front — so a project
+  opens quickly no matter how many pages it has (a long scan that used to lock the window for several seconds now
+  opens in about a second).
+
 ## [0.17.4] — 2026-11-23
 
 ### Added

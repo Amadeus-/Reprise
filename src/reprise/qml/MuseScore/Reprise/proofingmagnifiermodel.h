@@ -28,6 +28,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 #include <qqmlintegration.h>
 
 #include "modularity/ioc.h"
@@ -41,6 +42,7 @@
 
 class QImage;
 class QTimer;
+class QPdfDocument;
 
 namespace mu::reprise {
 //! View-model behind the Reprise Two-Pane Proofing FULL DETAIL VIEW -- the floating "Full detail view" MAGNIFIER (Phase
@@ -138,17 +140,28 @@ private:
     //! coalesces a burst of notifies into one render.
     void scheduleRebuild();
 
-    //! Re-render from whatever the service currently holds (clears the previous render first), then recompute the follow.
+    //! Re-point the magnifier at whatever the service currently holds (clears the previous render first). LAZY: this only
+    //! opens the source + sizes m_pages with one PLACEHOLDER entry per recognised page and renders the FIRST page; the rest
+    //! render on demand the first time the follow lands on them (ensurePageRendered). Rendering + PNG-encoding every page
+    //! here -- at the magnifier's HIGHER resolution -- was the dominant cost that froze a multi-page .repr open, and the
+    //! magnifier only ever displays ONE page at a time. Then recompute the follow against the fresh map.
     void rebuild();
 
-    //! Render the recognised pages of a source PDF via QPdfDocument, at the magnifier's higher resolution.
-    void renderPdfPages(const QString& sourcePath, const ProofingMap& map, const QString& dir);
+    //! Open the source (PDF via QPdfDocument kept alive for on-demand page renders; images re-opened per page) and fill
+    //! m_pages with one placeholder entry per recognised page. Sets m_pageCount; leaves every entry's url empty.
+    void prepareLazyPages(const ProofingMap& map);
 
-    //! Render the recognised frames of a source image (single-frame, or multi-frame TIFF via the frame-walk idiom).
-    void renderImagePages(const QString& sourcePath, const ProofingMap& map, const QString& dir);
+    //! Render page `index` to a PNG and fill its m_pages entry if not already done (cached by a non-empty url). Returns true
+    //! when the page has a rendered PNG after the call. Emits changed() when it fills a page so a bound QML Image re-reads.
+    bool ensurePageRendered(int32_t index);
 
-    //! Scale (if needed), write <dir>/sheetN_gen.png, and append its { url, width, height, sheetWidth, sheetHeight }.
-    void appendPage(const QImage& image, const QString& dir, int32_t index, int32_t sheetW, int32_t sheetH);
+    //! Render a single source page to a QImage at the magnifier resolution (PDF via m_pdfDoc; image via QImageReader
+    //! frame-walk). sheetW/sheetH (the native scan dims for this page) cap the render side so it never upscales. Null on error.
+    QImage renderPageImage(int32_t index, int32_t sheetW, int32_t sheetH) const;
+
+    //! Scale (if needed), write <dir>/sheetN_gen.png, and return its { url, width, height, sheetWidth, sheetHeight } entry
+    //! (empty map on failure).
+    QVariantMap savePageEntry(const QImage& image, int32_t index, int32_t sheetW, int32_t sheetH) const;
 
     //! Delete the PNGs written by the previous render (this instance's temp subdir only).
     void clearRendered();
@@ -191,6 +204,15 @@ private:
     bool m_hasMap = false;
     QVariantList m_pages;
     int32_t m_generation = 0;
+
+    //! LAZY-RENDER state (set in rebuild, used by ensurePageRendered for on-demand per-page rendering). The magnifier
+    //! renders each page the first time the follow lands on it, not all up front -- so a multi-page .repr opens fast.
+    QString m_sourcePath;                       //! the proofing source (deskewed render if present, else the original scan)
+    QString m_renderDir;                        //! this magnifier's per-instance temp subdir for the rendered page PNGs
+    bool m_sourceIsPdf = false;                 //! true -> render via m_pdfDoc; false -> QImageReader frame-walk
+    int32_t m_pageCount = 0;                     //! recognised page count (== m_pages.size() once prepared)
+    std::unique_ptr<QPdfDocument> m_pdfDoc;     //! kept alive across on-demand renders for a PDF source (null for images)
+    bool m_inRebuild = false;                   //! guards ensurePageRendered from emitting changed() mid-rebuild (one emit at the end)
 
     //! true between a scheduleRebuild() and the deferred render firing, so a burst of mapChanged / load notifies coalesces
     //! into a single render rather than queuing one per notify.

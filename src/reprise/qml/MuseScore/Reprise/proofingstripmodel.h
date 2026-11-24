@@ -28,6 +28,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 #include <qqmlintegration.h>
 
 #include "modularity/ioc.h"
@@ -40,6 +41,7 @@
 
 class QImage;
 class QTimer;
+class QPdfDocument;
 
 namespace mu::reprise {
 //! View-model behind the Reprise Two-Pane Proofing READABLE FOLLOWING BAND (Phase A3): the view-only band above the
@@ -118,19 +120,28 @@ signals:
     void userZoomChanged();
 
 private:
-    //! Re-render the band from whatever the service currently holds (clears the previous render first), then recompute
-    //! the follow against the fresh map.
+    //! Re-point the band at whatever the service currently holds (clears the previous render first). LAZY: this only opens
+    //! the source + sizes m_pages with one PLACEHOLDER entry per recognised page (geometry known from the map, pixels not
+    //! rendered yet) and renders the FIRST page so the band shows immediately; the remaining pages render on demand the
+    //! first time the follow lands on them (ensurePageRendered). This keeps a multi-page .repr open fast -- rendering +
+    //! PNG-encoding every page here was the ~N x per-page cost that froze the UI on open, and the band only ever displays
+    //! ONE page at a time, so pre-rendering the rest was pure waste. Then recompute the follow against the fresh map.
     void rebuild();
 
-    //! Render the recognised pages of a source PDF via QPdfDocument.
-    void renderPdfPages(const QString& sourcePath, const ProofingMap& map, const QString& dir);
+    //! Open the source (PDF via QPdfDocument kept alive for on-demand page renders; images re-opened per page) and fill
+    //! m_pages with one placeholder entry per recognised page. Sets m_pageCount; leaves every entry's url empty.
+    void prepareLazyPages(const ProofingMap& map);
 
-    //! Render the recognised frames of a source image (single-frame, or multi-frame TIFF via the frame-walk idiom).
-    void renderImagePages(const QString& sourcePath, const ProofingMap& map, const QString& dir);
+    //! Render page `index` to a PNG and fill its m_pages entry if not already done (cached by a non-empty url). Returns true
+    //! when the page has a rendered PNG after the call. Emits changed() when it fills a page so a bound QML Image re-reads.
+    bool ensurePageRendered(int32_t index);
 
-    //! Scale (if needed), write <dir>/sheetN_gen.png, and append its { url, width, height, sheetWidth, sheetHeight }
-    //! entry to m_pages. sheetW/sheetH are the Audiveris sheet-image dims for this page (0 -> fall back to the render dims).
-    void appendPage(const QImage& image, const QString& dir, int32_t index, int32_t sheetW, int32_t sheetH);
+    //! Render a single source page to a QImage (PDF via the held m_pdfDoc; image via QImageReader frame-walk). Null on error.
+    QImage renderPageImage(int32_t index) const;
+
+    //! Scale (if needed), write <dir>/sheetN_gen.png, and return its { url, width, height, sheetWidth, sheetHeight } entry
+    //! (empty map on failure). sheetW/sheetH are the Audiveris sheet-image dims for this page (0 -> fall back to render dims).
+    QVariantMap savePageEntry(const QImage& image, int32_t index, int32_t sheetW, int32_t sheetH) const;
 
     //! Delete the PNGs written by the previous render (this instance's temp subdir only).
     void clearRendered();
@@ -166,6 +177,15 @@ private:
     bool m_hasMap = false;
     QVariantList m_pages;
     int32_t m_generation = 0;
+
+    //! LAZY-RENDER state (set in rebuild, used by ensurePageRendered for on-demand per-page rendering). The band renders
+    //! each page the first time the follow lands on it, not all up front -- so a multi-page .repr opens in one page's time.
+    QString m_sourcePath;                       //! the proofing source (deskewed render if present, else the original scan)
+    QString m_renderDir;                        //! this band's per-instance temp subdir for the rendered page PNGs
+    bool m_sourceIsPdf = false;                 //! true -> render via m_pdfDoc; false -> QImageReader frame-walk
+    int32_t m_pageCount = 0;                     //! recognised page count (== m_pages.size() once prepared)
+    std::unique_ptr<QPdfDocument> m_pdfDoc;     //! kept alive across on-demand renders for a PDF source (null for images)
+    bool m_inRebuild = false;                   //! guards ensurePageRendered from emitting changed() mid-rebuild (one emit at the end)
 
     int32_t m_currentPageIndex = -1;
     bool m_hasCurrent = false;
