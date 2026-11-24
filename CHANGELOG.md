@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.7] — 2026-11-24
+
+### Changed
+- **Reprise opens maximized on first launch.** A fresh install now opens maximized instead of a small default
+  window. Once you resize or move the window, your size and position are remembered and restored as before — a
+  returning window is never force-maximized over your saved layout.
+
 ## [0.17.6] — 2026-11-24
 
 ### Changed

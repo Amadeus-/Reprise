@@ -29,6 +29,7 @@ import Muse.Interactive
 import Muse.Ui
 import Muse.UiComponents
 import MuseScore.AppShell
+import MuseScore.Reprise
 
 import "./HomePage"
 import "./NotationPage"
@@ -43,6 +44,17 @@ DockWindow {
     onPageLoaded: {
         console.log("WindowContent::onPageLoaded")
         interactiveProvider.onPageOpened()
+
+        //! NOTE (Reprise): on the FIRST page load with no persisted window geometry (fresh profile), open the main window
+        //! maximized instead of the hardcoded 1150x800 QML default. muse's own fallback for this is disabled upstream
+        //! (dockwindow.cpp) and muse\ is kept pristine, so this reinstates the intent from the appshell side. The helper
+        //! runs its decision at most once and only when no geometry was restored, so a normal launch that restores the
+        //! user's saved size/position is never force-maximized.
+        startupWindow.maximizeOnFirstLaunchIfNeeded()
+    }
+
+    StartupWindowModel {
+        id: startupWindow
     }
 
     InteractiveProvider {
