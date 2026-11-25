@@ -79,6 +79,9 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API tool: set the live follow band's / magnifier's user zoom (drive + screenshot zoom states)
     makeCommandInfo<ProofingDebugSetZoomCommand>(),
+
+    // Reprise dev MCP/API tool: regularize an under-full measure to its time signature (drives the bad-timing navigator Fix)
+    makeCommandInfo<ProofingDebugRegularizeCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

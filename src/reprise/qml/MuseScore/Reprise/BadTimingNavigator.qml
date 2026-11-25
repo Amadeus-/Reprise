@@ -130,6 +130,9 @@ Item {
                     required property string display
                     required property string accentColor
                     required property string detail
+                    //! true only for an UNDER-full bar ("Too few beats"): the one-click Fix (extend-to-timesig, fill with
+                    //! rests) is safe. false for over-full / corrupted / exactly-nominal rows -> the Fix button is disabled.
+                    required property bool canRegularize
 
                     height: 28
                     width: ListView.view.width
@@ -159,10 +162,40 @@ Item {
                     StyledTextLabel {
                         anchors.fill: parent
                         anchors.leftMargin: 14
-                        anchors.rightMargin: 10
+                        //! Leave room on the right for the (narrow) Fix button so the row text never runs under it.
+                        anchors.rightMargin: 60
                         horizontalAlignment: Text.AlignLeft
+                        elide: Text.ElideRight
                         text: item.display
                         color: ui.theme.fontPrimaryColor
+                    }
+
+                    //! One-click "Regularize measure to time signature". ENABLED only for an under-full bar (canRegularize);
+                    //! DISABLED (greyed) otherwise so it can never truncate an over-full bar. The tooltip states, in the
+                    //! enabled case, that it fills with rests; in the disabled case, that the extra beats must be removed by
+                    //! hand. The server-side regularize(row) guard refuses anyway, so this is purely the UI affordance.
+                    FlatButton {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        height: 20
+                        //! isNarrow drops muse FlatButton's default minWidth 132 -> 24 (margins 16 -> 12) so the button hugs
+                        //! the short "Fix" label instead of overflowing the row; width stays content-sized (locale-safe).
+                        isNarrow: true
+
+                        text: qsTrc("reprise", "Fix")
+                        enabled: item.canRegularize
+
+                        toolTipTitle: qsTrc("reprise", "Regularize measure")
+                        toolTipDescription: item.canRegularize
+                                            ? qsTrc("reprise", "Extend this measure to its time signature (adds rests to fill)")
+                                            : qsTrc("reprise", "Only a measure with too few beats can be auto-extended — remove the extra beats manually")
+
+                        onClicked: {
+                            listView.currentIndex = item.index
+                            navModel.regularize(item.index)
+                        }
                     }
                 }
             }

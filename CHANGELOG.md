@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.9] — 2026-11-24
+
+### Added
+- **One-click "Fix" on a timing problem.** On a measure flagged "Too few beats" in the Timing problems panel, a
+  **Fix** button extends the measure to its time signature by adding rests — you then replace a rest with the note
+  Reprise couldn't read (it does not guess it). Fix is disabled on "Too many beats" and repeat rows, since removing
+  beats could delete notes. A single undo reverts the change.
+
 ## [0.17.8] — 2026-11-24
 
 ### Fixed

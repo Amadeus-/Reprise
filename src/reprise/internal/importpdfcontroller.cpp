@@ -53,6 +53,7 @@
 #include "notation/inotationinteraction.h"
 #include "notation/inotationelements.h"
 #include "notation/inotationselection.h"
+#include "notation/inotationundostack.h"
 
 #include "engraving/dom/score.h"
 #include "engraving/dom/measure.h"
@@ -650,6 +651,10 @@ void ImportPdfController::init()
     //! Dev tool: set the live Two-Pane Proofing follow band's / magnifier's user zoom (drive + screenshot zoom states).
     commandDispatcher()->onRequest<ProofingDebugSetZoomCommand>(this, std::function<muse::RetVal<ProofingDebugSetZoomCommand::Output>(const ProofingDebugSetZoomCommand&)>(
                                                                     [this](const ProofingDebugSetZoomCommand& c) { return proofingDebugSetZoom(c); }));
+
+    //! Dev tool: drive the bad-timing navigator's one-click Fix -- regularize an under-full measure to its time signature.
+    commandDispatcher()->onRequest<ProofingDebugRegularizeCommand>(this, std::function<muse::RetVal<ProofingDebugRegularizeCommand::Output>(const ProofingDebugRegularizeCommand&)>(
+                                                                       [this](const ProofingDebugRegularizeCommand& c) { return proofingDebugRegularize(c); }));
 
     //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
     //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
@@ -1907,6 +1912,81 @@ muse::RetVal<ProofingDebugGotoCommand::Output> ImportPdfController::proofingDebu
                 break;
             }
         }
+    }
+
+    return RV::make_ok(out);
+}
+
+muse::RetVal<ProofingDebugRegularizeCommand::Output> ImportPdfController::proofingDebugRegularize(const ProofingDebugRegularizeCommand& cmd)
+{
+    using RV = muse::RetVal<ProofingDebugRegularizeCommand::Output>;
+
+    ProofingDebugRegularizeCommand::Output out;
+    out.measure = cmd.measure;
+
+    if (cmd.measure < 0)
+    {
+        out.error = "measure index must be >= 0";
+        return RV::make_ok(out);
+    }
+
+    const notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    if (!notation || !notation->undoStack())
+    {
+        out.error = "no current notation (open or import a score first)";
+        return RV::make_ok(out);
+    }
+
+    engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score)
+    {
+        out.error = "current notation has no score";
+        return RV::make_ok(out);
+    }
+
+    //! Walk to the Nth Measure positionally (pickup = 0) -- the same convention as proofingDebugGoto / the navigator.
+    engraving::Measure* m = score->firstMeasure();
+    int32_t idx = 0;
+    while (m && idx < cmd.measure)
+    {
+        m = m->nextMeasure();
+        ++idx;
+    }
+
+    if (!m)
+    {
+        out.error = "measure index out of range (score has fewer measures)";
+        return RV::make_ok(out);
+    }
+
+    out.ok = true;
+    out.before = m->ticks().toString().toStdString();
+    out.timesig = m->timesig().toString().toStdString();
+
+    //! SAFE-ONLY, mirroring BadTimingNavigatorModel::regularize: extend ONLY an under-full bar. An over-full / exactly-
+    //! nominal measure is refused (no mutation) so adjustToLen can never truncate notes here.
+    if (m->ticks() < m->timesig())
+    {
+        notation->undoStack()->prepareChanges(muse::TranslatableString("reprise", "Regularize measure"));
+        m->adjustToLen(m->timesig());
+        notation->undoStack()->commitChanges();
+
+        out.regularized = true;
+
+        //! Re-resolve the measure at the same tick after the edit (adjustToLen rebuilds measures) to report the new length.
+        engraving::Measure* after = score->tick2measure(m->tick());
+        out.after = (after ? after->ticks() : m->ticks()).toString().toStdString();
+
+        if (notation->interaction() && after)
+        {
+            notation->interaction()->select({ after }, engraving::SelectType::SINGLE);
+            notation->interaction()->showItem(after);
+        }
+    }
+    else
+    {
+        //! Not under-full: unchanged. after == before. (An over-full bar is left for the user to fix by hand.)
+        out.after = out.before;
     }
 
     return RV::make_ok(out);

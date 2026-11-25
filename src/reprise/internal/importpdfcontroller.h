@@ -206,6 +206,13 @@ private:
     //! on the Qt GUI thread. ok=false + error when the requested panel is not currently loaded, or panel is unknown.
     muse::RetVal<ProofingDebugSetZoomCommand::Output> proofingDebugSetZoom(const ProofingDebugSetZoomCommand& cmd);
 
+    //! Dev MCP/API "drive" tool for the bad-timing navigator's one-click Fix: extend the measure at a global index to its
+    //! time signature (adjustToLen, fills with rests) -- the exact path BadTimingNavigatorModel::regularize uses -- so a
+    //! headless agent can exercise it without a synthetic QML click. SAFE-ONLY: regularizes a measure only when it is
+    //! under-full (ticks < timesig); an over-full / exactly-nominal bar is refused (regularized=false, no mutation), so it
+    //! can never truncate. Undo-safe. Runs on the Qt GUI thread. ok=false + error on no score / out-of-range index.
+    muse::RetVal<ProofingDebugRegularizeCommand::Output> proofingDebugRegularize(const ProofingDebugRegularizeCommand& cmd);
+
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;
     //! Persist the folder of the picked PDF (Reprise-private, independent of File > Open). Non-empty picks only.

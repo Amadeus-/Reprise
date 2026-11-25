@@ -86,7 +86,8 @@ public:
         FoundRole,
         ExpectedRole,
         AccentRole,         //! per-kind accent colour (hex string) so the QML keeps the kinds visually distinguishable
-        DetailRole          //! hover-tooltip detail: the exact "<kind>  <found> of <expected>" ratio kept off the row text
+        DetailRole,         //! hover-tooltip detail: the exact "<kind>  <found> of <expected>" ratio kept off the row text
+        CanRegularizeRole   //! true when the row's measure is UNDER-full (ticks < timesig) -> the one-click Fix is safe
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -101,6 +102,13 @@ public:
 
     //! Select the problem measure for row's first chord/rest (staff-aware), so the band + magnifier + editor all follow.
     Q_INVOKABLE void jumpTo(int row);
+
+    //! One-click fix for an UNDER-full ("Too few beats") row: extend that measure to its nominal time signature, filling
+    //! the freed beats with RESTS (Measure::adjustToLen's default -- the user then replaces them; we never guess the
+    //! missing note). SAFE-ONLY: a no-op unless the row's live measure is under-full (ticks < timesig), so it can NEVER
+    //! truncate an over-full bar ("Too many beats") -- that would delete the overflow notes. One undoable step (wrapped in
+    //! the undo stack). The stackChanged subscription then re-walks and clears this row + its red highlight automatically.
+    Q_INVOKABLE void regularize(int row);
 
 signals:
     void countChanged();
@@ -140,6 +148,12 @@ private:
     bool m_inited = false;
     bool m_hasScore = false;
     std::vector<BadTimingProblem> m_entries;
+
+    //! Per-row "safe to regularize" flag, parallel to m_entries (same indices), recomputed on every walk. true only when
+    //! the row's live measure is UNDER-full (ticks < timesig), where adjustToLen(timesig) EXTENDS with rests (safe). An
+    //! over-full bar (VoiceTooLong / WrongLength-over), an exactly-nominal bar (Incomplete in a full bar) or a corrupted
+    //! repeat is false -> the Fix button is disabled, because there adjustToLen would truncate notes or do nothing.
+    std::vector<bool> m_canRegularize;
 
     //! Receiver for the CURRENT notation's undo-stack + selection channels; destroyed+recreated on every notation switch so
     //! a previous notation's notifications never drive this model (the NotationSwitchListModel idiom the magnifier uses).

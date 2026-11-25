@@ -528,6 +528,52 @@ struct ProofingDebugSetZoomCommand {
     };
 };
 
+//! NOTE Reprise dev MCP/API "drive" tool for the BAD-TIMING NAVIGATOR's one-click "Regularize measure" Fix (Phase: bad-
+//! timing navigator): extend the measure at a GLOBAL index to its nominal time signature, filling the freed beats with
+//! RESTS (Measure::adjustToLen, the exact path BadTimingNavigatorModel::regularize uses). This exists because synthetic
+//! QML button clicks are unreliable at high DPI, so a headless agent drives the regularize path directly and verifies the
+//! row clears. SAFE-ONLY: it extends a measure ONLY when it is UNDER-full (ticks < timesig); an over-full / exactly-
+//! nominal bar is REFUSED (regularized=false, no mutation) so it can never truncate notes -- identical to the model's
+//! guard. Undo-safe (wrapped in the undo stack). Runs synchronously on the Qt GUI thread. NOT ReadOnly (it mutates when
+//! it regularizes); allowlisted alongside the other proofing-debug dev tools.
+struct ProofingDebugRegularizeCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/proofing-debug-regularize");
+    static const inline auto title = muse::MnemonicString("reprise", "Proofing debug regularize");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Regularize an under-full measure to its time signature (drives the bad-timing navigator Fix)");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::Idempotent;
+
+    int measure = 0;      // required: global measure index to regularize (0-based, pickup = 0)
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "measure", &ProofingDebugRegularizeCommand::measure,
+                               "Global measure index to regularize, 0-based (pickup/anacrusis = 0)",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        bool regularized = false;
+        int measure = 0;
+        std::string before;
+        std::string after;
+        std::string timesig;
+        std::string error;
+    };
+
+    using O = ProofingDebugRegularizeCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the measure was resolved (a current score exists and the index is in range)" },
+        muse::rcommand::Field{ "regularized", &O::regularized, "Whether the measure was actually extended (true only for an under-full bar)" },
+        muse::rcommand::Field{ "measure", &O::measure, "The requested global measure index (echoed back)" },
+        muse::rcommand::Field{ "before", &O::before, "The measure's actual length before, as a fraction (e.g. '3/4')" },
+        muse::rcommand::Field{ "after", &O::after, "The measure's actual length after (== timesig when regularized)" },
+        muse::rcommand::Field{ "timesig", &O::timesig, "The measure's nominal time signature, as a fraction" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
+
 //! NOTE Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen IN-PROCESS, with no foreground
 //! activation and no synthetic mouse input (the Firefox-bridge model). The handler runs synchronously on the Qt GUI
 //! thread (the same dispatch path the capture tools use), calling interactive()->open(UriQuery(...)) for the resolved

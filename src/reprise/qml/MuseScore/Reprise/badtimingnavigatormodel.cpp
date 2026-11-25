@@ -105,6 +105,28 @@ void BadTimingNavigatorModel::rebuild()
     m_entries = scanScoreForBadTiming(score);
     m_hasScore = (score != nullptr && score->firstMeasure() != nullptr);
 
+    //! Compute the per-row "safe to regularize" flags from the LIVE measures (not the row's found/expected, though they
+    //! agree for a WrongLength row): a one-click Fix is offered ONLY for an UNDER-full bar (ticks < timesig), where
+    //! adjustToLen(timesig) extends with rests. Every other row (over-full, exactly-nominal, corrupted repeat) stays
+    //! false so the button is disabled and can never truncate notes. Resolved positionally, matching jumpTo/the scan.
+    m_canRegularize.assign(m_entries.size(), false);
+    if (score)
+    {
+        for (size_t i = 0; i < m_entries.size(); ++i)
+        {
+            mu::engraving::Measure* measure = score->firstMeasure();
+            for (int32_t k = 0; k < m_entries[i].measureIndex0 && measure; ++k)
+            {
+                measure = measure->nextMeasure();
+            }
+
+            if (measure)
+            {
+                m_canRegularize[i] = measure->ticks() < measure->timesig();
+            }
+        }
+    }
+
     endResetModel();
 
     emit countChanged();
@@ -182,6 +204,68 @@ void BadTimingNavigatorModel::jumpTo(int row)
     return;
 }
 
+void BadTimingNavigatorModel::regularize(int row)
+{
+    if (row < 0 || row >= static_cast<int>(m_entries.size()))
+    {
+        return;
+    }
+
+    //! DATA-SAFETY GUARD (defense in depth): only an UNDER-full bar may be regularized. m_canRegularize was computed on
+    //! the last walk; refuse here if it says no, so even a stray/queued call cannot reach adjustToLen on an over-full bar.
+    if (row >= static_cast<int>(m_canRegularize.size()) || !m_canRegularize[static_cast<size_t>(row)])
+    {
+        return;
+    }
+
+    const BadTimingProblem& entry = m_entries[static_cast<size_t>(row)];
+
+    const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    if (!notation || !notation->undoStack() || !notation->interaction() || !notation->elements())
+    {
+        return;
+    }
+
+    mu::engraving::Score* score = notation->elements()->msScore();
+    if (!score)
+    {
+        return;
+    }
+
+    //! Resolve the Nth measure positionally (pickup = 0), the same convention as jumpTo / the scan / the proofing map.
+    mu::engraving::Measure* measure = score->firstMeasure();
+    for (int32_t i = 0; i < entry.measureIndex0 && measure; ++i)
+    {
+        measure = measure->nextMeasure();
+    }
+
+    if (!measure)
+    {
+        return;
+    }
+
+    //! FINAL live re-check against the real measure (m_canRegularize can be a frame stale between the click and here), so
+    //! adjustToLen is reached ONLY while the bar is genuinely under-full -> it can only EXTEND, never shorten/delete.
+    if (!(measure->ticks() < measure->timesig()))
+    {
+        return;
+    }
+
+    //! Extend the bar to its nominal time signature. adjustToLen(appendRestsIfNecessary = true) fills the freed beats with
+    //! RESTS -- we never guess the missing note; the user replaces the rest. One undoable step, the exact mechanism (and
+    //! undo-stack wrapping) MeasurePropertiesDialog uses (src/notationscene/widgets/measureproperties.cpp).
+    notation->undoStack()->prepareChanges(muse::TranslatableString("reprise", "Regularize measure"));
+    measure->adjustToLen(measure->timesig());
+    notation->undoStack()->commitChanges();
+
+    //! Select the whole regularized measure so the proofing view lands on it. commitChanges fires stackChanged, which
+    //! re-walks this model: the now-correct bar drops out of the worklist and its red highlight clears automatically.
+    notation->interaction()->select({ measure }, mu::notation::SelectType::SINGLE);
+    notation->interaction()->showItem(measure);
+
+    return;
+}
+
 int BadTimingNavigatorModel::rowCount(const QModelIndex& parent) const
 {
     if (parent.isValid())
@@ -221,6 +305,8 @@ QVariant BadTimingNavigatorModel::data(const QModelIndex& index, int role) const
         return kindAccent(e.kind);
     case DetailRole:
         return detailText(e);
+    case CanRegularizeRole:
+        return row < static_cast<int>(m_canRegularize.size()) ? m_canRegularize[static_cast<size_t>(row)] : false;
     default:
         return QVariant();
     }
@@ -236,7 +322,8 @@ QHash<int, QByteArray> BadTimingNavigatorModel::roleNames() const
         { FoundRole, "found" },
         { ExpectedRole, "expected" },
         { AccentRole, "accentColor" },
-        { DetailRole, "detail" }
+        { DetailRole, "detail" },
+        { CanRegularizeRole, "canRegularize" }
     };
 }
 

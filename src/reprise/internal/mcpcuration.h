@@ -75,6 +75,8 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "reprise/proofing-debug-select-note",
         // dev "drive" tool: set the live follow band's / magnifier's user zoom (drive + screenshot zoom states)
         "reprise/proofing-debug-set-zoom",
+        // dev "drive" tool: regularize an under-full measure to its time signature (drives the bad-timing navigator Fix)
+        "reprise/proofing-debug-regularize",
         // OCR language-pack helpers (verify the Preferences pack manager headlessly)
         "reprise/list-languages",
         "reprise/add-language",
