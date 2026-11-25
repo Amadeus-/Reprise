@@ -52,6 +52,8 @@ target_sources(reprise PRIVATE
     internal/proofingmapservice.h
     internal/inavigatorstateservice.h
     internal/navigatorstateservice.h
+    internal/iproofingviewstateservice.h
+    internal/proofingviewstateservice.h
     internal/iproofingviewcontrol.h
     internal/proofingviewcontrol.h
     internal/proofingmapbuilder.cpp

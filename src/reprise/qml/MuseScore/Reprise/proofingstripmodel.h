@@ -39,6 +39,7 @@
 
 #include "internal/iproofingmapservice.h"
 #include "internal/iproofingviewcontrol.h"
+#include "internal/iproofingviewstateservice.h"
 #include "internal/badtimingcheck.h"
 
 class QImage;
@@ -96,6 +97,7 @@ class ProofingStripModel : public QObject, public muse::Contextable, public muse
 
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
     muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
+    muse::GlobalInject<mu::reprise::IProofingViewStateService> proofingViewStateService;
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
 public:
@@ -128,6 +130,11 @@ signals:
     void userZoomChanged();
 
 private:
+    //! 0.18.2: apply a zoom RESTORED from the per-document zoom service (.repr open / document switch) WITHOUT pushing it back
+    //! to the service or marking the project unsaved -- a restore is not a user edit (unlike setUserZoom, which does both).
+    //! Still clamps to [0.25, 4.0] and emits userZoomChanged so the band re-scales.
+    void applyRestoredZoom(double zoom);
+
     //! Re-point the band at whatever the service currently holds (clears the previous render first). LAZY: this only opens
     //! the source + sizes m_pages with one PLACEHOLDER entry per recognised page (geometry known from the map, pixels not
     //! rendered yet) and renders the FIRST page so the band shows immediately; the remaining pages render on demand the
@@ -217,8 +224,9 @@ private:
     //! true when m_currentMeasure is in m_problemMeasures (the QML binds currentMeasureIsProblem to pick red vs accent blue).
     bool m_currentMeasureIsProblem = false;
 
-    //! User-driven band zoom (mouse-wheel). 1.0 = fit-to-width; clamped to [0.5, 4.0] by setUserZoom.
-    double m_userZoom = 1.0;
+    //! User-driven band zoom (mouse-wheel). 1.0 = fit-to-width; clamped to [0.25, 4.0] by setUserZoom. 0.18.2: the BAND
+    //! DEFAULT is 0.5 (half fit-to-width) so a fresh import opens zoomed out; restored from the .repr per-document (0.18.2).
+    double m_userZoom = 0.5;
 
     //! Receiver for the CURRENT notation's selectionChanged + hoveredMeasureChanged; reset (destroyed+recreated) on every
     //! notation switch so a previous notation's subscriptions never linger (the NotationSwitchListModel per-notation idiom).

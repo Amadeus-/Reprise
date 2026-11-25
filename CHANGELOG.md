@@ -8,6 +8,19 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.18.2] — 2026-11-25
+
+### Added
+- **Your proofing view is remembered per project.** When you close a Reprise project, the original-scan band zoom,
+  the magnifier zoom, and the measure you were on are saved into the `.repr` and restored the next time you open it.
+
+### Changed
+- **The original-scan band opens at 50% by default** (was 100%).
+
+### Fixed
+- **Collapsing or ignoring a timing problem no longer marks the project as modified** — navigating, zooming, and
+  collapsing rows no longer trigger a "save changes?" prompt on close.
+
 ## [0.18.1] — 2026-11-25
 
 ### Changed

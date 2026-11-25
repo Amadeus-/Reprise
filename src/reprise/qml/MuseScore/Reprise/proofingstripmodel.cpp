@@ -44,6 +44,8 @@
 #include "notation/inotationundostack.h"
 #include "notation/notationtypes.h"
 
+#include "engraving/dom/chordrest.h"
+#include "engraving/dom/measure.h"
 #include "engraving/dom/measurebase.h"
 #include "engraving/dom/score.h"
 
@@ -92,6 +94,23 @@ void ProofingStripModel::load()
         if (proofingViewControl())
         {
             proofingViewControl()->registerBand(this);
+        }
+
+        //! 0.18.2: seed this band's zoom from the per-document view-state service (a .repr opened before this panel finished
+        //! loading may already hold the restored band zoom) and re-apply it whenever the service's state is replaced (.repr
+        //! open) or reset (document switch). applyRestoredZoom sets userZoom WITHOUT pushing back or marking the project unsaved
+        //! (a restore is not a user edit). The followed measure is restored separately, in maybeSelectFirstOnOpen (it needs a
+        //! live notation + selection, not just a zoom scalar). Subscribed once, app-lifetime. See IProofingViewStateService.
+        if (proofingViewStateService())
+        {
+            applyRestoredZoom(proofingViewStateService()->viewState().bandZoom);
+            proofingViewStateService()->viewStateChanged().onNotify(this, [this]()
+            {
+                if (proofingViewStateService())
+                {
+                    applyRestoredZoom(proofingViewStateService()->viewState().bandZoom);
+                }
+            });
         }
 
         //! Hover-follow throttle window (~50ms). scheduleHoverFollow() applies the FIRST move of a burst immediately (leading
@@ -473,6 +492,36 @@ void ProofingStripModel::maybeSelectFirstOnOpen()
         return;
     }
 
+    //! 0.18.2: restore the FOLLOWED MEASURE saved in the .repr view state (set by doLoadRepr) instead of always landing on
+    //! measure 1. A valid saved index (>=0) selects that measure's first chord/rest (SINGLE -> band + magnifier follow it, same
+    //! as a user click); an out-of-range index or an empty measure falls through to the first-note default below. The resulting
+    //! selectionChanged drives updateFollow(), which re-records the (unchanged) followed measure -- harmless.
+    const int32_t savedMeasure = proofingViewStateService() ? proofingViewStateService()->viewState().followedMeasure : -1;
+    if (savedMeasure >= 0)
+    {
+        mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        mu::engraving::Measure* measure = score ? score->firstMeasure() : nullptr;
+        for (int32_t i = 0; i < savedMeasure && measure; ++i)
+        {
+            measure = measure->nextMeasure();
+        }
+
+        if (measure)
+        {
+            mu::engraving::ChordRest* cr = measure->firstChordRest(0);
+            if (cr)
+            {
+                notation->interaction()->select({ cr }, mu::notation::SelectType::SINGLE);
+            }
+            else
+            {
+                notation->interaction()->select({ measure }, mu::notation::SelectType::SINGLE);
+            }
+
+            return;
+        }
+    }
+
     //! Select the first navigable element (the first note/rest of measure 1 -- Navigation::firstElement, the same target as
     //! Ctrl+Home / "go to beginning"). Does NOT require note-input mode. The resulting selectionChanged drives updateFollow()
     //! here and the magnifier's follow, so both panels populate on the first note of measure 1.
@@ -500,6 +549,15 @@ void ProofingStripModel::updateFollow()
                 measure = mb->measureIndex();
             }
         }
+    }
+
+    //! 0.18.2: remember the followed (selected) measure in the per-document view-state service so a Save captures it and a
+    //! reopen lands here instead of measure 1. syncFollowedMeasure ignores a negative (no selection), so a transient null
+    //! selection cannot clobber the restored target; it does NOT mark the project unsaved (non-dirtying, like the zoom). Only
+    //! the SELECTION path (this updateFollow) records it -- hover-follow goes through followMeasure() and must not change it.
+    if (proofingViewStateService())
+    {
+        proofingViewStateService()->syncFollowedMeasure(measure);
     }
 
     //! Selection drives the follow directly (measure < 0 when nothing is selected -> clears hasCurrent).
@@ -642,6 +700,31 @@ void ProofingStripModel::setUserZoom(double zoom)
 {
     //! 0.18.1: min band zoom lowered 0.5 -> 0.25 (max 4.0 unchanged) so the follow band can zoom further OUT. Mirrors the
     //! QML wheel-handler clamp in ProofingStrip.qml -- both sites must agree or one re-clamps the other.
+    const double clamped = std::clamp(zoom, 0.25, 4.0);
+    if (qFuzzyCompare(clamped, m_userZoom))
+    {
+        return;
+    }
+
+    m_userZoom = clamped;
+    emit userZoomChanged();
+
+    //! 0.18.2: this is the USER path (QML wheel / the dev set-zoom tool). Push the new zoom into the per-document view-state
+    //! service (silent -- no re-hydrate) so the NEXT Save of the .repr captures it. It deliberately does NOT mark the project
+    //! unsaved: a zoom is a view preference, not a document edit, so merely zooming must not raise a "save changes?" prompt
+    //! (same non-dirtying policy applied to the navigator collapse/ignore). The RESTORE path (applyRestoredZoom) also never
+    //! dirties. Consequence: the zoom persists when the user saves the document; it does not force a save on its own.
+    if (proofingViewStateService())
+    {
+        proofingViewStateService()->syncBandZoom(clamped);
+    }
+
+    return;
+}
+
+void ProofingStripModel::applyRestoredZoom(double zoom)
+{
+    //! RESTORE path (see header): set the band zoom from the service WITHOUT pushing back or marking the project unsaved.
     const double clamped = std::clamp(zoom, 0.25, 4.0);
     if (qFuzzyCompare(clamped, m_userZoom))
     {

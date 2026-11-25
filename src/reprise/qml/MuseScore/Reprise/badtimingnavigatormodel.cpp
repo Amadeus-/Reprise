@@ -656,19 +656,16 @@ void BadTimingNavigatorModel::storeState(const std::string& key, const Navigator
     return;
 }
 
-void BadTimingNavigatorModel::pushStateAndMarkDirty()
+void BadTimingNavigatorModel::pushStateToService()
 {
     //! Silent push (no statesChanged) -- the model is the source of truth; re-hydrating from our own push would be wasteful.
+    //! 0.18.2: this deliberately does NOT mark the project unsaved. A collapse/ignore is a view preference (like the proofing
+    //! zoom), not a document edit, so it must not raise a spurious "save changes?" prompt; the state is captured whenever the
+    //! document is next saved (doSaveRepr reads the service). (Earlier builds marked dirty here, which flagged the doc modified
+    //! on every toggle -- a latent bug this removes, matching the view-state non-dirtying policy.)
     if (navigatorStateService())
     {
         navigatorStateService()->syncFromModel(m_recordState);
-    }
-
-    //! Mark the project unsaved so the Save button enables and the collapse/ignore survives into the next .repr write. A
-    //! navigator toggle is deliberately NOT an undo-stack edit (it must not land in Ctrl+Z), so dirty is set directly here.
-    if (projectSession() && projectSession()->project())
-    {
-        projectSession()->project()->markAsUnsaved();
     }
 
     return;
@@ -690,7 +687,7 @@ void BadTimingNavigatorModel::setCollapsed(int row, bool collapsed)
 
     st.collapsed = collapsed;
     storeState(key, st);
-    pushStateAndMarkDirty();
+    pushStateToService();
 
     //! Single-row update: the delegate re-reads CollapsedRole and animates its line 2 in place -- no model reset, so the
     //! list scroll + the other records' state are untouched. The expanded count also changes -> the host re-reserves its
@@ -718,7 +715,7 @@ void BadTimingNavigatorModel::setIgnored(int row, bool ignored)
 
     st.ignored = ignored;
     storeState(key, st);
-    pushStateAndMarkDirty();
+    pushStateToService();
 
     //! Single-row update (the record dims/undims in place, staying in measure order) + the header's active count changes.
     const QModelIndex idx = index(row);

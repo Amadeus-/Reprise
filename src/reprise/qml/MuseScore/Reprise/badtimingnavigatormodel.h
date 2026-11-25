@@ -187,9 +187,9 @@ private:
     //! Store a record's state, PRUNING an all-default record to keep m_recordState (and its serialization) minimal.
     void storeState(const std::string& key, const NavigatorRecordState& st);
 
-    //! After a user toggle: push the current m_recordState into the service (silent -- no re-hydrate) and mark the project
-    //! unsaved so the collapse/ignore survives into the next Save of the .repr.
-    void pushStateAndMarkDirty();
+    //! After a user toggle: push the current m_recordState into the service (silent -- no re-hydrate). 0.18.2: does NOT mark the
+    //! project unsaved (a collapse/ignore is a view preference, not a document edit); captured at the next Save of the .repr.
+    void pushStateToService();
 
     //! PLAIN-LANGUAGE row text the user reads at a glance: "m. {measureNumber1} [staff {staffIdx+1}] \xE2\x80\x94 {plainKind}",
     //! where plainKind is "Too many beats" / "Too few beats" / "Repeat problem" -- deliberately NOT the raw time-signature

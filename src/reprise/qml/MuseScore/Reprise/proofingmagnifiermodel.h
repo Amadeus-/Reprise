@@ -40,6 +40,7 @@
 
 #include "internal/iproofingmapservice.h"
 #include "internal/iproofingviewcontrol.h"
+#include "internal/iproofingviewstateservice.h"
 #include "internal/badtimingcheck.h"
 
 class QImage;
@@ -105,6 +106,7 @@ class ProofingMagnifierModel : public QObject, public muse::Contextable, public 
 
     muse::GlobalInject<mu::reprise::IProofingMapService> proofingMapService;
     muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
+    muse::GlobalInject<mu::reprise::IProofingViewStateService> proofingViewStateService;
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
 
 public:
@@ -139,6 +141,11 @@ signals:
     void userZoomChanged();
 
 private:
+    //! 0.18.2: apply a zoom RESTORED from the per-document zoom service (.repr open / document switch) WITHOUT pushing it back
+    //! to the service or marking the project unsaved -- a restore is not a user edit (unlike setUserZoom, which does both).
+    //! Still clamps to [0.5, 4.0] and emits userZoomChanged so the magnifier re-scales.
+    void applyRestoredZoom(double zoom);
+
     //! Coalesce + DEFER the heavy render to the next event-loop turn instead of running it inline. The proofing map's
     //! mapChanged() is a SYNCHRONOUS notify fired from inside NotationProject::doLoadRepr on the UI thread; rebuilding
     //! inline there renders every page (QPdfDocument load + per-page render + PNG write) and freezes the .repr open. A

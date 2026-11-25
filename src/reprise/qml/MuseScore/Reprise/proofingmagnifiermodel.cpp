@@ -98,6 +98,21 @@ void ProofingMagnifierModel::load()
             proofingViewControl()->registerMagnifier(this);
         }
 
+        //! 0.18.2: seed this magnifier's zoom from the per-document view-state service and re-apply it whenever the service's
+        //! state is replaced (.repr open) or reset (document switch). applyRestoredZoom sets userZoom WITHOUT pushing back or
+        //! marking the project unsaved (a restore is not a user edit). Subscribed once, app-lifetime. See IProofingViewStateService.
+        if (proofingViewStateService())
+        {
+            applyRestoredZoom(proofingViewStateService()->viewState().magnifierZoom);
+            proofingViewStateService()->viewStateChanged().onNotify(this, [this]()
+            {
+                if (proofingViewStateService())
+                {
+                    applyRestoredZoom(proofingViewStateService()->viewState().magnifierZoom);
+                }
+            });
+        }
+
         //! Hover-follow throttle window (~50ms), mirroring the following band. scheduleHoverNote() applies the FIRST move of a
         //! burst immediately (leading edge) and opens this window; moves arriving during the window are latched and applied
         //! here when it elapses (trailing edge). A continuous sweep thus updates at a steady ~20 Hz instead of only after the
@@ -745,6 +760,29 @@ void ProofingMagnifierModel::applyHover()
 
 void ProofingMagnifierModel::setUserZoom(double zoom)
 {
+    const double clamped = std::clamp(zoom, 0.5, 4.0);
+    if (qFuzzyCompare(clamped, m_userZoom))
+    {
+        return;
+    }
+
+    m_userZoom = clamped;
+    emit userZoomChanged();
+
+    //! 0.18.2: USER path (QML wheel / dev set-zoom tool). Push to the per-document view-state service (silent) so the NEXT Save
+    //! captures it. It does NOT mark the project unsaved -- a zoom is a view preference, not a document edit, so zooming must
+    //! not raise a "save changes?" prompt (same non-dirtying policy as the band + the navigator). RESTORE also never dirties.
+    if (proofingViewStateService())
+    {
+        proofingViewStateService()->syncMagnifierZoom(clamped);
+    }
+
+    return;
+}
+
+void ProofingMagnifierModel::applyRestoredZoom(double zoom)
+{
+    //! RESTORE path (see header): set the magnifier zoom from the service WITHOUT pushing back or marking the project unsaved.
     const double clamped = std::clamp(zoom, 0.5, 4.0);
     if (qFuzzyCompare(clamped, m_userZoom))
     {

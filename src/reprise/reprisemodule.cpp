@@ -41,6 +41,8 @@
 #include "internal/proofingmapservice.h"
 #include "internal/inavigatorstateservice.h"
 #include "internal/navigatorstateservice.h"
+#include "internal/iproofingviewstateservice.h"
+#include "internal/proofingviewstateservice.h"
 #include "internal/iproofingviewcontrol.h"
 #include "internal/proofingviewcontrol.h"
 #include "internal/mcpcuration.h"
@@ -86,6 +88,13 @@ void RepriseModule::registerExports()
     //! the transient model). Exported globally so the model reaches it via GlobalInject and NotationProject can read/write it.
     m_navigatorStateService = std::make_shared<NavigatorStateService>();
     globalIoc()->registerExport<INavigatorStateService>(mname, m_navigatorStateService);
+
+    //! NOTE: Two-Pane Proofing per-document VIEW STATE (0.18.2). Holds the followed measure + follow band's + floating
+    //! magnifier's user zoom for the current document, bridging the QML-instantiated ProofingStripModel/ProofingMagnifierModel
+    //! (the live owners) to the .repr persistence in NotationProject. Exported globally so the models reach it via GlobalInject
+    //! and NotationProject can read it on save / write it on open. Same single-owner app-lifetime + document-claim pattern.
+    m_proofingViewStateService = std::make_shared<ProofingViewStateService>();
+    globalIoc()->registerExport<IProofingViewStateService>(mname, m_proofingViewStateService);
 
     //! NOTE: Two-Pane Proofing LIVE view-model bridge. The follow band + magnifier view-models are QML-instantiated and
     //! transient, so they self-register here (as bare QObject*) on load and unregister in their dtors; the dev

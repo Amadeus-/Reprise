@@ -160,6 +160,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
             nsvc->onDocumentLoaded(path.toStdString());
         }
 
+        // Reprise 0.18.2: doLoadRepr set the proofing view state above (claim armed); bind it to the opened document so a
+        // later Save re-emits it and a subsequent different-document load reverts to defaults. See IProofingViewStateService.
+        if (auto vsvc = proofingViewStateService()) {
+            vsvc->onDocumentLoaded(path.toStdString());
+        }
+
         return ret;
     }
 
@@ -178,6 +184,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
             // (the new document becomes the owner with an empty state). See INavigatorStateService::onDocumentLoaded.
             if (auto nsvc = navigatorStateService()) {
                 nsvc->onDocumentLoaded(path.toStdString());
+            }
+
+            // Reprise 0.18.2: an import carries no proofing view state, so this reverts to the defaults (first-note / band 0.5
+            // / magnifier 1.0), dropping any view state held from a previous .repr. See IProofingViewStateService::onDocumentLoaded.
+            if (auto vsvc = proofingViewStateService()) {
+                vsvc->onDocumentLoaded(path.toStdString());
             }
         }
 
@@ -207,6 +219,11 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
     // Reprise 0.18.0: a plain score has no navigator state -> drop any state held from a previously-open .repr.
     if (auto nsvc = navigatorStateService()) {
         nsvc->onDocumentLoaded(path.toStdString());
+    }
+
+    // Reprise 0.18.2: a plain score has no proofing view state -> revert to defaults, dropping any view state from a previous .repr.
+    if (auto vsvc = proofingViewStateService()) {
+        vsvc->onDocumentLoaded(path.toStdString());
     }
 
     return ret;
@@ -492,6 +509,14 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
         nsvc->setStates(bundle.navigatorState);
     }
 
+    // Reprise 0.18.2: inject the proofing view state (the bundle's values, or the defaults followedMeasure -1 / band 0.5 /
+    // magnifier 1.0 when the entry was absent) into the service. setViewState fires viewStateChanged -> the live band +
+    // magnifier models re-hydrate (silently), and arms the one-shot claim consumed by onDocumentLoaded (in load()) so this
+    // document owns the view state for later saves.
+    if (auto vsvc = proofingViewStateService()) {
+        vsvc->setViewState(bundle.viewState);
+    }
+
     return make_ret(Ret::Code::Ok);
 }
 
@@ -598,10 +623,18 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
         navState = nsvc->states();
     }
 
+    // Reprise 0.18.2: the live proofing view state. The band + magnifier models push the followed measure + their wheel-zoom
+    // into the service (syncFollowedMeasure/syncBandZoom/syncMagnifierZoom); read it here so a Save captures the latest. Null
+    // service (converter run) or a document never navigated/zoomed -> the defaults, so a fresh import round-trips its default look.
+    reprise::ProofingViewState viewState;
+    if (auto vsvc = proofingViewStateService()) {
+        viewState = vsvc->viewState();
+    }
+
     const ByteArray bundle = assembleRepr(scoreBytes, originalBytes, originalName, savedOriginalSuffix,
                                           m_reprManifestImport, map,
                                           proofingScanBytes, m_reprProofingScanSuffix, m_reprSkewAnglesDeg,
-                                          navState);
+                                          navState, viewState);
 
     // Atomic-ish write: write a "_saving" sibling, copy over the target, remove the temp (mirrors doSave's dance).
     const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(path);
@@ -634,6 +667,74 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
 
     LOGI() << "Reprise: saved .repr bundle: " << normalizedPath;
     return make_ret(Ret::Code::Ok);
+}
+
+void NotationProject::flushReprViewStateOnClose()
+{
+    // Reprise 0.18.2 write-on-close: see the header. Only a .repr-backed project with a real file on disk -- a plain score or an
+    // unsaved fresh project has no .repr to patch.
+    const muse::io::path_t reprPath = path();
+    if (io::suffix(reprPath) != REPRISE_PROJECT_SUFFIX) {
+        return;
+    }
+
+    if (!fileSystem()->exists(reprPath)) {
+        return;
+    }
+
+    // The CURRENT live view state + navigator state (from the app-lifetime services; defaults if a service is absent).
+    reprise::ProofingViewState viewState;
+    if (auto vsvc = proofingViewStateService()) {
+        viewState = vsvc->viewState();
+    }
+
+    reprise::NavigatorStateMap navState;
+    if (auto nsvc = navigatorStateService()) {
+        navState = nsvc->states();
+    }
+
+    // Re-read the current ON-DISK bundle so we re-pack with ONLY the viewstate + navigatorstate entries replaced -- an unsaved
+    // SCORE edit is deliberately NOT written here (that stays the normal save/prompt flow). A bundle that cannot be read
+    // (moved/corrupt) -> skip silently.
+    ReprBundle bundle;
+    Ret rr = readRepr(reprPath, bundle);
+    if (!rr) {
+        LOGW() << "Reprise: write-on-close: cannot read .repr to patch view state: " << reprPath;
+        return;
+    }
+
+    // UNCHANGED vs what is already stored -> skip the re-pack so an untouched file is never rewritten.
+    if (bundle.viewState == viewState && bundle.navigatorState == navState) {
+        return;
+    }
+
+    // Re-assemble with the two entries replaced; every other entry carried verbatim from the on-disk bundle.
+    const ByteArray out = assembleRepr(bundle.scoreMscz, bundle.original, bundle.originalFileName, bundle.originalSuffix,
+                                       bundle.importJson, bundle.map, bundle.proofingScan, bundle.proofingScanSuffix,
+                                       bundle.skewAnglesDeg, navState, viewState);
+
+    // Atomic write (same temp + replace dance as doSaveRepr). No markAsUnsaved / no prompt -- a silent view-state flush.
+    const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(reprPath);
+    const muse::io::path_t savePath = normalizedPath.toQString() + "_saving";
+
+    Ret ret = fileSystem()->writeFile(savePath, out);
+    if (!ret) {
+        LOGE() << "Reprise: write-on-close: failed to write _saving file: " << savePath;
+        return;
+    }
+
+    ret = fileSystem()->copy(savePath, normalizedPath, true /*replace*/);
+    if (!ret) {
+        LOGE() << "Reprise: write-on-close: failed to move .repr into place: " << normalizedPath;
+        fileSystem()->remove(savePath);
+        return;
+    }
+
+    fileSystem()->remove(savePath);
+
+    LOGI() << "Reprise: write-on-close: flushed proofing view state into " << normalizedPath;
+
+    return;
 }
 
 void NotationProject::setReprBundleInfo(const muse::io::path_t& originalScanPath, const std::string& originalSuffix,

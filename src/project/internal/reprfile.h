@@ -31,6 +31,7 @@
 
 #include "reprise/internal/iproofingmapservice.h"
 #include "reprise/internal/inavigatorstateservice.h"
+#include "reprise/internal/iproofingviewstateservice.h"
 
 namespace mu::project {
 //! Reprise .repr custom project container (Phase C persistence). A .repr is a flat ZIP bundling four fixed entries:
@@ -56,6 +57,10 @@ inline const std::string REPR_ENTRY_PROOFINGSCAN = "proofing-scan";
 //! Optional (0.18.0+): the bad-timing navigator's per-record collapse/ignore state (a 1:1 serialization of
 //! reprise::NavigatorStateMap). Written only when at least one record is non-default; absence tolerated (all records default).
 inline const std::string REPR_ENTRY_NAVIGATORSTATE = "navigatorstate.json";
+//! Optional (0.18.2+): the proofing per-document VIEW STATE (followed measure + band + magnifier zoom), a 1:1 serialization of
+//! reprise::ProofingViewState. Absence tolerated (an older bundle, or one never navigated/zoomed) -> the models use their
+//! defaults (followedMeasure -1 == first-note-on-open, band 0.5, magnifier 1.0).
+inline const std::string REPR_ENTRY_VIEWSTATE = "viewstate.json";
 
 //! Everything read back out of a .repr bundle. The score + original bytes are raw (the caller writes score.mscz to a
 //! memory buffer for MscReader and extracts the original to a real temp path); map.sourcePath is left empty here and the
@@ -76,6 +81,8 @@ struct ReprBundle
     reprise::ProofingMap map;         //! sourcePath left empty here -- the caller repoints it to the extracted scan path
     bool hasNavigatorState = false;   //! true when a navigatorstate.json entry was present (0.18.0+ bundles)
     reprise::NavigatorStateMap navigatorState; //! bad-timing navigator per-record collapse/ignore state (empty when absent)
+    bool hasViewState = false;        //! true when a viewstate.json entry was present (0.18.2+ bundles)
+    reprise::ProofingViewState viewState; //! followed measure + band/magnifier zoom (left at defaults when absent)
 };
 
 //! Serialize a ProofingMap to the proofingmap.json byte form. sourcePath is intentionally OMITTED (it is machine-local
@@ -94,6 +101,13 @@ muse::ByteArray serializeNavigatorState(const reprise::NavigatorStateMap& states
 //! and all-default records are dropped so the parsed map stays minimal.
 bool parseNavigatorState(const muse::ByteArray& bytes, reprise::NavigatorStateMap& out);
 
+//! Serialize the proofing view state to the viewstate.json byte form (a {"followedMeasure":n,"bandZoom":x,"magnifierZoom":y} object).
+muse::ByteArray serializeViewState(const reprise::ProofingViewState& state);
+
+//! Parse viewstate.json bytes into `out`. Returns false on malformed / non-object input; a MISSING key leaves that field at
+//! its default (followedMeasure -1 / bandZoom 0.5 / magnifierZoom 1.0) -- guarded so a release build never derefs a missing key.
+bool parseViewState(const muse::ByteArray& bytes, reprise::ProofingViewState& out);
+
 //! Assemble a complete .repr ZIP into a byte array, ready to write to disk atomically. `importJson`, when non-empty,
 //! must be a JSON object; it is embedded verbatim as manifest.import.
 muse::ByteArray assembleRepr(const muse::ByteArray& scoreMscz, const muse::ByteArray& original,
@@ -101,7 +115,8 @@ muse::ByteArray assembleRepr(const muse::ByteArray& scoreMscz, const muse::ByteA
                              const std::string& importJson, const reprise::ProofingMap& map,
                              const muse::ByteArray& proofingScan, const std::string& proofingScanSuffix,
                              const std::vector<double>& skewAnglesDeg,
-                             const reprise::NavigatorStateMap& navigatorState);
+                             const reprise::NavigatorStateMap& navigatorState,
+                             const reprise::ProofingViewState& viewState);
 
 //! Read + parse a .repr bundle from disk into `out`. The embedded original is NOT extracted to disk here. Returns a
 //! non-ok Ret (with a user-facing message) when the file cannot be opened, is missing a required entry, or its manifest

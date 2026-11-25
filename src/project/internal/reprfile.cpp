@@ -252,12 +252,57 @@ bool parseNavigatorState(const ByteArray& bytes, NavigatorStateMap& out)
     return true;
 }
 
+ByteArray serializeViewState(const reprise::ProofingViewState& state)
+{
+    JsonObject root;
+    root.set("followedMeasure", state.followedMeasure);
+    root.set("bandZoom", state.bandZoom);
+    root.set("magnifierZoom", state.magnifierZoom);
+
+    return JsonDocument(root).toJson(JsonDocument::Format::Compact);
+}
+
+bool parseViewState(const ByteArray& bytes, reprise::ProofingViewState& out)
+{
+    std::string err;
+    JsonDocument doc = JsonDocument::fromJson(bytes, &err);
+    if (!doc.isObject())
+    {
+        return false;
+    }
+
+    const JsonObject root = doc.rootObject();
+
+    //! Guard each optional key: reading a MISSING muse-JSON key then using the value is a RELEASE-mode hazard, so only
+    //! overwrite the default when the key is actually present (a partial/older object keeps the defaults for absent fields).
+    const JsonValue measureVal = root.value("followedMeasure");
+    if (measureVal.isNumber())
+    {
+        out.followedMeasure = static_cast<int32_t>(measureVal.toInt());
+    }
+
+    const JsonValue bandVal = root.value("bandZoom");
+    if (bandVal.isNumber())
+    {
+        out.bandZoom = bandVal.toDouble();
+    }
+
+    const JsonValue magVal = root.value("magnifierZoom");
+    if (magVal.isNumber())
+    {
+        out.magnifierZoom = magVal.toDouble();
+    }
+
+    return true;
+}
+
 ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
                        const std::string& originalFileName, const std::string& originalSuffix,
                        const std::string& importJson, const ProofingMap& map,
                        const ByteArray& proofingScan, const std::string& proofingScanSuffix,
                        const std::vector<double>& skewAnglesDeg,
-                       const NavigatorStateMap& navigatorState)
+                       const NavigatorStateMap& navigatorState,
+                       const reprise::ProofingViewState& viewState)
 {
     ByteArray out;
     Buffer buf(&out);
@@ -335,6 +380,10 @@ ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
     {
         zw.addFile(REPR_ENTRY_NAVIGATORSTATE, serializeNavigatorState(navigatorState));
     }
+
+    //! viewstate.json (0.18.2+) -- the followed measure + band + magnifier per-document zoom. Written always so the view state
+    //! round-trips; old builds ignore this unknown entry. A bundle never navigated/zoomed simply carries the defaults.
+    zw.addFile(REPR_ENTRY_VIEWSTATE, serializeViewState(viewState));
 
     zw.close();
     buf.close();
@@ -472,6 +521,14 @@ Ret readRepr(const path_t& path, ReprBundle& out)
     if (!navBytes.empty() && parseNavigatorState(navBytes, out.navigatorState))
     {
         out.hasNavigatorState = true;
+    }
+
+    //! Optional (0.18.2+) viewstate.json -- the followed measure + band/magnifier zoom. Absence tolerated (an older bundle, or
+    //! one never navigated/zoomed) -> out.viewState stays at its defaults (followedMeasure -1 / band 0.5 / magnifier 1.0).
+    const ByteArray viewBytes = zip.fileData(REPR_ENTRY_VIEWSTATE);
+    if (!viewBytes.empty() && parseViewState(viewBytes, out.viewState))
+    {
+        out.hasViewState = true;
     }
 
     return muse::make_ok();

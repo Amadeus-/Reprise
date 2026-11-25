@@ -22,6 +22,7 @@
 
 #include "closeprojectscenario.h"
 
+#include "notationproject.h"
 #include "translation.h"
 #include "types/projecturis.h"
 
@@ -152,6 +153,17 @@ Promise<IInteractive::Result> CloseProjectScenario::askAboutSavingScore(const IN
 Promise<Ret> CloseProjectScenario::doCloseProject(bool goToHome)
 {
     return interactive()->closeAllDialogs().then<Ret>(this, [this, goToHome](const Ret&, auto resolve) {
+        //! Reprise 0.18.2 (write-on-close): flush the proofing view state (followed measure + band/magnifier zoom) + navigator
+        //! state of the project being closed into its on-disk .repr BEFORE it is released. At this point it is still current and
+        //! the app-lifetime view-state/navigator services still hold ITS values (a subsequent open's load, which overwrites
+        //! them, runs only after this close completes). Non-dirtying -- no "save changes?" prompt, no markAsUnsaved. No-op for a
+        //! non-.repr project or when nothing changed. Covers File>Close AND switch (switching = close-then-open in this app).
+        if (auto project = projectSession()->project()) {
+            if (auto reprProject = std::dynamic_pointer_cast<NotationProject>(project)) {
+                reprProject->flushReprViewStateOnClose();
+            }
+        }
+
         projectSession()->setProject(nullptr);
 
         if (goToHome) {

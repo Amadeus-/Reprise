@@ -47,6 +47,7 @@
 
 #include "reprise/internal/iproofingmapservice.h"
 #include "reprise/internal/inavigatorstateservice.h"
+#include "reprise/internal/iproofingviewstateservice.h"
 
 namespace mu::engraving {
 class MscReader;
@@ -75,6 +76,9 @@ class NotationProject : public INotationProject, public muse::Contextable, publi
     // Reprise 0.18.0: the bad-timing navigator per-record collapse/ignore state, read on .repr save and written on .repr
     // open (null in non-GUI/converter runs where the reprise module is not loaded -- guarded at every use).
     muse::GlobalInject<reprise::INavigatorStateService> navigatorStateService;
+    // Reprise 0.18.2: the proofing view state (followed measure + band/magnifier zoom), read on .repr save and written on
+    // .repr open (null in non-GUI/converter runs where the reprise module is not loaded -- guarded at every use).
+    muse::GlobalInject<reprise::IProofingViewStateService> proofingViewStateService;
 
 public:
     NotationProject(const muse::modularity::ContextPtr& iocCtx)
@@ -85,6 +89,14 @@ public:
 
     muse::Ret load(const muse::io::path_t& path, const OpenParams& params = {}, const std::string& format = "") override;
     muse::Ret createNew(const ProjectCreateOptions& projectInfo) override;
+
+    // Reprise 0.18.2 (write-on-close): flush the current proofing VIEW STATE (followed measure + band/magnifier zoom) and the
+    // navigator state into THIS project's on-disk .repr, OUTSIDE the dirty/save machinery (no markAsUnsaved, no prompt). Called
+    // by ProjectSession::setProject on the project being closed / switched away from, so a zoom/navigate/collapse persists
+    // without the user having to save. Patches ONLY the viewstate + navigatorstate entries of the current on-disk bundle (an
+    // unsaved SCORE edit is NOT written here -- that stays the normal save/prompt flow). No-op unless this is a .repr on disk
+    // and the view/navigator state actually changed. Atomic (temp + replace). Reprise-only (not an INotationProject override).
+    void flushReprViewStateOnClose();
 
     muse::io::path_t path() const override;
     void setPath(const muse::io::path_t& path) override;

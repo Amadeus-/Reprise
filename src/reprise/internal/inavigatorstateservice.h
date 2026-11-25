@@ -39,6 +39,18 @@ struct NavigatorRecordState
     bool ignored = false;       //! default ACTIVE (counts toward the header N, its Fix stays enabled)
 };
 
+//! Equality (0.18.2): lets the write-on-close flush compare the live NavigatorStateMap to the on-disk one and SKIP the re-pack
+//! when nothing changed. unordered_map<>::operator== uses this per-value, order-independent.
+inline bool operator==(const NavigatorRecordState& a, const NavigatorRecordState& b)
+{
+    return a.collapsed == b.collapsed && a.ignored == b.ignored;
+}
+
+inline bool operator!=(const NavigatorRecordState& a, const NavigatorRecordState& b)
+{
+    return !(a == b);
+}
+
 //! The DEFAULT record state (0.18.0: collapsed + active). The state map stores only NON-default records (absent == default),
 //! so this ONE predicate defines "is default" for every prune / skip / keep site (model storeState, reprfile serialize /
 //! parse / assembleRepr) -- keeping the collapsed-default polarity in a single place rather than scattered inline checks.
