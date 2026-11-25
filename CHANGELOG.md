@@ -8,6 +8,15 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.11] — 2026-11-24
+
+### Fixed
+- **Clicking a timing-problem row again re-centers the original-scan band on that measure.** Previously, after you
+  moved the mouse over other measures (which makes the band follow the mouse), clicking the same row again did nothing
+  until you first clicked a different row; now it always jumps the band back to that measure.
+- **The score tab no longer shows the ".repr" file extension.** The tab now reads, e.g., "hardtimes-a4" instead of
+  "hardtimes-a4.repr", matching the window title.
+
 ## [0.17.10] — 2026-11-24
 
 ### Changed

@@ -31,6 +31,7 @@
 
 #include "project/inotationproject.h"
 #include "project/projectcommands.h"
+#include "project/types/reprisenameutils.h"
 
 using namespace mu::notation;
 using namespace mu::project;
@@ -210,7 +211,15 @@ QVariant NotationSwitchListModel::data(const QModelIndex& index, int role) const
     INotationPtr notation = m_notations[index.row()];
 
     switch (role) {
-    case RoleTitle: return QVariant::fromValue(notation->name());
+    case RoleTitle: {
+        //! Reprise: strip the ".repr" extension from the MASTER document tab label so it reads "hardtimes-a4", matching the
+        //! window title (repriseCleanDisplayName -- the same helper the main-window title provider uses). Excerpt/part tabs
+        //! keep their raw name: they are not file-backed, so there is nothing to strip.
+        if (isMasterNotation(notation)) {
+            return QVariant::fromValue(mu::project::repriseCleanDisplayName(notation->name()));
+        }
+        return QVariant::fromValue(notation->name());
+    }
     case RoleNeedSave: {
         bool needSave = context()->project()->isNeedSave() && isMasterNotation(notation);
         return QVariant::fromValue(needSave);

@@ -174,6 +174,12 @@ void BadTimingNavigatorModel::jumpTo(int row)
     //! bar. showItem(measure) then scrolls the editor viewport to it.
     if (entry.staffIdx < 0)
     {
+        //! clearSelection() FIRST so a RE-click of the already-selected measure still produces a selectionChanged -> the
+        //! follow band re-centres on it. Without the clear, re-selecting the same measure is a no-op in muse (no
+        //! selectionChanged fires), so after an editor hover moved the band to another measure, clicking the SAME row again
+        //! would not bring the band back (the reported bug). muse selectionChanged is a synchronous Notification, so the
+        //! clear->select pair settles within this call and renders as a single frame on the target measure (no flicker).
+        notation->interaction()->clearSelection();
         notation->interaction()->select({ measure }, mu::notation::SelectType::SINGLE);
         notation->interaction()->showItem(measure);
 
@@ -198,6 +204,9 @@ void BadTimingNavigatorModel::jumpTo(int row)
         target = measure;
     }
 
+    //! clearSelection() first (see the measure-level branch above) so re-clicking the same per-staff row re-centres the band
+    //! after an editor hover moved it -- a re-select of the already-selected target is otherwise a no-op (no selectionChanged).
+    notation->interaction()->clearSelection();
     notation->interaction()->select({ target }, mu::notation::SelectType::REPLACE, staffIdx);
     notation->interaction()->showItem(target);
 
