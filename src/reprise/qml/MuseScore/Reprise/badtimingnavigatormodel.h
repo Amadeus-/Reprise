@@ -162,11 +162,21 @@ private:
     //! delegate just binds it. Hues are chosen to read on both the light-ivory and dark-charcoal proofing surfaces.
     QString kindAccent(BadTimingKind kind) const;
 
-    //! Shared core of the cursor warp: remember the TARGET MEASURE (positional index, pickup = 0) and (re)start the one-shot
-    //! settle timer. Capturing the INDEX -- not the navigator ROW -- is deliberate: a regularize commit synchronously re-walks
-    //! m_entries (stackChanged -> rebuild), so a row would be stale by the time the timer fires, but the positional measure
-    //! index is stable across a duration-only edit. Both Q_INVOKABLE entry points and regularize() funnel through here.
-    void scheduleWarp(int32_t measureIndex0);
+    //! The FOCUS CUE fired on the editor measure when a warp lands, so the user sees where the pointer jumped. Pulse: the
+    //! measure is STILL a problem (navigator double-click) -> pulse the existing red overlay. Flash: the measure was just
+    //! FIXED (post-regularize) -> a transient accent-blue flash box (the red overlay is gone). None: warp with no cue.
+    enum class WarpCue
+    {
+        None,
+        Pulse,
+        Flash
+    };
+
+    //! Shared core of the cursor warp: remember the TARGET MEASURE (positional index, pickup = 0) + the cue to fire, and
+    //! (re)start the one-shot settle timer. Capturing the INDEX -- not the navigator ROW -- is deliberate: a regularize commit
+    //! synchronously re-walks m_entries (stackChanged -> rebuild), so a row would be stale by the time the timer fires, but the
+    //! positional measure index is stable across a duration-only edit. Both Q_INVOKABLE entry points and regularize() funnel here.
+    void scheduleWarp(int32_t measureIndex0, WarpCue cue);
 
     //! Fired by the settle timer: resolve the pending target measure's on-screen CENTRE in the editor and warp the OS cursor
     //! onto it. Maps measure->canvasBoundingRect() (LOGICAL/canvas coords) to view px via the registered editor paint view's
@@ -194,5 +204,8 @@ private:
     //! The measure the pending warp targets (positional, pickup = 0; -1 = none). Captured at schedule time so it survives the
     //! regularize re-walk, and resolved to a live Measure* in performWarp.
     int32_t m_pendingWarpMeasureIndex0 = -1;
+
+    //! The focus cue the pending warp will fire on the editor measure once it lands (set alongside m_pendingWarpMeasureIndex0).
+    WarpCue m_pendingWarpCue = WarpCue::None;
 };
 }

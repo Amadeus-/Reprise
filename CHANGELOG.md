@@ -8,6 +8,12 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.13] — 2026-11-24
+
+### Added
+- **The navigator warp now shows a focus cue where the pointer jumps.** Double-clicking a problem measure pulses its
+  red highlight a couple of times; a one-click Fix flashes the corrected measure in accent blue, then fades.
+
 ## [0.17.12] — 2026-11-24
 
 ### Added

@@ -64,5 +64,16 @@ public:
     virtual void registerEditorView(QObject* view) = 0;
     virtual void unregisterEditorView(QObject* view) = 0;
     virtual QObject* editorView() const = 0;
+
+    //! The editor-side CUE SINK -- the ProblemMeasureHighlightModel, which lives next to the editor overlays in
+    //! NotationPage.qml. The bad-timing navigator (a different dock) uses this to request a FOCUS CUE on the editor
+    //! measure at the moment its cursor-warp fires: a PULSE of the existing red problem-overlay (navigator double-click,
+    //! the measure is still a problem) or a transient accent-blue FLASH box (post-Fix, the measure is no longer a problem
+    //! so the red overlay is gone). Reached as a bare QObject* and driven by meta-call (requestPulse / requestFlashForSelection),
+    //! the same decoupled idiom editorView() uses for the warp. Registered by ProblemMeasureHighlightModel::load() and
+    //! QPointer-guarded; the model emits pulseRequested()/flashRequested() which the QML overlays animate.
+    virtual void registerEditorCueSink(QObject* model) = 0;
+    virtual void unregisterEditorCueSink(QObject* model) = 0;
+    virtual QObject* editorCueSink() const = 0;
 };
 }

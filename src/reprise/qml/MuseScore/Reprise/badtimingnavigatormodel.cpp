@@ -288,7 +288,9 @@ void BadTimingNavigatorModel::regularize(int row)
 
     //! Warp the cursor onto the just-regularized measure in the editor (deferred so it lands on the settled scroll from the
     //! showItem above), the same courtesy as a navigator double-click. Scheduled by the captured measure index, not the row.
-    scheduleWarp(targetMeasureIndex0);
+    //! FLASH cue: the measure is no longer a problem (its red overlay has cleared), so the warp lands with a transient
+    //! accent-blue flash box marking the just-fixed bar rather than pulsing a (now-absent) red overlay.
+    scheduleWarp(targetMeasureIndex0, WarpCue::Flash);
 
     return;
 }
@@ -301,7 +303,8 @@ void BadTimingNavigatorModel::warpCursorToMeasure(int row)
     }
 
     //! Resolve the row to its positional measure index immediately (while the row is valid) and schedule the deferred warp.
-    scheduleWarp(m_entries[static_cast<size_t>(row)].measureIndex0);
+    //! PULSE cue: a double-click targets a measure that is still a problem, so the warp lands by pulsing its red overlay.
+    scheduleWarp(m_entries[static_cast<size_t>(row)].measureIndex0, WarpCue::Pulse);
 
     return;
 }
@@ -313,14 +316,16 @@ void BadTimingNavigatorModel::warpCursorToMeasureIndex(int globalMeasureIndex)
         return;
     }
 
-    scheduleWarp(static_cast<int32_t>(globalMeasureIndex));
+    //! Navigate-to-a-problem semantics (the 0.18.0-redesign hook): PULSE the measure's red overlay like a double-click.
+    scheduleWarp(static_cast<int32_t>(globalMeasureIndex), WarpCue::Pulse);
 
     return;
 }
 
-void BadTimingNavigatorModel::scheduleWarp(int32_t measureIndex0)
+void BadTimingNavigatorModel::scheduleWarp(int32_t measureIndex0, WarpCue cue)
 {
     m_pendingWarpMeasureIndex0 = measureIndex0;
+    m_pendingWarpCue = cue;
 
     if (!m_warpTimer)
     {
@@ -343,7 +348,9 @@ void BadTimingNavigatorModel::scheduleWarp(int32_t measureIndex0)
 void BadTimingNavigatorModel::performWarp()
 {
     const int32_t measureIndex0 = m_pendingWarpMeasureIndex0;
+    const WarpCue cue = m_pendingWarpCue;
     m_pendingWarpMeasureIndex0 = -1;
+    m_pendingWarpCue = WarpCue::None;
 
     if (measureIndex0 < 0)
     {
@@ -415,6 +422,27 @@ void BadTimingNavigatorModel::performWarp()
     //! cursor landing over the bar fires the editor's hover-follow, which re-syncs the band + magnifier to the measure.
     const QPointF globalPos = view->mapToGlobal(centerViewPx);
     QCursor::setPos(globalPos.toPoint());
+
+    //! FOCUS CUE: now that the pointer has landed on the measure, ask the editor-side cue sink (ProblemMeasureHighlightModel,
+    //! which owns the editor overlays) to draw the cue -- synchronously here, before the warp's own hover-move event is
+    //! processed, so the cue's target selection/overlay state is the settled one we just warped to. PULSE modulates the still-
+    //! present red problem overlay (double-click); FLASH latches the just-fixed measure's rect and shows a transient accent-blue
+    //! box (post-regularize). Reached by meta-call through the bridge (no concrete type), mirroring the fromLogicalRect idiom above.
+    if (cue != WarpCue::None)
+    {
+        QObject* cueSink = proofingViewControl() ? proofingViewControl()->editorCueSink() : nullptr;
+        if (cueSink)
+        {
+            if (cue == WarpCue::Pulse)
+            {
+                QMetaObject::invokeMethod(cueSink, "requestPulse", Qt::DirectConnection);
+            }
+            else if (cue == WarpCue::Flash)
+            {
+                QMetaObject::invokeMethod(cueSink, "requestFlashForSelection", Qt::DirectConnection);
+            }
+        }
+    }
 
     return;
 }

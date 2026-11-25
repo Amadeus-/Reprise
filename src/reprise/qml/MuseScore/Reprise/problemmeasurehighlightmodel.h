@@ -64,6 +64,16 @@ class ProblemMeasureHighlightModel : public QObject, public muse::Contextable, p
     Q_PROPERTY(double logicalW READ logicalW NOTIFY changed)
     Q_PROPERTY(double logicalH READ logicalH NOTIFY changed)
 
+    //! LATCHED logical (canvas) rect for the post-Fix FLASH overlay. Unlike logical* above (which is only valid while a
+    //! PROBLEM measure is selected), this holds the last measure a FLASH cue was requested for -- needed because a Fix
+    //! clears the measure's problem status the instant it commits, so by the time the transient flash shows, `active` is
+    //! already false and logical* has cleared. requestFlashForSelection() latches the (now-fixed) selected measure's rect
+    //! here so the flash overlay has its own geometry source. The QML maps it to view px with the same fromLogicalRect().
+    Q_PROPERTY(double flashLogicalX READ flashLogicalX NOTIFY flashChanged)
+    Q_PROPERTY(double flashLogicalY READ flashLogicalY NOTIFY flashChanged)
+    Q_PROPERTY(double flashLogicalW READ flashLogicalW NOTIFY flashChanged)
+    Q_PROPERTY(double flashLogicalH READ flashLogicalH NOTIFY flashChanged)
+
     QML_ELEMENT
 
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
@@ -79,6 +89,11 @@ public:
     double logicalW() const { return m_logicalW; }
     double logicalH() const { return m_logicalH; }
 
+    double flashLogicalX() const { return m_flashLogicalX; }
+    double flashLogicalY() const { return m_flashLogicalY; }
+    double flashLogicalW() const { return m_flashLogicalW; }
+    double flashLogicalH() const { return m_flashLogicalH; }
+
     //! Called from the overlay's Component.onCompleted: subscribe (once) to notation/selection/undo-stack changes and do
     //! the first resolve.
     Q_INVOKABLE void load();
@@ -89,8 +104,26 @@ public:
     //! is held only to unregister it in the dtor; it is passed on to the bridge as a bare QObject* (no notationscene type).
     Q_INVOKABLE void setEditorView(QObject* view);
 
+    //! FOCUS-CUE requests, driven by the bad-timing navigator (via the proofing bridge) at the moment its cursor-warp fires,
+    //! so the user sees where the pointer jumped. requestPulse(): the warped-to measure is STILL a problem (navigator
+    //! double-click) -> emit pulseRequested() and let the QML modulate the EXISTING red problem-overlay's opacity (no second
+    //! box). requestFlashForSelection(): the measure was just FIXED (post-regularize) so the red overlay is gone -> latch the
+    //! currently-selected (fixed) measure's canvas rect into flashLogical* and emit flashRequested() so the QML shows a brief
+    //! transient accent-blue box there that fades + removes itself. Both are no-ops with nothing suitable selected.
+    Q_INVOKABLE void requestPulse();
+    Q_INVOKABLE void requestFlashForSelection();
+
 signals:
     void changed();
+
+    //! Emitted by requestPulse(): the QML pulses the existing red problem-overlay's opacity, then settles back to steady full.
+    void pulseRequested();
+
+    //! Emitted by requestFlashForSelection() after flashLogical* is latched: the QML shows the transient accent-blue flash.
+    void flashRequested();
+
+    //! flashLogical* changed (latched a new flash target rect).
+    void flashChanged();
 
 private:
     //! Drop + rebind the selection + undo-stack subscriptions for the CURRENT notation (at load and on every switch), then
@@ -115,6 +148,13 @@ private:
     double m_logicalY = 0.0;
     double m_logicalW = 0.0;
     double m_logicalH = 0.0;
+
+    //! Latched logical rect for the post-Fix flash overlay (see the flashLogical* properties). Held independently of the
+    //! problem-overlay rect because the fix clears the problem before the flash shows.
+    double m_flashLogicalX = 0.0;
+    double m_flashLogicalY = 0.0;
+    double m_flashLogicalW = 0.0;
+    double m_flashLogicalH = 0.0;
 
     //! Receiver for the CURRENT notation's selection + undo-stack channels; destroyed+recreated on every notation switch so
     //! a previous notation's notifications never drive this model (the proofing-models idiom).

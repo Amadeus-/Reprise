@@ -55,6 +55,12 @@ ProblemMeasureHighlightModel::~ProblemMeasureHighlightModel()
     {
         proofingViewControl()->unregisterEditorView(m_editorView.data());
     }
+
+    //! Also drop this model's cue-sink registration so the navigator never meta-calls a dangling model after teardown.
+    if (proofingViewControl())
+    {
+        proofingViewControl()->unregisterEditorCueSink(this);
+    }
 }
 
 void ProblemMeasureHighlightModel::setEditorView(QObject* view)
@@ -85,6 +91,13 @@ void ProblemMeasureHighlightModel::load()
     {
         m_inited = true;
 
+        //! Publish this model as the editor-side CUE SINK so the bad-timing navigator (a different dock) can request the
+        //! pulse/flash focus cue on the editor overlays at warp time. Registered once; dropped in the dtor.
+        if (proofingViewControl())
+        {
+            proofingViewControl()->registerEditorCueSink(this);
+        }
+
         //! Re-point the selection + undo-stack subscriptions whenever the user switches to a different score/part.
         projectSession()->currentNotationChanged().onNotify(this, [this]()
         {
@@ -93,6 +106,56 @@ void ProblemMeasureHighlightModel::load()
     }
 
     resubscribe();
+
+    return;
+}
+
+void ProblemMeasureHighlightModel::requestPulse()
+{
+    //! The warped-to measure is still a problem, so the steady red problem-overlay is already drawn over it. Just ask the
+    //! QML to pulse that overlay's opacity; it modulates the EXISTING box (no second box) and settles back to steady full.
+    emit pulseRequested();
+
+    return;
+}
+
+void ProblemMeasureHighlightModel::requestFlashForSelection()
+{
+    //! Post-Fix: the regularized measure is the current selection but is no longer a problem (active == false, logical*
+    //! cleared). Resolve that selected measure's canvas rect directly and LATCH it so the transient flash overlay has its
+    //! own geometry, independent of the (now-inactive) problem overlay. No suitable selection -> no flash.
+    const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    if (!notation || !notation->interaction())
+    {
+        return;
+    }
+
+    const mu::notation::INotationSelectionPtr sel = notation->interaction()->selection();
+    if (!sel || sel->isNone())
+    {
+        return;
+    }
+
+    mu::engraving::MeasureBase* mb = sel->startMeasureBase();
+    if (!mb || !mb->isMeasure())
+    {
+        return;
+    }
+
+    const mu::engraving::Measure* measure = mu::engraving::toMeasure(mb);
+    const muse::RectF r = measure->canvasBoundingRect();
+    if (r.width() <= 0.0 || r.height() <= 0.0)
+    {
+        return;
+    }
+
+    m_flashLogicalX = r.x();
+    m_flashLogicalY = r.y();
+    m_flashLogicalW = r.width();
+    m_flashLogicalH = r.height();
+
+    emit flashChanged();
+    emit flashRequested();
 
     return;
 }

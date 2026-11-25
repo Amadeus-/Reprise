@@ -616,6 +616,12 @@ DockPage {
         //! enough that a readable system of the original is visible (Phase A3 following band).
         property int stripHeight: 320
 
+        //! NOTE: Reprise WARP FOCUS-CUE durations (0.17.13), named + tunable so the user can feel-tune the cue timing.
+        //! pulseMs: total time for the red problem-overlay's full->dim->full->dim->full pulse (navigator double-click).
+        //! flashMs: total fade time of the transient accent-blue post-Fix flash box (1 -> 0, then it removes itself).
+        readonly property int pulseMs: 2000
+        readonly property int flashMs: 2800
+
         readonly property int stripCurrentHeight: !proofingStrip.hasContent ? 0
                                                  : (proofingStrip.expanded ? centralWrapper.stripHeight
                                                                            : proofingStrip.headerHeight)
@@ -746,6 +752,95 @@ DockPage {
             border.color: "#d23b2e"
             border.width: 2
             radius: 2
+
+            //! Steady state. The pulse cue (below) animates this down-and-back and always lands back on 1.0, so after a pulse
+            //! -- or if a pulse is interrupted by re-selection (the box hides, the animation still runs to its 1.0 end) -- the
+            //! overlay is back to steady full red the next time it is shown. No reset wiring needed.
+            opacity: 1.0
+
+            //! CASE A FOCUS CUE (navigator DOUBLE-CLICK on a still-a-problem measure): pulse THIS existing red overlay's
+            //! opacity full->dim->full->dim->full (two dim cycles over pulseMs), then settle to steady full. It modulates the
+            //! box already present -- it never stacks a second box. Fired by ProblemMeasureHighlightModel.pulseRequested(),
+            //! which the navigator requests through the proofing bridge at the exact settled moment its cursor-warp lands.
+            SequentialAnimation {
+                id: problemPulseAnimation
+
+                readonly property int quarter: Math.max(1, centralWrapper.pulseMs / 4)
+
+                NumberAnimation { target: problemMeasureOverlay; property: "opacity"; to: 0.2; duration: problemPulseAnimation.quarter; easing.type: Easing.InOutQuad }
+                NumberAnimation { target: problemMeasureOverlay; property: "opacity"; to: 1.0; duration: problemPulseAnimation.quarter; easing.type: Easing.InOutQuad }
+                NumberAnimation { target: problemMeasureOverlay; property: "opacity"; to: 0.2; duration: problemPulseAnimation.quarter; easing.type: Easing.InOutQuad }
+                NumberAnimation { target: problemMeasureOverlay; property: "opacity"; to: 1.0; duration: problemPulseAnimation.quarter; easing.type: Easing.InOutQuad }
+            }
+
+            Connections {
+                target: problemHighlightModel
+                function onPulseRequested() {
+                    problemPulseAnimation.restart()
+                }
+            }
+        }
+
+        //! NOTE: Reprise CASE B FOCUS CUE (0.17.13): a TRANSIENT accent-blue FLASH box shown after a one-click Fix. Once a
+        //! measure is regularized it is no longer a problem, so its red problemMeasureOverlay has cleared -- there is nothing
+        //! left to pulse. This separate short-lived overlay marks WHERE the fix landed (and where the cursor warped) by
+        //! flashing the just-fixed bar in the app accent colour and fading itself out. It has its OWN geometry source: the
+        //! model latches the fixed measure's logical rect into flashLogical* (requestFlashForSelection), because the problem
+        //! overlay's logical* has gone inactive by now. Mapped to view px with the same paintView.fromLogicalRect() so it
+        //! tracks pan/zoom, and started hidden -- it only appears for the duration of a flash, then removes itself (visible=false).
+        Rectangle {
+            id: fixFlashOverlay
+
+            parent: notationView.paintView
+
+            readonly property rect viewRect: {
+                let _m = parent ? parent.matrix : null
+                if (!parent || problemHighlightModel.flashLogicalW <= 0 || problemHighlightModel.flashLogicalH <= 0) {
+                    return Qt.rect(0, 0, 0, 0)
+                }
+
+                return parent.fromLogicalRect(Qt.rect(problemHighlightModel.flashLogicalX, problemHighlightModel.flashLogicalY,
+                                                       problemHighlightModel.flashLogicalW, problemHighlightModel.flashLogicalH))
+            }
+
+            x: viewRect.x
+            y: viewRect.y
+            width: viewRect.width
+            height: viewRect.height
+            z: 1001
+
+            //! Hidden until a flash is requested; opacity is driven 1 -> 0 by the animation below, then visible flips off.
+            visible: false
+            opacity: 0.0
+
+            //! App ACCENT colour. A light translucent wash (so the just-fixed notes stay readable through it) plus a solid
+            //! accent border, the whole box faded out together by the opacity animation -- reads as a brief blue flash, not a
+            //! blackout. Accent (not red) deliberately distinguishes "fixed/positive" from the red problem marker.
+            color: Qt.rgba(ui.theme.accentColor.r, ui.theme.accentColor.g, ui.theme.accentColor.b, 0.35)
+            border.color: ui.theme.accentColor
+            border.width: 2
+            radius: 2
+
+            NumberAnimation {
+                id: fixFlashAnimation
+
+                target: fixFlashOverlay
+                property: "opacity"
+                from: 1.0
+                to: 0.0
+                duration: centralWrapper.flashMs
+                easing.type: Easing.OutCubic
+
+                onFinished: fixFlashOverlay.visible = false
+            }
+
+            Connections {
+                target: problemHighlightModel
+                function onFlashRequested() {
+                    fixFlashOverlay.visible = true
+                    fixFlashAnimation.restart()
+                }
+            }
         }
     }
 

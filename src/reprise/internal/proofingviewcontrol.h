@@ -91,6 +91,24 @@ public:
         return m_editorView.data();
     }
 
+    void registerEditorCueSink(QObject* model) override
+    {
+        m_editorCueSink = model;
+    }
+
+    void unregisterEditorCueSink(QObject* model) override
+    {
+        if (m_editorCueSink.data() == model)
+        {
+            m_editorCueSink = nullptr;
+        }
+    }
+
+    QObject* editorCueSink() const override
+    {
+        return m_editorCueSink.data();
+    }
+
 private:
     //! The live follow band + magnifier view-models (held as QPointers so they auto-null if a model is destroyed by some
     //! other path first). Driven by the dev reprise.proofing-debug-set-zoom handler through the Qt property system.
@@ -101,5 +119,10 @@ private:
     //! the bad-timing navigator -- in a different dock -- can map a measure to global screen coords and warp the cursor onto
     //! it. QPointer so it auto-nulls if the editor view is torn down (page reload) before the model unregisters.
     QPointer<QObject> m_editorView;
+
+    //! The editor-side cue sink (ProblemMeasureHighlightModel), published by the editor-side model so the bad-timing
+    //! navigator -- in a different dock -- can request the pulse/flash focus cue on the editor overlays at warp time.
+    //! QPointer so it auto-nulls if the model is torn down (page reload) before it unregisters.
+    QPointer<QObject> m_editorCueSink;
 };
 }
