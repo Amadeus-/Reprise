@@ -52,5 +52,17 @@ public:
     virtual void registerMagnifier(QObject* model) = 0;
     virtual void unregisterMagnifier(QObject* model) = 0;
     virtual QObject* magnifierModel() const = 0;
+
+    //! The MAIN notation EDITOR paint view (a notationscene AbstractNotationPaintView, itself a QQuickItem) publishes
+    //! ITSELF here so reprise view-models that live in OTHER docks -- the bad-timing navigator in the right column -- can
+    //! reach the editor's geometry without a QML reference to it (the navigator is in a different QML scope and cannot see
+    //! notationView.paintView). Held as a bare QObject* so this interface carries NO notationscene dependency: the navigator
+    //! maps a measure's logical (canvas) rect to global screen coords via the view's fromLogicalRect() (a meta-call, no
+    //! concrete type -- the same decoupled idiom the set-zoom handler uses to drive userZoom) plus QQuickItem::mapToGlobal(),
+    //! then QCursor::setPos to warp the OS cursor onto the measure in the editor. Registered by the editor-side reprise model
+    //! (ProblemMeasureHighlightModel, which already lives next to the paint view in NotationPage.qml) and QPointer-guarded.
+    virtual void registerEditorView(QObject* view) = 0;
+    virtual void unregisterEditorView(QObject* view) = 0;
+    virtual QObject* editorView() const = 0;
 };
 }

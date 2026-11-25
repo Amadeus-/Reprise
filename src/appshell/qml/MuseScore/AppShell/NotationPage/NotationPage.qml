@@ -706,7 +706,14 @@ DockPage {
         ProblemMeasureHighlightModel {
             id: problemHighlightModel
 
-            Component.onCompleted: problemHighlightModel.load()
+            Component.onCompleted: {
+                problemHighlightModel.load()
+
+                //! Publish the editor paint view to the proofing bridge so the bad-timing navigator (a different dock, no
+                //! QML reference to this paint view) can map a measure to global screen coords and warp the cursor onto it.
+                //! notationView is declared above, so notationView.paintView already exists by the time this runs.
+                problemHighlightModel.setEditorView(notationView.paintView)
+            }
         }
 
         Rectangle {

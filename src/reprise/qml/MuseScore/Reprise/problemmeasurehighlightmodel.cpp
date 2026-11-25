@@ -46,7 +46,38 @@ ProblemMeasureHighlightModel::ProblemMeasureHighlightModel(QObject* parent)
     //! crashes on first use. All context-dependent setup is deferred to load().
 }
 
-ProblemMeasureHighlightModel::~ProblemMeasureHighlightModel() = default;
+ProblemMeasureHighlightModel::~ProblemMeasureHighlightModel()
+{
+    //! Drop the editor-view registration if this model published one, so the bridge never hands out a dangling view after
+    //! the page is torn down. unregisterEditorView only clears the slot when it still points at our view, so a newer page's
+    //! registration is never stepped on.
+    if (!m_editorView.isNull() && proofingViewControl())
+    {
+        proofingViewControl()->unregisterEditorView(m_editorView.data());
+    }
+}
+
+void ProblemMeasureHighlightModel::setEditorView(QObject* view)
+{
+    if (m_editorView.data() == view)
+    {
+        return;
+    }
+
+    if (!m_editorView.isNull() && proofingViewControl())
+    {
+        proofingViewControl()->unregisterEditorView(m_editorView.data());
+    }
+
+    m_editorView = view;
+
+    if (view && proofingViewControl())
+    {
+        proofingViewControl()->registerEditorView(view);
+    }
+
+    return;
+}
 
 void ProblemMeasureHighlightModel::load()
 {

@@ -36,6 +36,9 @@
 #include "project/iprojectsession.h"
 
 #include "internal/badtimingcheck.h"
+#include "internal/iproofingviewcontrol.h"
+
+class QTimer;
 
 namespace mu::engraving {
 class Measure;
@@ -68,6 +71,7 @@ class BadTimingNavigatorModel : public QAbstractListModel, public muse::Contexta
     QML_ELEMENT
 
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
+    muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
 
 public:
     explicit BadTimingNavigatorModel(QObject* parent = nullptr);
@@ -110,6 +114,19 @@ public:
     //! the undo stack). The stackChanged subscription then re-walks and clears this row + its red highlight automatically.
     Q_INVOKABLE void regularize(int row);
 
+    //! WARP the OS mouse cursor onto row's measure in the EDITOR (lower score pane), centred on the measure, AFTER the
+    //! editor has scrolled it into view. Landing the real cursor over the bar triggers the editor's existing hover-follow,
+    //! so the following band + magnifier re-sync to the measure (the whole point of the warp). Deferred via a one-shot
+    //! settle timer and the geometry RECOMPUTED at fire time, so it warps onto the SETTLED scroll position, not the pre-scroll
+    //! rect. A no-op if the editor view is not registered / not visible or the measure rect cannot be resolved (never warps
+    //! to a garbage point). This is the SINGLE reusable warp entry point: the navigator double-click calls it, the one-click
+    //! Fix (regularize) routes through the same core, and the planned 0.18.0 navigator redesign can re-wire new triggers to it.
+    Q_INVOKABLE void warpCursorToMeasure(int row);
+
+    //! Same warp, addressed by GLOBAL measure index (0-based, pickup = 0) instead of a navigator row -- for a caller that
+    //! holds the measure index rather than a row (e.g. the planned 0.18.0 navigator redesign). Shares the core with the above.
+    Q_INVOKABLE void warpCursorToMeasureIndex(int globalMeasureIndex);
+
 signals:
     void countChanged();
 
@@ -145,6 +162,18 @@ private:
     //! delegate just binds it. Hues are chosen to read on both the light-ivory and dark-charcoal proofing surfaces.
     QString kindAccent(BadTimingKind kind) const;
 
+    //! Shared core of the cursor warp: remember the TARGET MEASURE (positional index, pickup = 0) and (re)start the one-shot
+    //! settle timer. Capturing the INDEX -- not the navigator ROW -- is deliberate: a regularize commit synchronously re-walks
+    //! m_entries (stackChanged -> rebuild), so a row would be stale by the time the timer fires, but the positional measure
+    //! index is stable across a duration-only edit. Both Q_INVOKABLE entry points and regularize() funnel through here.
+    void scheduleWarp(int32_t measureIndex0);
+
+    //! Fired by the settle timer: resolve the pending target measure's on-screen CENTRE in the editor and warp the OS cursor
+    //! onto it. Maps measure->canvasBoundingRect() (LOGICAL/canvas coords) to view px via the registered editor paint view's
+    //! fromLogicalRect() (a meta-call, no notationscene type), takes the rect centre, CLAMPS it into the editor viewport, maps
+    //! to GLOBAL screen coords with QQuickItem::mapToGlobal (multi-monitor safe) and calls QCursor::setPos. No-op on any miss.
+    void performWarp();
+
     bool m_inited = false;
     bool m_hasScore = false;
     std::vector<BadTimingProblem> m_entries;
@@ -158,5 +187,12 @@ private:
     //! Receiver for the CURRENT notation's undo-stack + selection channels; destroyed+recreated on every notation switch so
     //! a previous notation's notifications never drive this model (the NotationSwitchListModel idiom the magnifier uses).
     std::unique_ptr<muse::async::Asyncable> m_notationReceiver;
+
+    //! One-shot "settle" timer for the cursor warp: scheduleWarp (re)starts it; on timeout performWarp recomputes the
+    //! measure geometry on the SETTLED scroll and warps. Lazily created, parented to this (auto-destroyed with the model).
+    QTimer* m_warpTimer = nullptr;
+    //! The measure the pending warp targets (positional, pickup = 0; -1 = none). Captured at schedule time so it survives the
+    //! regularize re-walk, and resolved to a live Measure* in performWarp.
+    int32_t m_pendingWarpMeasureIndex0 = -1;
 };
 }

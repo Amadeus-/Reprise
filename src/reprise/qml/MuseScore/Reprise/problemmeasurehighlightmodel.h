@@ -27,6 +27,7 @@
 #include <set>
 
 #include <QObject>
+#include <QPointer>
 #include <qqmlintegration.h>
 
 #include "modularity/ioc.h"
@@ -35,6 +36,7 @@
 #include "project/iprojectsession.h"
 
 #include "internal/badtimingcheck.h"
+#include "internal/iproofingviewcontrol.h"
 
 namespace mu::reprise {
 //! View-model behind the Reprise EDITOR problem-measure RED HIGHLIGHT. When the current notation selection lands on a
@@ -65,6 +67,7 @@ class ProblemMeasureHighlightModel : public QObject, public muse::Contextable, p
     QML_ELEMENT
 
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
+    muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
 
 public:
     explicit ProblemMeasureHighlightModel(QObject* parent = nullptr);
@@ -79,6 +82,12 @@ public:
     //! Called from the overlay's Component.onCompleted: subscribe (once) to notation/selection/undo-stack changes and do
     //! the first resolve.
     Q_INVOKABLE void load();
+
+    //! Publish the main notation EDITOR paint view to the proofing view-control bridge so OTHER docks (the bad-timing
+    //! navigator's cursor-warp) can reach the editor geometry. Called from NotationPage.qml with notationView.paintView:
+    //! this model is the one reprise model that lives in the editor's QML scope, so it is the natural registrant. The view
+    //! is held only to unregister it in the dtor; it is passed on to the bridge as a bare QObject* (no notationscene type).
+    Q_INVOKABLE void setEditorView(QObject* view);
 
 signals:
     void changed();
@@ -110,5 +119,9 @@ private:
     //! Receiver for the CURRENT notation's selection + undo-stack channels; destroyed+recreated on every notation switch so
     //! a previous notation's notifications never drive this model (the proofing-models idiom).
     std::unique_ptr<muse::async::Asyncable> m_notationReceiver;
+
+    //! The editor paint view this model published to the bridge (set via setEditorView). QPointer so it auto-nulls if the
+    //! view is destroyed first; kept only to unregister the exact pointer in the dtor.
+    QPointer<QObject> m_editorView;
 };
 }

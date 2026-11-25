@@ -22,6 +22,14 @@
 
 #include "badtimingnavigatormodel.h"
 
+#include <algorithm>
+
+#include <QCursor>
+#include <QPointF>
+#include <QQuickItem>
+#include <QRectF>
+#include <QTimer>
+
 #include "global/translation.h"
 
 #include "notation/inotation.h"
@@ -229,6 +237,12 @@ void BadTimingNavigatorModel::regularize(int row)
 
     const BadTimingProblem& entry = m_entries[static_cast<size_t>(row)];
 
+    //! Capture the positional measure index NOW, before any mutation: commitChanges() below fires stackChanged -> rebuild()
+    //! SYNCHRONOUSLY, which reassigns m_entries and dangles `entry`. We schedule the post-fix cursor warp from HERE (not from
+    //! QML after the call) for exactly this reason -- by the time regularize() returns, the row is gone from the worklist, so
+    //! a QML-side warp-by-row would miss. The measure index itself is stable across this duration-only edit.
+    const int32_t targetMeasureIndex0 = entry.measureIndex0;
+
     const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
     if (!notation || !notation->undoStack() || !notation->interaction() || !notation->elements())
     {
@@ -271,6 +285,136 @@ void BadTimingNavigatorModel::regularize(int row)
     //! re-walks this model: the now-correct bar drops out of the worklist and its red highlight clears automatically.
     notation->interaction()->select({ measure }, mu::notation::SelectType::SINGLE);
     notation->interaction()->showItem(measure);
+
+    //! Warp the cursor onto the just-regularized measure in the editor (deferred so it lands on the settled scroll from the
+    //! showItem above), the same courtesy as a navigator double-click. Scheduled by the captured measure index, not the row.
+    scheduleWarp(targetMeasureIndex0);
+
+    return;
+}
+
+void BadTimingNavigatorModel::warpCursorToMeasure(int row)
+{
+    if (row < 0 || row >= static_cast<int>(m_entries.size()))
+    {
+        return;
+    }
+
+    //! Resolve the row to its positional measure index immediately (while the row is valid) and schedule the deferred warp.
+    scheduleWarp(m_entries[static_cast<size_t>(row)].measureIndex0);
+
+    return;
+}
+
+void BadTimingNavigatorModel::warpCursorToMeasureIndex(int globalMeasureIndex)
+{
+    if (globalMeasureIndex < 0)
+    {
+        return;
+    }
+
+    scheduleWarp(static_cast<int32_t>(globalMeasureIndex));
+
+    return;
+}
+
+void BadTimingNavigatorModel::scheduleWarp(int32_t measureIndex0)
+{
+    m_pendingWarpMeasureIndex0 = measureIndex0;
+
+    if (!m_warpTimer)
+    {
+        m_warpTimer = new QTimer(this);
+        m_warpTimer->setSingleShot(true);
+        connect(m_warpTimer, &QTimer::timeout, this, [this]()
+        {
+            performWarp();
+        });
+    }
+
+    //! Short settle delay: showItem's scroll + the model select are synchronous (the matrix is already final when the caller
+    //! returns), but a small deferral lets the click handler unwind and any queued relayout/repaint settle before we read the
+    //! measure's on-screen rect. performWarp recomputes the geometry at fire time, so the warp uses the settled position.
+    m_warpTimer->start(60);
+
+    return;
+}
+
+void BadTimingNavigatorModel::performWarp()
+{
+    const int32_t measureIndex0 = m_pendingWarpMeasureIndex0;
+    m_pendingWarpMeasureIndex0 = -1;
+
+    if (measureIndex0 < 0)
+    {
+        return;
+    }
+
+    //! The registered editor paint view (notationscene AbstractNotationPaintView), reached as a bare QObject* through the
+    //! proofing bridge so this module needs no notationscene dependency. Absent (not yet registered / page torn down) -> skip.
+    QObject* viewObject = proofingViewControl() ? proofingViewControl()->editorView() : nullptr;
+    QQuickItem* view = qobject_cast<QQuickItem*>(viewObject);
+    if (!view || !view->isVisible())
+    {
+        return;
+    }
+
+    const qreal viewW = view->width();
+    const qreal viewH = view->height();
+    if (viewW <= 0.0 || viewH <= 0.0)
+    {
+        return;
+    }
+
+    const mu::notation::INotationPtr notation = projectSession() ? projectSession()->currentNotation() : nullptr;
+    mu::engraving::Score* score = (notation && notation->elements()) ? notation->elements()->msScore() : nullptr;
+    if (!score)
+    {
+        return;
+    }
+
+    //! Resolve the Nth measure positionally (pickup = 0), the same convention as jumpTo / regularize / the scan.
+    mu::engraving::Measure* measure = score->firstMeasure();
+    for (int32_t i = 0; i < measureIndex0 && measure; ++i)
+    {
+        measure = measure->nextMeasure();
+    }
+
+    if (!measure)
+    {
+        return;
+    }
+
+    //! The measure's canvas (LOGICAL) bounding rect -- the same rect the editor red-highlight overlay maps. Not laid out
+    //! yet / empty -> nothing to aim at, skip rather than warp to a garbage point.
+    const muse::RectF canvasRect = measure->canvasBoundingRect();
+    const QRectF logicalRect(canvasRect.x(), canvasRect.y(), canvasRect.width(), canvasRect.height());
+    if (logicalRect.isEmpty())
+    {
+        return;
+    }
+
+    //! Map LOGICAL -> view px via the paint view's Q_INVOKABLE fromLogicalRect (meta-call: no concrete AbstractNotationPaintView
+    //! type needed here, mirroring how the set-zoom handler drives the models through the Qt meta-object system).
+    QRectF viewRect;
+    const bool mapped = QMetaObject::invokeMethod(view, "fromLogicalRect", Qt::DirectConnection,
+                                                  Q_RETURN_ARG(QRectF, viewRect), Q_ARG(QRectF, logicalRect));
+    if (!mapped)
+    {
+        return;
+    }
+
+    //! Aim at the measure centre, CLAMPED into the editor viewport (with a small inset) so a measure that showItem left only
+    //! partially on-screen still warps to a point inside the editor, never off it.
+    constexpr qreal inset = 6.0;
+    QPointF centerViewPx = viewRect.center();
+    centerViewPx.setX(std::clamp(centerViewPx.x(), inset, viewW - inset));
+    centerViewPx.setY(std::clamp(centerViewPx.y(), inset, viewH - inset));
+
+    //! View px -> GLOBAL screen coords (QQuickItem::mapToGlobal is multi-monitor aware), then warp the OS cursor. The real
+    //! cursor landing over the bar fires the editor's hover-follow, which re-syncs the band + magnifier to the measure.
+    const QPointF globalPos = view->mapToGlobal(centerViewPx);
+    QCursor::setPos(globalPos.toPoint());
 
     return;
 }

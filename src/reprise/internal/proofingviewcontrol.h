@@ -73,10 +73,33 @@ public:
         return m_magnifier.data();
     }
 
+    void registerEditorView(QObject* view) override
+    {
+        m_editorView = view;
+    }
+
+    void unregisterEditorView(QObject* view) override
+    {
+        if (m_editorView.data() == view)
+        {
+            m_editorView = nullptr;
+        }
+    }
+
+    QObject* editorView() const override
+    {
+        return m_editorView.data();
+    }
+
 private:
     //! The live follow band + magnifier view-models (held as QPointers so they auto-null if a model is destroyed by some
     //! other path first). Driven by the dev reprise.proofing-debug-set-zoom handler through the Qt property system.
     QPointer<QObject> m_band;
     QPointer<QObject> m_magnifier;
+
+    //! The main notation editor paint view (notationscene AbstractNotationPaintView), published by the editor-side model so
+    //! the bad-timing navigator -- in a different dock -- can map a measure to global screen coords and warp the cursor onto
+    //! it. QPointer so it auto-nulls if the editor view is torn down (page reload) before the model unregisters.
+    QPointer<QObject> m_editorView;
 };
 }

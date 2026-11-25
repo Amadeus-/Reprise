@@ -148,6 +148,18 @@ Item {
                         navModel.jumpTo(item.index)
                     }
 
+                    //! DOUBLE-CLICK: the normal single-click action (select + band/magnifier follow via jumpTo) PLUS a warp of
+                    //! the OS cursor onto this measure in the editor (lower score pane). Landing the cursor over the bar fires
+                    //! the editor's hover-follow, so the band re-syncs to it. A plain SINGLE click (onClicked above) never warps.
+                    //! ListItemBlank forwards its internal MouseArea's doubleClicked, and Qt still delivers the plain clicked on
+                    //! the first press, so the no-warp single-click path is untouched. jumpTo is idempotent, so re-calling it here
+                    //! is harmless (the first click already ran it). warpCursorToMeasure defers + recomputes on the settled scroll.
+                    onDoubleClicked: {
+                        listView.currentIndex = item.index
+                        navModel.jumpTo(item.index)
+                        navModel.warpCursorToMeasure(item.index)
+                    }
+
                     //! Per-kind coloured accent down the left edge so the problem kinds stay visually distinct at a glance
                     //! (violet = wrong length, amber = incomplete, orange = voice too long, red = corrupted repeat). The
                     //! colour comes from the model (accentColor role) so the kind -> colour map lives in one place.

@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.12] — 2026-11-24
+
+### Added
+- **Double-clicking a timing-problem row — or clicking its Fix button — moves the pointer onto that measure in the
+  editor.** This re-syncs the original-scan band and detail view to the measure (via hover-follow). A single click
+  still just selects and follows, without moving the pointer.
+
 ## [0.17.11] — 2026-11-24
 
 ### Fixed
