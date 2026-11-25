@@ -118,7 +118,10 @@ Rectangle {
 
                     return base
                 }
-                color: ui.theme.fontSecondaryColor
+                //! Primary (not secondary) colour: fontSecondaryColor was too light to read on the cream band header in the
+                //! light theme. Primary is theme-aware (dark-on-cream in light, light in dark) and the hierarchy is kept by
+                //! weight -- the "Original scan" title is bodyBoldFont, this subtitle is regular.
+                color: ui.theme.fontPrimaryColor
                 visible: bandModel.pages.length > 0
                 Layout.alignment: Qt.AlignVCenter
             }

@@ -8,6 +8,13 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.17.10] — 2026-11-24
+
+### Changed
+- **The "Original scan" band's page/measure caption is easier to read.** The "Page X of N · measure Y" text beside
+  the "Original scan" label now uses the primary text color instead of a lighter gray, so it reads clearly on the
+  light theme's cream header. The bold "Original scan" label still stands out as the heading.
+
 ## [0.17.9] — 2026-11-24
 
 ### Added
