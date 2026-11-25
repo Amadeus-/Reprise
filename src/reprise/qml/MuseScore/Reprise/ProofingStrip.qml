@@ -165,7 +165,7 @@ Rectangle {
 
         //! Scale from sheet-image pixels to on-screen band pixels. At userZoom = 1 the page is drawn at the full band
         //! width (fit-to-width); userZoom multiplies that so one scale factor still maps both axes (the rendered image is
-        //! stretched into a box of the exact sheet aspect). model.userZoom is the mouse-wheel zoom, clamped [0.5, 4.0].
+        //! stretched into a box of the exact sheet aspect). model.userZoom is the mouse-wheel zoom, clamped [0.25, 4.0].
         readonly property real imgScale: (sheetW > 0 ? width / sheetW : 1) * bandModel.userZoom
         readonly property real pageDispH: sheetH * imgScale
 
@@ -408,7 +408,7 @@ Rectangle {
             clampPan()
         }
 
-        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~8% (1 + d/1500), clamped in the model to [0.5, 4.0].
+        //! Mouse-wheel zoom: each notch (~120) steps the band zoom by ~8% (1 + d/1500), clamped in the model to [0.25, 4.0].
         //! SHIFT held = FINE zoom at ~1.3%/notch (divisor /9000) for precise adjustment. Windows gotcha: holding Shift while
         //! scrolling makes Qt deliver the wheel on angleDelta.X instead of .Y, so take whichever axis is non-zero as the
         //! effective delta. Consumes the event so the notation editor behind never also scrolls.
@@ -417,7 +417,7 @@ Rectangle {
                 let d = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
                 let fine = (wheel.modifiers & Qt.ShiftModifier) !== 0
                 let factor = 1 + d / (fine ? 12000 : 2400)
-                bandModel.userZoom = Math.max(0.5, Math.min(4.0, bandModel.userZoom * factor))
+                bandModel.userZoom = Math.max(0.25, Math.min(4.0, bandModel.userZoom * factor))
                 wheel.accepted = true
             }
         }

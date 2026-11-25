@@ -262,7 +262,16 @@ Item {
                                     anchors.fill: parent
                                     //! A little extra hit padding around the small glyph so the toggle is easy to click.
                                     anchors.margins: -4
-                                    onClicked: navModel.setCollapsed(record.index, !record.collapsed)
+                                    //! 0.18.1: a chevron click ALSO navigates (select + band follow + re-centre), like a row-click,
+                                    //! so ANY click on the row OR its chevron jumps the band to that measure -- the chevron just ADDS
+                                    //! the collapse toggle. This MouseArea sits above navArea and accepts the click (default), so it
+                                    //! CONSUMES it: navArea does NOT also fire for the same click, so jumpTo runs exactly ONCE (no
+                                    //! double selectionChanged cascade).
+                                    onClicked: {
+                                        listView.currentIndex = record.index
+                                        navModel.jumpTo(record.index)
+                                        navModel.setCollapsed(record.index, !record.collapsed)
+                                    }
                                 }
                             }
 
@@ -278,11 +287,13 @@ Item {
                                 anchors.left: chevron.right
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: record.ignored
-                                width: visible ? 16 : 0
-                                height: 16
+                                width: visible ? 14 : 0
+                                height: 14
 
                                 StyledIconLabel {
                                     anchors.centerIn: parent
+                                    //! Slightly smaller than the default icon size so the ignored tick is a subtle marker, not a loud glyph.
+                                    font.pixelSize: 12
                                     iconCode: IconCode.TICK_RIGHT_ANGLE
                                     color: "#4caf50"
                                 }

@@ -8,6 +8,14 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-11-25
+
+### Changed
+- **Clicking a timing problem's chevron now jumps to it too** — selecting the measure and following it in the
+  original-scan band, not just expanding/collapsing the record (matching a row click).
+- **The original-scan band zooms out further** — its minimum zoom is now 25% (was 50%).
+- **Smaller "ignored" check mark** in the Timing problems list.
+
 ## [0.18.0] — 2026-11-25
 
 ### Added

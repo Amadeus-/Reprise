@@ -640,7 +640,9 @@ void ProofingStripModel::rebuildProblemSet()
 
 void ProofingStripModel::setUserZoom(double zoom)
 {
-    const double clamped = std::clamp(zoom, 0.5, 4.0);
+    //! 0.18.1: min band zoom lowered 0.5 -> 0.25 (max 4.0 unchanged) so the follow band can zoom further OUT. Mirrors the
+    //! QML wheel-handler clamp in ProofingStrip.qml -- both sites must agree or one re-clamps the other.
+    const double clamped = std::clamp(zoom, 0.25, 4.0);
     if (qFuzzyCompare(clamped, m_userZoom))
     {
         return;
