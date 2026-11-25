@@ -77,6 +77,8 @@ inline const std::set<std::string>& mcpAllowlistPaths()
         "reprise/proofing-debug-set-zoom",
         // dev "drive" tool: regularize an under-full measure to its time signature (drives the bad-timing navigator Fix)
         "reprise/proofing-debug-regularize",
+        // dev "drive" tool: collapse/expand or ignore/restore a bad-timing navigator record by list row (0.18.0 two-line)
+        "reprise/proofing-debug-navigator",
         // OCR language-pack helpers (verify the Preferences pack manager headlessly)
         "reprise/list-languages",
         "reprise/add-language",

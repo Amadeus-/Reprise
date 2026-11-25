@@ -23,11 +23,13 @@
 #pragma once
 
 #include <QObject>
+#include <QTimer>
 #include <qqmlintegration.h>
 
 #include "async/asyncable.h"
 #include "modularity/ioc.h"
 #include "iprojectconfiguration.h"
+#include "iprojectsession.h"
 #include "rcommand/icommanddispatcher.h"
 #include "rcommand/icommandsstate.h"
 #include "interactive/iplatforminteractive.h"
@@ -55,9 +57,13 @@ class ScoresPageModel : public QObject, public muse::Contextable, public muse::a
     muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
     muse::ContextInject<muse::rcommand::ICommandsState> commandsState = { this };
+    //! Reprise: observe open COMPLETION (the opened project becoming the current notation) so the busy cursor shown while a
+    //! recent scan loads is restored at the right moment -- the open is async, so a plain scope guard would restore too early.
+    muse::ContextInject<IProjectSession> projectSession = { this };
 
 public:
     explicit ScoresPageModel(QObject* parent = nullptr);
+    ~ScoresPageModel() override;
 
     enum ViewType {
         Grid = int(IProjectConfiguration::HomeScoresPageViewType::Grid),
@@ -85,6 +91,16 @@ signals:
     void importEnabledChanged();
 
 private:
+    //! Reprise: show a busy (wait) cursor while a recent scan (.repr) opens from the home. The open is ASYNC (~3-5s), so we
+    //! set the override cursor when openScore dispatches the open and restore it on the REAL completion -- the next
+    //! IProjectSession::currentNotationChanged with a current notation (the opened score) -- or on a timeout backstop so the
+    //! cursor can never get stuck busy if an open never completes. The destructor also restores (safety) if this model is torn
+    //! down mid-open. Reprise-only; a tracked §8 divergence in this upstream file (match its K&R style).
+    void beginScanOpenBusyCursor();
+    void endScanOpenBusyCursor();
+
     bool m_subscribed = false;
+    bool m_scanOpenBusy = false;
+    QTimer m_scanOpenBusyTimeout;
 };
 }

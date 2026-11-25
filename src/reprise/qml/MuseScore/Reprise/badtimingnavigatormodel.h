@@ -24,6 +24,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <QAbstractListModel>
@@ -37,6 +39,7 @@
 
 #include "internal/badtimingcheck.h"
 #include "internal/iproofingviewcontrol.h"
+#include "internal/inavigatorstateservice.h"
 
 class QTimer;
 
@@ -63,8 +66,15 @@ class BadTimingNavigatorModel : public QAbstractListModel, public muse::Contexta
 {
     Q_OBJECT
 
-    //! Number of problem rows currently listed (0 == clean score -> the QML shows the "No timing problems found" state).
+    //! TOTAL number of problem records currently listed, active AND ignored (0 == clean score -> the QML shows the "No
+    //! timing problems found" state, and the host panel collapses the whole section). Drives list/section visibility + sizing.
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    //! ACTIVE (non-ignored) record count -- what the header badge shows ("Timing problems (N)"). Ignored records stay
+    //! visible in place, dimmed, but do NOT count toward N. Equals count when nothing is ignored.
+    Q_PROPERTY(int activeCount READ activeCount NOTIFY activeCountChanged)
+    //! EXPANDED (non-collapsed) record count -- the host ProofingMagnifier uses this to reserve a STATE-AWARE section height
+    //! (every row shows line 1; only an expanded row also shows its line-2 action row). Updates on a collapse toggle + re-walk.
+    Q_PROPERTY(int expandedCount READ expandedCount NOTIFY expandedCountChanged)
     //! true once a score is open to walk (whether or not it has problems) -- distinguishes "clean" from "nothing loaded".
     Q_PROPERTY(bool hasScore READ hasScore NOTIFY countChanged)
 
@@ -72,6 +82,9 @@ class BadTimingNavigatorModel : public QAbstractListModel, public muse::Contexta
 
     muse::ContextInject<mu::project::IProjectSession> projectSession = { this };
     muse::GlobalInject<mu::reprise::IProofingViewControl> proofingViewControl;
+    //! 0.18.0 navigator per-record collapse/ignore state bridge -- the model is the live editor; this service carries the
+    //! state to/from the .repr (NotationProject reads it on save, writes it on open). See INavigatorStateService.
+    muse::GlobalInject<mu::reprise::INavigatorStateService> navigatorStateService;
 
 public:
     explicit BadTimingNavigatorModel(QObject* parent = nullptr);
@@ -91,7 +104,9 @@ public:
         ExpectedRole,
         AccentRole,         //! per-kind accent colour (hex string) so the QML keeps the kinds visually distinguishable
         DetailRole,         //! hover-tooltip detail: the exact "<kind>  <found> of <expected>" ratio kept off the row text
-        CanRegularizeRole   //! true when the row's measure is UNDER-full (ticks < timesig) -> the one-click Fix is safe
+        CanRegularizeRole,  //! true when the row's measure is UNDER-full (ticks < timesig) -> the one-click Fix is safe
+        CollapsedRole,      //! 0.18.0: record is collapsed (line 1 only, action line(s) hidden). Persists in the .repr.
+        IgnoredRole         //! 0.18.0: record is ignored (whole record dimmed, out of the active count, Fix disabled). Persists.
     };
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -99,6 +114,8 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     int count() const { return static_cast<int>(m_entries.size()); }
+    int activeCount() const;
+    int expandedCount() const;
     bool hasScore() const { return m_hasScore; }
 
     //! Called from the panel's Component.onCompleted: subscribe (once) to notation/undo-stack changes and do the first walk.
@@ -127,8 +144,25 @@ public:
     //! holds the measure index rather than a row (e.g. the planned 0.18.0 navigator redesign). Shares the core with the above.
     Q_INVOKABLE void warpCursorToMeasureIndex(int globalMeasureIndex);
 
+    //! 0.18.0: set the record's COLLAPSED flag (chevron toggle). Updates the per-record state, pushes it to the service
+    //! (so a Save captures it) and marks the project unsaved, then emits a single-row dataChanged so the delegate's line 2
+    //! collapses/expands in place (NO model reset -> scroll + animation preserved). Persisted in the .repr.
+    Q_INVOKABLE void setCollapsed(int row, bool collapsed);
+
+    //! 0.18.0: TOGGLE the record's IGNORED flag. Dims the whole record in place (stays in measure order), drops it from the
+    //! active count, and disables its Fix; toggling again restores it. Updates the per-record state, pushes it to the
+    //! service, marks the project unsaved, and emits row dataChanged + activeCountChanged. Persisted in the .repr.
+    Q_INVOKABLE void toggleIgnore(int row);
+
+    //! 0.18.0: set the record's IGNORED flag to an EXPLICIT value (the deterministic primitive toggleIgnore delegates to,
+    //! and the target of the dev reprise.proofing-debug-navigator ignore/restore actions). No-op when already in that state.
+    //! Same persistence + single-row dataChanged + activeCountChanged as toggleIgnore. Persisted in the .repr.
+    Q_INVOKABLE void setIgnored(int row, bool ignored);
+
 signals:
     void countChanged();
+    void activeCountChanged();
+    void expandedCountChanged();
 
 private:
     //! Re-walk the current notation's score read-only (via scanScoreForBadTiming) and reset the model rows. Safe with no
@@ -138,6 +172,24 @@ private:
     //! Drop + rebind the undo-stack + selection subscriptions for the CURRENT notation (at load and on every switch), then
     //! re-walk. Mirrors the ProofingStripModel/magnifier resubscribe idiom so a previous score's edits never drive us.
     void resubscribe();
+
+    //! 0.18.0: pull the per-record collapse/ignore state from the service (fired on .repr open / document switch) into
+    //! m_recordState, then re-walk so every record picks up its restored look. Subscribed to statesChanged() in load().
+    void onNavigatorStatesChanged();
+
+    //! Stable per-problem key "<measureIndex0>:<kind>:<staffIdx>" -- the persistence key. staffIdx may be -1 (measure-level),
+    //! so a measure carrying several problem rows (different kind/staff) still disambiguates to distinct records.
+    static std::string recordKey(const BadTimingProblem& e);
+
+    //! The stored state for a key (default {false,false} when absent, i.e. expanded + active).
+    NavigatorRecordState stateFor(const std::string& key) const;
+
+    //! Store a record's state, PRUNING an all-default record to keep m_recordState (and its serialization) minimal.
+    void storeState(const std::string& key, const NavigatorRecordState& st);
+
+    //! After a user toggle: push the current m_recordState into the service (silent -- no re-hydrate) and mark the project
+    //! unsaved so the collapse/ignore survives into the next Save of the .repr.
+    void pushStateAndMarkDirty();
 
     //! PLAIN-LANGUAGE row text the user reads at a glance: "m. {measureNumber1} [staff {staffIdx+1}] \xE2\x80\x94 {plainKind}",
     //! where plainKind is "Too many beats" / "Too few beats" / "Repeat problem" -- deliberately NOT the raw time-signature
@@ -193,6 +245,12 @@ private:
     //! over-full bar (VoiceTooLong / WrongLength-over), an exactly-nominal bar (Incomplete in a full bar) or a corrupted
     //! repeat is false -> the Fix button is disabled, because there adjustToLen would truncate notes or do nothing.
     std::vector<bool> m_canRegularize;
+
+    //! 0.18.0: per-record collapse/ignore state, keyed by recordKey() so it survives a re-walk (the entries are rebuilt on
+    //! every edit, but a record's key is stable). Only NON-default records are kept (storeState prunes). This IS the state
+    //! serialized into the .repr: the model pushes it to the service on every toggle and re-hydrates it from the service on
+    //! .repr open / document switch. data() reads CollapsedRole/IgnoredRole straight from here via stateFor(recordKey(e)).
+    std::unordered_map<std::string, NavigatorRecordState> m_recordState;
 
     //! Receiver for the CURRENT notation's undo-stack + selection channels; destroyed+recreated on every notation switch so
     //! a previous notation's notifications never drive this model (the NotationSwitchListModel idiom the magnifier uses).

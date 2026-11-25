@@ -213,6 +213,13 @@ private:
     //! can never truncate. Undo-safe. Runs on the Qt GUI thread. ok=false + error on no score / out-of-range index.
     muse::RetVal<ProofingDebugRegularizeCommand::Output> proofingDebugRegularize(const ProofingDebugRegularizeCommand& cmd);
 
+    //! Dev MCP/API "drive" tool for the 0.18.0 two-line bad-timing navigator: collapse/expand (chevron) or ignore/restore one
+    //! record by its 0-based list row, so a headless agent exercises those interactions + the .repr persistence without a
+    //! synthetic QML click. Reaches the transient QML BadTimingNavigatorModel through IProofingViewControl (it self-registers
+    //! on load) and drives its setCollapsed / setIgnored Q_INVOKABLEs by meta-call. Runs on the Qt GUI thread. ok=false +
+    //! error when the navigator panel is not open, the action is unknown, or the row is out of range.
+    muse::RetVal<ProofingDebugNavigatorCommand::Output> proofingDebugNavigator(const ProofingDebugNavigatorCommand& cmd);
+
     //! Start folder for the PDF picker: the stored Reprise folder if it still exists, else the Documents folder.
     muse::io::path_t defaultImportPdfDir() const;
     //! Persist the folder of the picked PDF (Reprise-private, independent of File > Open). Non-empty picks only.

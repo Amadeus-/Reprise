@@ -22,6 +22,8 @@
 
 #include "scorespagemodel.h"
 
+#include <QCursor>
+#include <QGuiApplication>
 #include <QString>
 
 #include "project/projectcommands.h"
@@ -31,9 +33,24 @@
 
 using namespace mu::project;
 
+//! Reprise: hard cap on how long the recent-scan busy cursor may stay up if the open-completion signal never arrives (a failed
+//! or cancelled open), so the cursor can never get stuck busy. Comfortably longer than a normal multi-page .repr open (~3-5s).
+static constexpr int SCAN_OPEN_BUSY_TIMEOUT_MS = 15000;
+
 ScoresPageModel::ScoresPageModel(QObject* parent)
     : QObject(parent), muse::Contextable(muse::iocCtxForQmlObject(this))
 {
+}
+
+ScoresPageModel::~ScoresPageModel()
+{
+    //! Safety: if this model is destroyed while a scan open is still in flight (home page torn down mid-open), restore the
+    //! override cursor here so it is never left stuck busy. restoreOverrideCursor is a no-op mismatch-safe only if we pushed
+    //! one, so guard on our own flag.
+    if (m_scanOpenBusy) {
+        QGuiApplication::restoreOverrideCursor();
+        m_scanOpenBusy = false;
+    }
 }
 
 void ScoresPageModel::init()
@@ -51,6 +68,33 @@ void ScoresPageModel::init()
             emit importEnabledChanged();
         }
     });
+
+    //! Reprise: busy-cursor restore on open COMPLETION. A recent scan opened from here loads asynchronously; the opened score
+    //! becoming the current notation is the true "done" signal (the same one the proofing view-models key off). Restore only
+    //! once a notation is actually current (a null transition at open start must not clear the cursor early); the timeout below
+    //! backstops a failed/cancelled open that never yields a notation.
+    m_scanOpenBusyTimeout.setSingleShot(true);
+    m_scanOpenBusyTimeout.setInterval(SCAN_OPEN_BUSY_TIMEOUT_MS);
+    QObject::connect(&m_scanOpenBusyTimeout, &QTimer::timeout, this, [this]() {
+        endScanOpenBusyCursor();
+    });
+
+    projectSession()->currentNotationChanged().onNotify(this, [this]() {
+        //! Restore the busy cursor at the TRUE end of the open. currentNotationChanged fires as the opened score becomes
+        //! current, but a SYNCHRONOUS score layout/render then blocks the UI thread (TRACED at ~2.9s on a multi-page .repr,
+        //! measured as the gap between currentNotationChanged and the next event-loop turn) BEFORE control returns to the
+        //! event loop -- that block IS the perceived freeze. Restoring directly here would clear the cursor at the START of
+        //! the freeze (cursor spins a split second, then a normal cursor during the 1-3s freeze -- the reported bug). So we
+        //! QUEUE the restore (singleShot 0): it runs on the first event-loop turn AFTER the synchronous layout completes, so
+        //! the busy cursor spans the WHOLE perceived open. Gated on a non-null current notation (a null transition at open
+        //! start must not trigger it). endScanOpenBusyCursor is idempotent, so repeat currentNotationChanged fires are safe.
+        //! The 15s timeout + the destructor remain the backstops if this model is torn down before the queued restore runs.
+        if (m_scanOpenBusy && projectSession()->currentNotation()) {
+            QTimer::singleShot(0, this, [this]() {
+                endScanOpenBusyCursor();
+            });
+        }
+    });
 }
 
 bool ScoresPageModel::importEnabled() const
@@ -65,9 +109,36 @@ void ScoresPageModel::createNewScore()
 
 void ScoresPageModel::openScore(const QString& scorePath, const QString& displayNameOverride)
 {
+    //! Reprise: show the busy cursor for the (async) load of a recent scan. Set BEFORE the dispatch so it is up the instant the
+    //! user commits; restored on the open's completion (currentNotationChanged) or the timeout backstop -- see init().
+    beginScanOpenBusyCursor();
+
     commandDispatcher()->dispatch(project::PROJECT_OPEN_COMMAND, { { "url", muse::Val(QUrl::fromLocalFile(
                                                                                           scorePath).toString()) }, { "display_name", muse::Val(
                                                                                                                           displayNameOverride) } });
+}
+
+void ScoresPageModel::beginScanOpenBusyCursor()
+{
+    //! Idempotent: never stack more than one override cursor (a second rapid open would otherwise need a second restore).
+    if (m_scanOpenBusy) {
+        return;
+    }
+
+    m_scanOpenBusy = true;
+    QGuiApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    m_scanOpenBusyTimeout.start();
+}
+
+void ScoresPageModel::endScanOpenBusyCursor()
+{
+    if (!m_scanOpenBusy) {
+        return;
+    }
+
+    m_scanOpenBusy = false;
+    m_scanOpenBusyTimeout.stop();
+    QGuiApplication::restoreOverrideCursor();
 }
 
 void ScoresPageModel::revealInFileBrowser(const QString& scorePath)

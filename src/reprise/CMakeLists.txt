@@ -50,6 +50,8 @@ target_sources(reprise PRIVATE
     internal/languagepackservice.h
     internal/iproofingmapservice.h
     internal/proofingmapservice.h
+    internal/inavigatorstateservice.h
+    internal/navigatorstateservice.h
     internal/iproofingviewcontrol.h
     internal/proofingviewcontrol.h
     internal/proofingmapbuilder.cpp

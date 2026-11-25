@@ -73,6 +73,24 @@ public:
         return m_magnifier.data();
     }
 
+    void registerNavigator(QObject* model) override
+    {
+        m_navigator = model;
+    }
+
+    void unregisterNavigator(QObject* model) override
+    {
+        if (m_navigator.data() == model)
+        {
+            m_navigator = nullptr;
+        }
+    }
+
+    QObject* navigatorModel() const override
+    {
+        return m_navigator.data();
+    }
+
     void registerEditorView(QObject* view) override
     {
         m_editorView = view;
@@ -114,6 +132,10 @@ private:
     //! other path first). Driven by the dev reprise.proofing-debug-set-zoom handler through the Qt property system.
     QPointer<QObject> m_band;
     QPointer<QObject> m_magnifier;
+
+    //! The live bad-timing navigator view-model (BadTimingNavigatorModel), held as a QPointer so it auto-nulls if the model
+    //! is destroyed by some other path first. Driven by the dev reprise.proofing-debug-navigator handler by meta-call.
+    QPointer<QObject> m_navigator;
 
     //! The main notation editor paint view (notationscene AbstractNotationPaintView), published by the editor-side model so
     //! the bad-timing navigator -- in a different dock -- can map a measure to global screen coords and warp the cursor onto

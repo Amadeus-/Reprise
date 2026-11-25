@@ -39,6 +39,8 @@
 #include "internal/importprogresstracker.h"
 #include "internal/iproofingmapservice.h"
 #include "internal/proofingmapservice.h"
+#include "internal/inavigatorstateservice.h"
+#include "internal/navigatorstateservice.h"
 #include "internal/iproofingviewcontrol.h"
 #include "internal/proofingviewcontrol.h"
 #include "internal/mcpcuration.h"
@@ -77,6 +79,13 @@ void RepriseModule::registerExports()
     //! and the ImportPdfController both reach it via GlobalInject.
     m_proofingMapService = std::make_shared<ProofingMapService>();
     globalIoc()->registerExport<IProofingMapService>(mname, m_proofingMapService);
+
+    //! NOTE: Two-Pane Proofing bad-timing NAVIGATOR per-record state (0.18.0 two-line navigator). Holds the current
+    //! document's collapse/ignore state for each timing-problem record, bridging the QML-instantiated
+    //! BadTimingNavigatorModel (the live editor) to the .repr persistence in NotationProject (which has no QML handle to
+    //! the transient model). Exported globally so the model reaches it via GlobalInject and NotationProject can read/write it.
+    m_navigatorStateService = std::make_shared<NavigatorStateService>();
+    globalIoc()->registerExport<INavigatorStateService>(mname, m_navigatorStateService);
 
     //! NOTE: Two-Pane Proofing LIVE view-model bridge. The follow band + magnifier view-models are QML-instantiated and
     //! transient, so they self-register here (as bare QObject*) on load and unregister in their dtors; the dev

@@ -574,6 +574,56 @@ struct ProofingDebugRegularizeCommand {
     };
 };
 
+//! NOTE Reprise dev MCP/API "drive" tool for the 0.18.0 two-line BAD-TIMING NAVIGATOR: toggle one record's disclosure
+//! (collapse/expand) or ignore state (ignore/restore) by its 0-based LIST ROW, so a headless agent exercises the chevron +
+//! Ignore/Restore interactions + the per-record .repr persistence without a synthetic QML click. The handler reaches the
+//! transient QML-instantiated BadTimingNavigatorModel through IProofingViewControl (it self-registers on load) and drives
+//! its setCollapsed / setIgnored Q_INVOKABLEs by meta-call -- the same decoupled idiom proofing-debug-set-zoom uses. `row`
+//! is the position in the navigator list (NOT a measure index: ignored records stay listed, so the list order is stable).
+//! `action` is "collapse" | "expand" | "ignore" | "restore". A toggle marks the project unsaved (so a following Save
+//! captures it), but is deliberately NOT an undo-stack edit. Runs synchronously on the Qt GUI thread. ok=false + error when
+//! the navigator panel is not open, `action` is unknown, or `row` is out of range. NOT ReadOnly (it changes UI state +
+//! marks the project dirty); allowlisted alongside the other proofing-debug dev tools.
+struct ProofingDebugNavigatorCommand {
+    static const inline auto id = muse::rcommand::Command("command://reprise/proofing-debug-navigator");
+    static const inline auto title = muse::MnemonicString("reprise", "Proofing debug navigator");
+    static const inline auto description
+        = muse::TranslatableString("reprise", "Collapse/expand or ignore/restore a bad-timing navigator record by list row");
+    static const inline auto availabilities = muse::rcommand::Availability::API;
+    static const inline auto annotations = muse::rcommand::Annotation::Idempotent;
+
+    int row = 0;           // required: 0-based position in the navigator list
+    std::string action;    // required: "collapse" | "expand" | "ignore" | "restore"
+
+    static const inline auto input = std::tuple {
+        muse::rcommand::Field{ "row", &ProofingDebugNavigatorCommand::row,
+                               "0-based navigator list row (list position, not a measure index)",
+                               muse::rcommand::Presence::Required },
+        muse::rcommand::Field{ "action", &ProofingDebugNavigatorCommand::action,
+                               "What to do: 'collapse' | 'expand' | 'ignore' | 'restore'",
+                               muse::rcommand::Presence::Required },
+    };
+
+    struct Output {
+        bool ok = false;
+        int row = 0;
+        std::string action;
+        int count = 0;
+        int activeCount = 0;
+        std::string error;
+    };
+
+    using O = ProofingDebugNavigatorCommand::Output;
+    static const inline auto output = std::tuple {
+        muse::rcommand::Field{ "ok", &O::ok, "Whether the action was applied (the navigator panel is open, action known, row in range)" },
+        muse::rcommand::Field{ "row", &O::row, "The requested list row (echoed back)" },
+        muse::rcommand::Field{ "action", &O::action, "The requested action (echoed back)" },
+        muse::rcommand::Field{ "count", &O::count, "Total navigator records after the action (active + ignored)" },
+        muse::rcommand::Field{ "activeCount", &O::activeCount, "Active (non-ignored) record count after the action -- the header badge N" },
+        muse::rcommand::Field{ "error", &O::error, "Error message (empty on success)" },
+    };
+};
+
 //! NOTE Reprise dev MCP/API "drive" tool: navigate the app shell to a named screen IN-PROCESS, with no foreground
 //! activation and no synthetic mouse input (the Firefox-bridge model). The handler runs synchronously on the Qt GUI
 //! thread (the same dispatch path the capture tools use), calling interactive()->open(UriQuery(...)) for the resolved

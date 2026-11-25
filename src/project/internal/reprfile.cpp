@@ -182,11 +182,82 @@ bool parseProofingMap(const ByteArray& bytes, ProofingMap& out)
     return true;
 }
 
+ByteArray serializeNavigatorState(const NavigatorStateMap& states)
+{
+    JsonObject root;
+
+    JsonArray records;
+    for (const auto& pair : states)
+    {
+        //! DEFAULT records (0.18.0: collapsed + active) carry no information -> skip (the model also prunes these, but guard
+        //! here too). isDefaultNavigatorState centralizes the collapsed-default polarity.
+        if (isDefaultNavigatorState(pair.second))
+        {
+            continue;
+        }
+
+        JsonObject o;
+        o.set("key", pair.first);
+        o.set("collapsed", pair.second.collapsed);
+        o.set("ignored", pair.second.ignored);
+        records << o;
+    }
+    root.set("records", records);
+
+    return JsonDocument(root).toJson(JsonDocument::Format::Compact);
+}
+
+bool parseNavigatorState(const ByteArray& bytes, NavigatorStateMap& out)
+{
+    std::string err;
+    JsonDocument doc = JsonDocument::fromJson(bytes, &err);
+    if (!doc.isObject())
+    {
+        return false;
+    }
+
+    out.clear();
+
+    //! Guard the optional "records" key: calling .toArray() on the null-type JsonValue that a MISSING muse-JSON key returns
+    //! is a RELEASE-mode (NDEBUG) null-deref -- JsonArray::size() then reads [null+8] -> SIGSEGV. isArray() only reads the
+    //! picojson type tag, so it is safe on a null value. A well-formed-but-recordless object is valid -> empty state, not an error.
+    const JsonValue recordsVal = doc.rootObject().value("records");
+    if (!recordsVal.isArray())
+    {
+        return true;
+    }
+
+    const JsonArray records = recordsVal.toArray();
+    for (size_t i = 0; i < records.size(); ++i)
+    {
+        const JsonObject o = records.at(i).toObject();
+        const std::string key = o.value("key").toStdString();
+        if (key.empty())
+        {
+            continue;
+        }
+
+        reprise::NavigatorRecordState st;
+        st.collapsed = o.value("collapsed").toBool();
+        st.ignored = o.value("ignored").toBool();
+
+        //! Keep the map minimal: only NON-default records are stored (0.18.0 default == collapsed + active). An older/foreign
+        //! entry that happens to equal the default is dropped here. isDefaultNavigatorState centralizes the polarity.
+        if (!isDefaultNavigatorState(st))
+        {
+            out[key] = st;
+        }
+    }
+
+    return true;
+}
+
 ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
                        const std::string& originalFileName, const std::string& originalSuffix,
                        const std::string& importJson, const ProofingMap& map,
                        const ByteArray& proofingScan, const std::string& proofingScanSuffix,
-                       const std::vector<double>& skewAnglesDeg)
+                       const std::vector<double>& skewAnglesDeg,
+                       const NavigatorStateMap& navigatorState)
 {
     ByteArray out;
     Buffer buf(&out);
@@ -247,6 +318,23 @@ ByteArray assembleRepr(const ByteArray& scoreMscz, const ByteArray& original,
 
     //! proofingmap.json -- the scan<->score coordinate map (sourcePath omitted; re-derived on open).
     zw.addFile(REPR_ENTRY_PROOFINGMAP, serializeProofingMap(map));
+
+    //! navigatorstate.json (0.18.0+) -- the bad-timing navigator per-record collapse/ignore state. Written ONLY when a
+    //! non-default record exists, so a bundle the user never collapsed/ignored stays byte-identical to a pre-0.18.0 save;
+    //! old builds ignore this unknown entry. serializeNavigatorState already drops default records, so count them here.
+    bool anyNavState = false;
+    for (const auto& pair : navigatorState)
+    {
+        if (!isDefaultNavigatorState(pair.second))
+        {
+            anyNavState = true;
+            break;
+        }
+    }
+    if (anyNavState)
+    {
+        zw.addFile(REPR_ENTRY_NAVIGATORSTATE, serializeNavigatorState(navigatorState));
+    }
 
     zw.close();
     buf.close();
@@ -376,6 +464,14 @@ Ret readRepr(const path_t& path, ReprBundle& out)
     if (!mapBytes.empty() && parseProofingMap(mapBytes, out.map))
     {
         out.hasMap = true;
+    }
+
+    //! Optional (0.18.0+) navigatorstate.json -- the bad-timing navigator collapse/ignore state. Absence tolerated (an
+    //! older bundle, or one the user never collapsed/ignored) -> out.navigatorState stays empty, every record default.
+    const ByteArray navBytes = zip.fileData(REPR_ENTRY_NAVIGATORSTATE);
+    if (!navBytes.empty() && parseNavigatorState(navBytes, out.navigatorState))
+    {
+        out.hasNavigatorState = true;
     }
 
     return muse::make_ok();

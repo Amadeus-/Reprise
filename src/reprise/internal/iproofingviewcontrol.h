@@ -53,6 +53,13 @@ public:
     virtual void unregisterMagnifier(QObject* model) = 0;
     virtual QObject* magnifierModel() const = 0;
 
+    //! The bad-timing NAVIGATOR (BadTimingNavigatorModel) registers itself on load() and unregisters in its dtor. Held as a
+    //! bare QObject* so the dev reprise.proofing-debug-navigator handler can drive its setCollapsed/setIgnored Q_INVOKABLEs
+    //! by meta-call (the same decoupled idiom set-zoom uses for userZoom) with no concrete-type coupling to the QML model.
+    virtual void registerNavigator(QObject* model) = 0;
+    virtual void unregisterNavigator(QObject* model) = 0;
+    virtual QObject* navigatorModel() const = 0;
+
     //! The MAIN notation EDITOR paint view (a notationscene AbstractNotationPaintView, itself a QQuickItem) publishes
     //! ITSELF here so reprise view-models that live in OTHER docks -- the bad-timing navigator in the right column -- can
     //! reach the editor's geometry without a QML reference to it (the navigator is in a different QML scope and cannot see

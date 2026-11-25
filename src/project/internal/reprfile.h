@@ -30,6 +30,7 @@
 #include "global/io/path.h"
 
 #include "reprise/internal/iproofingmapservice.h"
+#include "reprise/internal/inavigatorstateservice.h"
 
 namespace mu::project {
 //! Reprise .repr custom project container (Phase C persistence). A .repr is a flat ZIP bundling four fixed entries:
@@ -52,6 +53,9 @@ inline const std::string REPR_ENTRY_PROOFINGMAP = "proofingmap.json";
 //! Optional (0.16.5+): the deskewed render Audiveris actually consumed, stored ALONGSIDE the verbatim original.<ext> so a
 //! reopen renders the straightened band the serialized boxes align to. Written only when a page was deskewed; absence tolerated.
 inline const std::string REPR_ENTRY_PROOFINGSCAN = "proofing-scan";
+//! Optional (0.18.0+): the bad-timing navigator's per-record collapse/ignore state (a 1:1 serialization of
+//! reprise::NavigatorStateMap). Written only when at least one record is non-default; absence tolerated (all records default).
+inline const std::string REPR_ENTRY_NAVIGATORSTATE = "navigatorstate.json";
 
 //! Everything read back out of a .repr bundle. The score + original bytes are raw (the caller writes score.mscz to a
 //! memory buffer for MscReader and extracts the original to a real temp path); map.sourcePath is left empty here and the
@@ -70,6 +74,8 @@ struct ReprBundle
     int formatVersion = 0;
     bool hasMap = false;
     reprise::ProofingMap map;         //! sourcePath left empty here -- the caller repoints it to the extracted scan path
+    bool hasNavigatorState = false;   //! true when a navigatorstate.json entry was present (0.18.0+ bundles)
+    reprise::NavigatorStateMap navigatorState; //! bad-timing navigator per-record collapse/ignore state (empty when absent)
 };
 
 //! Serialize a ProofingMap to the proofingmap.json byte form. sourcePath is intentionally OMITTED (it is machine-local
@@ -80,13 +86,22 @@ muse::ByteArray serializeProofingMap(const reprise::ProofingMap& map);
 //! on malformed / non-object input.
 bool parseProofingMap(const muse::ByteArray& bytes, reprise::ProofingMap& out);
 
+//! Serialize the bad-timing navigator per-record state to the navigatorstate.json byte form (a {"records":[...]} object;
+//! all-default records are omitted). An empty map serializes to an empty records array.
+muse::ByteArray serializeNavigatorState(const reprise::NavigatorStateMap& states);
+
+//! Parse navigatorstate.json bytes into `out`. Returns false on malformed / non-object input; unknown fields are ignored
+//! and all-default records are dropped so the parsed map stays minimal.
+bool parseNavigatorState(const muse::ByteArray& bytes, reprise::NavigatorStateMap& out);
+
 //! Assemble a complete .repr ZIP into a byte array, ready to write to disk atomically. `importJson`, when non-empty,
 //! must be a JSON object; it is embedded verbatim as manifest.import.
 muse::ByteArray assembleRepr(const muse::ByteArray& scoreMscz, const muse::ByteArray& original,
                              const std::string& originalFileName, const std::string& originalSuffix,
                              const std::string& importJson, const reprise::ProofingMap& map,
                              const muse::ByteArray& proofingScan, const std::string& proofingScanSuffix,
-                             const std::vector<double>& skewAnglesDeg);
+                             const std::vector<double>& skewAnglesDeg,
+                             const reprise::NavigatorStateMap& navigatorState);
 
 //! Read + parse a .repr bundle from disk into `out`. The embedded original is NOT extracted to disk here. Returns a
 //! non-ok Ret (with a user-facing message) when the file cannot be opened, is missing a required entry, or its manifest

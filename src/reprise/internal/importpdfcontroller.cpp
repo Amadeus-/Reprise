@@ -34,6 +34,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMetaObject>
 #include <QPointer>
 #include <QQuickWindow>
 #include <QSize>
@@ -655,6 +656,9 @@ void ImportPdfController::init()
     //! Dev tool: drive the bad-timing navigator's one-click Fix -- regularize an under-full measure to its time signature.
     commandDispatcher()->onRequest<ProofingDebugRegularizeCommand>(this, std::function<muse::RetVal<ProofingDebugRegularizeCommand::Output>(const ProofingDebugRegularizeCommand&)>(
                                                                        [this](const ProofingDebugRegularizeCommand& c) { return proofingDebugRegularize(c); }));
+
+    commandDispatcher()->onRequest<ProofingDebugNavigatorCommand>(this, std::function<muse::RetVal<ProofingDebugNavigatorCommand::Output>(const ProofingDebugNavigatorCommand&)>(
+                                                                      [this](const ProofingDebugNavigatorCommand& c) { return proofingDebugNavigator(c); }));
 
     //! Success auto-close of the recognition progress popup. The popup (ImportProgressModel) asks for its own window to
     //! be closed via the shared tracker; we do the actual close + settle from HERE, where the controller safely outlives
@@ -2171,6 +2175,71 @@ muse::RetVal<ProofingDebugSetZoomCommand::Output> ImportPdfController::proofingD
     model->setProperty("userZoom", QVariant(cmd.factor));
     out.zoom = model->property("userZoom").toDouble();
     out.ok = true;
+
+    return RV::make_ok(out);
+}
+
+muse::RetVal<ProofingDebugNavigatorCommand::Output> ImportPdfController::proofingDebugNavigator(const ProofingDebugNavigatorCommand& cmd)
+{
+    using RV = muse::RetVal<ProofingDebugNavigatorCommand::Output>;
+
+    ProofingDebugNavigatorCommand::Output out;
+    out.row = cmd.row;
+    out.action = cmd.action;
+
+    //! The navigator model self-registers with IProofingViewControl on load(). The panel is always-open, so this resolves to
+    //! null only in a non-GUI/converter run (no proofing view instantiated).
+    QObject* model = proofingViewControl() ? proofingViewControl()->navigatorModel() : nullptr;
+    if (!model)
+    {
+        out.error = "the bad-timing navigator is not open";
+        return RV::make_ok(out);
+    }
+
+    if (cmd.row < 0)
+    {
+        out.error = "row must be >= 0";
+        return RV::make_ok(out);
+    }
+
+    //! The live record count is the navigator's count Q_PROPERTY (total records, active + ignored -- ignored rows stay listed,
+    //! so a list row is stable). Out-of-range rows are refused up front (the model's setters also guard, but this reports why).
+    const int32_t rowCount = model->property("count").toInt();
+    if (cmd.row >= rowCount)
+    {
+        out.count = rowCount;
+        out.activeCount = model->property("activeCount").toInt();
+        out.error = "row out of range (navigator has " + std::to_string(rowCount) + " record(s))";
+        return RV::make_ok(out);
+    }
+
+    //! Drive the model's Q_INVOKABLEs by meta-call -- no concrete-type coupling to the QML model (the set-zoom idiom). Both run
+    //! synchronously on the Qt GUI thread (this dispatch path is the GUI thread), so the default DirectConnection applies.
+    if (cmd.action == "collapse")
+    {
+        QMetaObject::invokeMethod(model, "setCollapsed", Q_ARG(int, cmd.row), Q_ARG(bool, true));
+    }
+    else if (cmd.action == "expand")
+    {
+        QMetaObject::invokeMethod(model, "setCollapsed", Q_ARG(int, cmd.row), Q_ARG(bool, false));
+    }
+    else if (cmd.action == "ignore")
+    {
+        QMetaObject::invokeMethod(model, "setIgnored", Q_ARG(int, cmd.row), Q_ARG(bool, true));
+    }
+    else if (cmd.action == "restore")
+    {
+        QMetaObject::invokeMethod(model, "setIgnored", Q_ARG(int, cmd.row), Q_ARG(bool, false));
+    }
+    else
+    {
+        out.error = "unknown action '" + cmd.action + "' (expected 'collapse', 'expand', 'ignore' or 'restore')";
+        return RV::make_ok(out);
+    }
+
+    out.ok = true;
+    out.count = model->property("count").toInt();
+    out.activeCount = model->property("activeCount").toInt();
 
     return RV::make_ok(out);
 }

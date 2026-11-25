@@ -8,6 +8,21 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-11-25
+
+### Added
+- **Timing problems are now collapsible two-line records.** Each problem shows a disclosure chevron and the measure
+  description, with its action buttons on a second line. Records start collapsed; clicking a row expands it and jumps
+  to that measure.
+- **Fix and Ignore actions.** A "Too few beats" measure offers **Fix** (extend it to the time signature) and
+  **Ignore**; other problems offer **Ignore**. Ignoring dims the record in place, marks it with a small check, and its
+  button becomes **Restore**; the panel count reflects the remaining (non-ignored) problems.
+- **Collapse and ignore states are saved in the project (`.repr`)** and restored when you reopen it.
+
+### Changed
+- **A working cursor shows during brief loads** — clicking a Timing problems row, and opening a recent scan from the
+  Scans home, now show a busy cursor so it's clear something is happening.
+
 ## [0.17.13] — 2026-11-24
 
 ### Added

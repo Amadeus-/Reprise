@@ -33,6 +33,7 @@ class ImportProgressTracker;
 class RepriseConfiguration;
 class LanguagePackService;
 class ProofingMapService;
+class NavigatorStateService;
 class ProofingViewControl;
 
 //! NOTE: Reprise fork module. Houses the local-Audiveris "Import PDF" orchestration, kept isolated
@@ -62,6 +63,7 @@ private:
     std::shared_ptr<LanguagePackService> m_languagePackService;
     std::shared_ptr<ImportProgressTracker> m_importProgressTracker;
     std::shared_ptr<ProofingMapService> m_proofingMapService;
+    std::shared_ptr<NavigatorStateService> m_navigatorStateService;
     std::shared_ptr<ProofingViewControl> m_proofingViewControl;
 };
 

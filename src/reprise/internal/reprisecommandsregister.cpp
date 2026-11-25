@@ -82,6 +82,9 @@ static const std::vector<CommandInfo> s_commandInfos = {
 
     // Reprise dev MCP/API tool: regularize an under-full measure to its time signature (drives the bad-timing navigator Fix)
     makeCommandInfo<ProofingDebugRegularizeCommand>(),
+
+    // Reprise dev MCP/API tool: collapse/expand or ignore/restore a bad-timing navigator record by list row (0.18.0 two-line)
+    makeCommandInfo<ProofingDebugNavigatorCommand>(),
 };
 
 std::string RepriseCommandsRegister::moduleName() const

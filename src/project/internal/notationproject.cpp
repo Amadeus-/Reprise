@@ -154,6 +154,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
             svc->onDocumentLoaded(path.toStdString());
         }
 
+        // Reprise 0.18.0: doLoadRepr set the navigator state above (claim armed); this binds it to the opened document so
+        // a later Save re-emits it and a subsequent different-document load drops it. See INavigatorStateService.
+        if (auto nsvc = navigatorStateService()) {
+            nsvc->onDocumentLoaded(path.toStdString());
+        }
+
         return ret;
     }
 
@@ -166,6 +172,12 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
             // import has no map, so the previous document's stale map is dropped. See IProofingMapService::onDocumentLoaded.
             if (auto svc = proofingMapService()) {
                 svc->onDocumentLoaded(path.toStdString());
+            }
+
+            // Reprise 0.18.0: an import never carries navigator state, so this drops any state held from a previous .repr
+            // (the new document becomes the owner with an empty state). See INavigatorStateService::onDocumentLoaded.
+            if (auto nsvc = navigatorStateService()) {
+                nsvc->onDocumentLoaded(path.toStdString());
             }
         }
 
@@ -190,6 +202,11 @@ Ret NotationProject::load(const muse::io::path_t& path, const OpenParams& openPa
     // band/magnifier do not show the wrong scan. See IProofingMapService::onDocumentLoaded.
     if (auto svc = proofingMapService()) {
         svc->onDocumentLoaded(path.toStdString());
+    }
+
+    // Reprise 0.18.0: a plain score has no navigator state -> drop any state held from a previously-open .repr.
+    if (auto nsvc = navigatorStateService()) {
+        nsvc->onDocumentLoaded(path.toStdString());
     }
 
     return ret;
@@ -468,6 +485,13 @@ Ret NotationProject::doLoadRepr(const muse::io::path_t& path, const OpenParams& 
         }
     }
 
+    // Reprise 0.18.0: inject the bad-timing navigator per-record collapse/ignore state (an empty map when the bundle
+    // carried none) into the service. setStates fires statesChanged -> the live BadTimingNavigatorModel re-hydrates, and
+    // arms the one-shot claim consumed by onDocumentLoaded (in load()) so this document owns the state for later saves.
+    if (auto nsvc = navigatorStateService()) {
+        nsvc->setStates(bundle.navigatorState);
+    }
+
     return make_ret(Ret::Code::Ok);
 }
 
@@ -566,9 +590,18 @@ Ret NotationProject::doSaveRepr(const muse::io::path_t& path, bool isAutosave)
         }
     }
 
+    // Reprise 0.18.0: the live bad-timing navigator per-record collapse/ignore state. The QML model pushes it into the
+    // service on every toggle (syncFromModel); read it here so a Save captures the current collapse/ignore. Empty (no
+    // non-default record) -> assembleRepr omits the navigatorstate.json entry, keeping the bundle byte-identical.
+    reprise::NavigatorStateMap navState;
+    if (auto nsvc = navigatorStateService()) {
+        navState = nsvc->states();
+    }
+
     const ByteArray bundle = assembleRepr(scoreBytes, originalBytes, originalName, savedOriginalSuffix,
                                           m_reprManifestImport, map,
-                                          proofingScanBytes, m_reprProofingScanSuffix, m_reprSkewAnglesDeg);
+                                          proofingScanBytes, m_reprProofingScanSuffix, m_reprSkewAnglesDeg,
+                                          navState);
 
     // Atomic-ish write: write a "_saving" sibling, copy over the target, remove the temp (mirrors doSave's dance).
     const muse::io::path_t normalizedPath = muse::io::Dir::fromNativeSeparators(path);

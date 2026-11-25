@@ -435,8 +435,13 @@ Item {
 
             Layout.fillWidth: true
             Layout.fillHeight: false
+            //! 0.18.0: STATE-AWARE section height. Records default collapsed (line 1 only, ~28px) and expand to two lines on
+            //! demand, so a flat per-row estimate either over-reserves (empty space under an all-collapsed list) or clips
+            //! expanded rows. timingSection.contentHeight sums each row's ACTUAL height (line 1 always + line 2 only when
+            //! expanded), so the default collapsed list hugs tight while an expanded row still gets its full height. Still
+            //! capped at ~45% of the panel (the list scrolls beyond that); contentHeight covers active + dimmed-ignored rows.
             Layout.preferredHeight: visible
-                                    ? Math.round(Math.min(root.height * 0.45, Math.max(120, 44 + problemCount * 28)))
+                                    ? Math.round(Math.min(root.height * 0.45, Math.max(120, 44 + timingSection.contentHeight)))
                                     : 0
 
             //! Collapse (zero height, excluded from the layout) when the live score is clean, so the magnifier fills the panel.

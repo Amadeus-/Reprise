@@ -46,6 +46,7 @@
 #include "project/iprojectsession.h"
 
 #include "reprise/internal/iproofingmapservice.h"
+#include "reprise/internal/inavigatorstateservice.h"
 
 namespace mu::engraving {
 class MscReader;
@@ -71,6 +72,9 @@ class NotationProject : public INotationProject, public muse::Contextable, publi
     // Reprise: the scan<->score proofing coordinate map, resolved only when loading/saving a .repr bundle (null in
     // non-GUI/converter runs where the reprise module is not loaded -- guarded at every use).
     muse::GlobalInject<reprise::IProofingMapService> proofingMapService;
+    // Reprise 0.18.0: the bad-timing navigator per-record collapse/ignore state, read on .repr save and written on .repr
+    // open (null in non-GUI/converter runs where the reprise module is not loaded -- guarded at every use).
+    muse::GlobalInject<reprise::INavigatorStateService> navigatorStateService;
 
 public:
     NotationProject(const muse::modularity::ContextPtr& iocCtx)
