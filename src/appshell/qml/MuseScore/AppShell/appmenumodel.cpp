@@ -313,15 +313,15 @@ MenuItem* AppMenuModel::makeFormatMenu()
         makeSeparator(),
         makeMenuItem(OpenBreaksCommand::id),
         makeMenu(TranslatableString("appshell/menu/format", "Str&etch"), {
-            makeMenuItem(STRETCH_INCREASE_COMMAND),
-            makeMenuItem(STRETCH_DECREASE_COMMAND),
-            makeMenuItem(STRETCH_RESET_COMMAND)
+            makeMenuItem(IncreaseStretchCommand::id),
+            makeMenuItem(DecreaseStretchCommand::id),
+            makeMenuItem(ResetStretchCommand::id)
         }, "menu-stretch"),
         makeSeparator(),
-        makeMenuItem(RESET_TEXT_STYLE_OVERRIDES_COMMAND),
-        makeMenuItem(RESET_BEAMS_COMMAND),
-        makeMenuItem(RESET_SHAPES_AND_POSITIONS_COMMAND),
-        makeMenuItem(RESET_TO_DEFAULT_LAYOUT_COMMAND),
+        makeMenuItem(ResetTextStyleOverridesCommand::id),
+        makeMenuItem(ResetBeamsCommand::id),
+        makeMenuItem(ResetShapesAndPositionsCommand::id),
+        makeMenuItem(ResetToDefaultLayoutCommand::id),
         makeSeparator(),
         makeMenuItem(LoadStyleCommand::id),
         makeMenuItem(SaveStyleCommand::id)
@@ -357,8 +357,8 @@ MenuItem* AppMenuModel::makeToolsMenu()
             makeMenuItem(PITCH_SPELL_COMMAND),
         }, "menu-enharmonic-spelling"),
         makeSeparator(),
-        makeMenuItem(REGROUP_RHYTHMS_COMMAND),
-        makeMenuItem(RESEQUENCE_REHEARSAL_MARKS_COMMAND),
+        makeMenuItem(RegroupRhythmsCommand::id),
+        makeMenuItem(ResequenceRehearsalMarksCommand::id),
         makeSeparator(),
         makeMenuItem(CopyLyricsCommand::id),
         makeMenuItem(REMOVE_EMPTY_TRAILING_MEASURES_COMMAND),
@@ -693,6 +693,7 @@ MenuItemList AppMenuModel::makeTextItems()
         makeSeparator(),
         makeMenuItem(AddStickingTextCommand::id),
         makeMenuItem(AddLyricsCommand::id),
+        makeMenuItem(AddFiguredBassCommand::id),
         makeMenuItem(AddTempoCommand::id)
     };
 
@@ -703,8 +704,8 @@ MenuItemList AppMenuModel::makeLinesItems()
 {
     MenuItemList items {
         makeMenuItem(AddSlurCommand::id),
-        makeMenuItem(ADD_HAIRPIN_COMMAND),
-        makeMenuItem(ADD_HAIRPIN_REVERSE_COMMAND),
+        makeMenuItem(AddHairpinCrescendoCommand::id),
+        makeMenuItem(AddHairpinDiminuendoCommand::id),
         makeMenuItem(AddOttava8vaCommand::id),
         makeMenuItem(AddOttava8vbCommand::id),
         makeMenuItem(ADD_NOTELINE_COMMAND)

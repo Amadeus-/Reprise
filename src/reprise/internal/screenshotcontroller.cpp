@@ -137,7 +137,7 @@ muse::RetVal<CaptureScreenshotCommand::Output> ScreenshotController::capture(con
             return RV::make_ok(out);
         }
 
-        Ret ret = writer->write(notation, file, options);
+        Ret ret = writer->writeSync(notation, file, options);
         file.close();
 
         if (!ret)
