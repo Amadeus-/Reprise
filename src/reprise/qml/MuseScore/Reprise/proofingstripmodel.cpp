@@ -546,7 +546,7 @@ void ProofingStripModel::updateFollow()
             mu::engraving::MeasureBase* mb = sel->startMeasureBase();
             if (mb)
             {
-                measure = mb->measureIndex();
+                measure = mb->isMeasure() ? mu::engraving::toMeasure(mb)->measureIndex() : -1;
             }
         }
     }

@@ -550,7 +550,7 @@ void ProofingMagnifierModel::updateFollow()
     //! measure-level fallback. Nothing selected / no map -> clear hasCurrent (keeps the current page).
     if (hasMap && measureBase)
     {
-        followMeasureOnly(measureBase->measureIndex());
+        followMeasureOnly(measureBase->isMeasure() ? mu::engraving::toMeasure(measureBase)->measureIndex() : -1);
 
         return;
     }

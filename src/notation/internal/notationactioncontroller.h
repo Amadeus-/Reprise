@@ -101,6 +101,11 @@ public:
     bool isNoteOrRestSelected() const override;
     bool isHairpinSelected() const override;
     bool isMoveSelectionAvailable(MoveSelectionType type) const override;
+    bool isSystemSelected() const override;
+    bool isMeasureSelected() const override;
+    bool hasMeasureBasesInSelection() const override;
+    bool isVBoxBaseSelected() const override;
+    bool isMakeIntoSystemAvailable() const override;
 
     bool isToggleLayoutBreakAvailable() const override;
 
@@ -210,6 +215,7 @@ private:
     muse::Ret realtimeAdvance();
 
     muse::Ret toggleArticulation(const ToggleArticulationCommand& command);
+    muse::Ret toggleBow(const ToggleBowCommand& command);
 
     muse::Ret moveWithRet(MoveDirection direction, bool quickly = false);
     void move(MoveDirection direction, bool quickly = false);
@@ -225,8 +231,9 @@ private:
     muse::Ret insertClef(const AddClefCommand& command);
     muse::Ret toggleSnapTo(const ToggleSnapToCommand& command);
 
-    void addDynamic();
-    void addImage();
+    muse::Ret addDynamic();
+    muse::Ret addNoteLine();
+    muse::Ret addImage();
     muse::Ret addFiguredBass();
     void addGuitarBend(GuitarBendType bendType);
     muse::Ret addFretboardDiagram();
@@ -240,7 +247,9 @@ private:
 
     void toggleMmrest();
     void toggleHideEmpty();
-    void addFullMeasureRest();
+    muse::Ret addFullMeasureRest();
+    muse::Ret splitMeasure();
+    muse::Ret joinMeasures();
 
     muse::Ret resetStretch();
     muse::Ret resetTextStyleOverrides();
@@ -253,8 +262,14 @@ private:
     muse::Ret mirrorNotehead();
     muse::Ret setVisible(const SetVisibleCommand& command);
     muse::Ret transposeSemitone(const TransposeSemitoneCommand& command);
+    muse::Ret implodeExplodeStaff(const StaffImplodeExplodeCommand& command);
+    muse::Ret slashFill();
+    muse::Ret slashRhythm();
+    muse::Ret changeEnharmonicSpelling(const ChangeEnharmonicSpellingCommand& command);
+    muse::Ret optimizeEnharmonicSpelling();
+    muse::Ret respellPitches(const RespellPitchesCommand& command);
 
-    muse::Ret openEditStyleDialog(const muse::rcommand::Params& params);
+    muse::Ret openEditStyleDialog(const OpenEditStyleCommand& command);
     muse::Ret openPageSettingsDialog();
     muse::Ret openStaffProperties();
     muse::Ret openEditStringsDialog();

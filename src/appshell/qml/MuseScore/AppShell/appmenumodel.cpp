@@ -308,7 +308,7 @@ MenuItem* AppMenuModel::makeAddMenu()
 MenuItem* AppMenuModel::makeFormatMenu()
 {
     MenuItemList formatItems {
-        makeMenuItem(OPEN_EDIT_STYLE_COMMAND),
+        makeMenuItem(OpenEditStyleCommand::id),
         makeMenuItem(OpenPageSettingsCommand::id),
         makeSeparator(),
         makeMenuItem(OpenBreaksCommand::id),
@@ -344,17 +344,17 @@ MenuItem* AppMenuModel::makeToolsMenu()
             makeMenuItem(SwapVoice34Command::id)
         }, "menu-voices"),
         makeMenu(TranslatableString("appshell/menu/tools", "&Measures"), {
-            makeMenuItem(SPLIT_MEASURE_COMMAND),
-            makeMenuItem(JOIN_MEASURES_COMMAND)
+            makeMenuItem(SplitMeasureCommand::id),
+            makeMenuItem(JoinMeasuresCommand::id)
         }, "menu-tools-measures"),
         makeMenuItem(REMOVE_SELECTED_RANGE_COMMAND),
         makeSeparator(),
-        makeMenuItem(PITCH_SPELL_SHARPS_COMMAND),
-        makeMenuItem(PITCH_SPELL_FLATS_COMMAND),
+        makeMenuItem(RespellPitchesSharpsCommand::id),
+        makeMenuItem(RespellPitchesFlatsCommand::id),
         makeMenu(TranslatableString("appshell/menu/tools", "Enharmonic spelling"), {
-            makeMenuItem(ENHARMONIC_SPELL_BOTH_COMMAND),
-            makeMenuItem(ENHARMONIC_SPELL_CURRENT_COMMAND),
-            makeMenuItem(PITCH_SPELL_COMMAND),
+            makeMenuItem(ChangeEnharmonicSpellingBothCommand::id),
+            makeMenuItem(ChangeEnharmonicSpellingCurrentCommand::id),
+            makeMenuItem(OptimizeEnharmonicSpellingCommand::id),
         }, "menu-enharmonic-spelling"),
         makeSeparator(),
         makeMenuItem(RegroupRhythmsCommand::id),
@@ -686,7 +686,7 @@ MenuItemList AppMenuModel::makeTextItems()
         makeSeparator(),
         makeMenuItem(AddSystemTextCommand::id),
         makeMenuItem(AddStaffTextCommand::id),
-        makeMenuItem(ADD_DYNAMIC_COMMAND),
+        makeMenuItem(AddDynamicCommand::id),
         makeMenuItem(AddExpressionTextCommand::id),
         makeMenuItem(AddRehearsalMarkTextCommand::id),
         makeMenuItem(AddFingeringTextCommand::id),
@@ -708,7 +708,7 @@ MenuItemList AppMenuModel::makeLinesItems()
         makeMenuItem(AddHairpinDiminuendoCommand::id),
         makeMenuItem(AddOttava8vaCommand::id),
         makeMenuItem(AddOttava8vbCommand::id),
-        makeMenuItem(ADD_NOTELINE_COMMAND)
+        makeMenuItem(AddNoteLineCommand::id)
     };
 
     return items;
