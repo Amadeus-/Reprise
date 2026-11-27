@@ -341,6 +341,9 @@ StyledDialogView {
                 height: tierRow.implicitHeight
 
                 readonly property bool isMatchedTier: root.matched && tierItem.modelData.value === root.detectedTier
+                //! The auto-chosen tier when detection FAILED (no real match) -> gets a neutral "Default" badge. detectedTier
+                //! here is the snapped preselect (now Standard/300 on a miss), so the badge pins to the pre-selected row.
+                readonly property bool isDefaultTier: !root.matched && tierItem.modelData.value === root.detectedTier
 
                 Row {
                     id: tierRow
@@ -359,7 +362,10 @@ StyledDialogView {
                         navigation.panel: navPanel
                         navigation.order: 2 + tierItem.index
                         navigation.accessible.name: tierItem.modelData.title + ". " + tierItem.modelData.subtitle
-                            + (tierItem.isMatchedTier ? ". " + qsTrc("reprise", "Matched to your scan") : "")
+                            + (tierItem.isMatchedTier ? ". " + (root.detectedDpi > 0
+                                ? qsTrc("reprise", "Matched to your scan (~%1 dpi)").arg(root.detectedDpi)
+                                : qsTrc("reprise", "Matched to your scan")) : "")
+                            + (tierItem.isDefaultTier ? ". " + qsTrc("reprise", "Default") : "")
 
                         onToggled: root.selectedTier = tierItem.modelData.value
                     }
@@ -370,26 +376,29 @@ StyledDialogView {
                         text: tierItem.modelData.subtitle
                         opacity: 0.6
                     }
-
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        visible: tierItem.isMatchedTier
-                        radius: 3
-                        color: ui.theme.accentColor
-                        height: badgeLabel.implicitHeight + 4
-                        width: badgeLabel.implicitWidth + 12
-
-                        StyledTextLabel {
-                            id: badgeLabel
-
-                            anchors.centerIn: parent
-                            text: qsTrc("reprise", "Matched to your scan")
-                            color: "#FFFFFF"
-                        }
-                    }
                 }
             }
+        }
+
+        //! "Why" caption for the auto-selected recognition tier (PDF-only): an ACCENT "Matched to your scan (~N dpi)" when
+        //! a real native resolution was detected, or a neutral "Default. Couldn't detect this PDF's scan resolution." when
+        //! it fell back to Standard (a born-digital PDF with no scanned image, or an unreadable file). Full-width so the
+        //! detected-dpi text WRAPS instead of clipping / widening the fixed dialog (an inline per-row badge overflowed).
+        //! The detected dpi is shown ONLY on a real match (on a miss root.detectedDpi is a sentinel, not the preselect).
+        StyledTextLabel {
+            width: parent.width
+
+            visible: !root.isImage
+
+            text: root.matched
+                  ? (root.detectedDpi > 0
+                     ? qsTrc("reprise", "Matched to your scan (~%1 dpi)").arg(root.detectedDpi)
+                     : qsTrc("reprise", "Matched to your scan"))
+                  : qsTrc("reprise", "Default. Couldn't detect this PDF's scan resolution.")
+            color: root.matched ? ui.theme.accentColor : ui.theme.fontPrimaryColor
+            opacity: root.matched ? 1.0 : 0.6
+            horizontalAlignment: Text.AlignLeft
+            wrapMode: Text.WordWrap
         }
 
         //! ===== "Options" disclosure: recognition controls, present in BOTH the single-image and PDF states =====

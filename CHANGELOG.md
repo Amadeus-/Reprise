@@ -8,6 +8,17 @@ below `1.0.0` is pre-release.
 
 ## [Unreleased]
 
+## [0.18.3] — 2026-11-27
+
+### Added
+- **The Import Scan dialog now tells you why a recognition quality was auto-selected.** When Reprise detects a scan's
+  real resolution it shows *"Matched to your scan (~N dpi)"*; when it can't (a born-digital PDF with no scanned image,
+  or an unreadable file) it shows *"Default"* with a *"couldn't detect this PDF's scan resolution"* note.
+
+### Changed
+- **An undetectable PDF now pre-selects Standard (300 dpi)** instead of the last-used quality, so a born-digital or
+  unreadable PDF no longer silently inherits a prior *Best (400 dpi)* choice.
+
 ## [0.18.2] — 2026-11-25
 
 ### Added

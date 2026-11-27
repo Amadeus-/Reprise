@@ -92,6 +92,13 @@ static constexpr int IMAGE_PAD_MARGIN = 100;
 //! guess); the PDF path's separate "(..., default)" wording means a real applied rasterization tier and is left alone.
 static constexpr int DEFAULT_IMAGE_DPI = 300;
 
+//! When PDF resolution auto-detect FAILS (a born-digital PDF with no scanned image to measure, or an unreadable file),
+//! the intake dialog pre-selects Standard (300 dpi) -- a sensible notation default -- rather than the sticky last-used
+//! scanResolution(), so an undetectable PDF never silently inherits a prior Best/400 pick. The dialog labels this
+//! preselect "Default". scanResolution() is still persisted on submit (remembered for the picker's checked state across
+//! sessions when the user explicitly changes it); it is simply no longer READ for the no-detect preselect.
+static constexpr int NO_DETECT_FALLBACK_DPI = 300;
+
 namespace {
 //! Read cap for the in-house TIFF inspector. Large enough to cover a multi-frame scan whose image file directories may
 //! sit near the end of the file; a TIFF larger than this can't be walked safely, so the inspector reports failure and
@@ -772,8 +779,9 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
 
         //! No (or non-positive) "dpi" arg -> auto-detect from the PDF, same detector the GUI uses. A clean match
         //! snaps to a tier (200/300/400) so headless and GUI runs land on identical resolutions; a miss falls back
-        //! to the stored scanResolution(). Intentionally NOT clamped to 200-400: an explicit "dpi" arg stays raw
-        //! for headless agents who want a non-tier resolution.
+        //! to Standard (NO_DETECT_FALLBACK_DPI = 300), the SAME no-detect default the dialog preselects, so an
+        //! undetectable PDF lands on 300 everywhere. Intentionally NOT clamped to 200-400: an explicit "dpi" arg stays
+        //! raw for headless agents who want a non-tier resolution.
         int dpi = static_cast<int>(params.at("dpi").toInt());
         if (dpi <= 0)
         {
@@ -785,8 +793,8 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
             }
             else
             {
-                dpi = scanResolution();
-                LOGI() << "Reprise PDF detect (headless): no embedded resolution found -> fallback dpi=" << dpi;
+                dpi = NO_DETECT_FALLBACK_DPI;
+                LOGI() << "Reprise PDF detect (headless): no embedded resolution found -> fallback dpi=" << dpi << " (Standard default)";
             }
         }
 
@@ -846,17 +854,18 @@ muse::Ret ImportPdfController::importPdf(const muse::rcommand::Params& params)
     rememberImportPdfDir(pdfPath);
 
     //! Auto-detect the PDF's native image resolution BEFORE the dialog opens so we can pre-select a matching quality
-    //! tier. A clean detection pre-selects its snapped tier and flags the "matched to your PDF" badge; a miss falls
-    //! back to the stored scanResolution() (snapped to a tier) with no badge.
+    //! tier. A clean detection pre-selects its snapped tier and flags the "Matched to your scan" badge; a miss (a
+    //! born-digital PDF with no scanned image, or an unreadable file) pre-selects Standard (NO_DETECT_FALLBACK_DPI = 300),
+    //! labelled "Default" in the dialog -- NOT the sticky last-used scanResolution().
     const PdfResolutionResult detected = detectPdfResolution(pdfPath);
-    const int preselectTier = detected.matched ? snapToTier(detected.dpi) : snapToTier(scanResolution());
+    const int preselectTier = detected.matched ? snapToTier(detected.dpi) : snapToTier(NO_DETECT_FALLBACK_DPI);
     if (detected.matched)
     {
         LOGI() << "Reprise PDF detect: native dpi=" << detected.dpi << " -> tier " << preselectTier << " (matched)";
     }
     else
     {
-        LOGI() << "Reprise PDF detect: no embedded resolution found -> tier " << preselectTier << " (Standard, no badge)";
+        LOGI() << "Reprise PDF detect: no embedded resolution found -> tier " << preselectTier << " (Standard default, no badge)";
     }
 
     //! A single image (png/jpg/tif/...) has no PDF-resolution tier to pick, so the intake dialog hides that control.
@@ -1586,7 +1595,7 @@ muse::RetVal<CaptureImportDialogCommand::Output> ImportPdfController::captureImp
     //! Run the SAME dialog-prep the interactive path uses so the rendered dialog is identical to what a user sees.
     const bool isImage = io::suffix(filePath) != "pdf";
     const PdfResolutionResult detected = detectPdfResolution(filePath);
-    const int preselectTier = detected.matched ? snapToTier(detected.dpi) : snapToTier(scanResolution());
+    const int preselectTier = detected.matched ? snapToTier(detected.dpi) : snapToTier(NO_DETECT_FALLBACK_DPI);
     const ImageInfo imageInfo = inspectImage(filePath, isImage);
 
     //! Build the identical UriQuery the interactive path passes to openSync (see importPdf()).

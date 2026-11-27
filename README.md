@@ -11,7 +11,7 @@ or image of sheet music, runs optical music recognition (OMR) with
 workflow to correct the result and export clean **MusicXML** — or hand the score
 onward to MuseScore to finish.
 
-> **Pre-release (0.18.2) — work in progress.** Reprise is early software under
+> **Pre-release (0.18.3) — work in progress.** Reprise is early software under
 > active development. Expect rough edges and changing behavior.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the version history.
@@ -39,7 +39,10 @@ compatibility.
   OMR on a PDF or a scan image (PNG/JPG/JPEG/TIFF/BMP/GIF) and opens the recognized score.
   Pick a page range (`all`, `1-5`, `1,3,8`) and a **Recognition quality** — *Faster /
   Standard / Best*. Reprise reads the PDF's own resolution and pre-selects the matching
-  quality for you. Each recognized score is **re-engraved with MuseScore's own layout** —
+  quality for you, and **tells you why**: *"Matched to your scan (~N dpi)"* when it detected a
+  real scan resolution, or *"Default"* with a *"couldn't detect this PDF's scan resolution"* note
+  for a born-digital or unreadable PDF (which pre-selects **Standard / 300 dpi**). Each recognized
+  score is **re-engraved with MuseScore's own layout** —
   the scanner's baked-in page geometry is stripped so measures are evenly spaced (not
   stretched to mirror the paper) and the title block is clean and un-duplicated.
 - **Unreadable pages don't sink the whole import** — if some pages of a multi-page scan can't be recognized
